@@ -1,6 +1,6 @@
 use std::{rc::Rc, cell::RefCell};
 
-use crate::{ScfiaStdlib, values::bit_vector_concrete::BitVectorConcrete};
+use crate::{ScfiaStdlib, values::bit_vector_concrete::BitVectorConcrete, memory::memory32::Memory32};
 
 pub mod rv32i;
 
@@ -44,6 +44,7 @@ fn test_system_state() {
         x31:  Rc::new(RefCell::new(BitVectorConcrete::new(0b0, 32, &mut stdlib))),
     };
     unsafe {
-        rv32i::test(&mut rv32i_system_state, &mut stdlib)
+        let mut memory = Memory32 {};
+        rv32i::test(&mut rv32i_system_state, &mut stdlib, None, &mut memory)
     };
 }

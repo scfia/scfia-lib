@@ -4,14 +4,20 @@
 pub mod expressions;
 pub mod traits;
 pub mod values;
+pub mod memory;
 pub mod models;
 
 use std::cell::RefCell;
+use std::ops::Deref;
 use std::rc::Rc;
 use std::rc::Weak;
 
 use crate::traits::symbol::Symbol;
 
+use expressions::bool_eq_expression::BoolEqExpression;
+use expressions::bool_neq_expression::BoolNEqExpression;
+use models::riscv::rv32i::ForkSink;
+use traits::ast::Ast;
 use traits::bit_vector_expression::BitVectorExpression;
 use traits::ast::ActiveAst;
 use values::bit_vector_symbol::BitVectorSymbol;
@@ -23,6 +29,9 @@ use z3_sys::Z3_del_config;
 use z3_sys::Z3_mk_config;
 use z3_sys::Z3_solver;
 use z3_sys::Z3_mk_solver;
+use z3_sys::Z3_solver_assert;
+use z3_sys::Z3_solver_check;
+use z3_sys::Z3_solver_check_assumptions;
 
 
 #[derive(Debug)]
@@ -51,6 +60,81 @@ impl ScfiaStdlib {
         let symbol_id = self.next_symbol_id;
         self.next_symbol_id += 1;
         symbol_id
+    }
+
+    
+    pub fn do_neq(&mut self, left: Rc<RefCell<dyn ActiveAst>>, right: Rc<RefCell<dyn ActiveAst>>, fork_sink: Option<Rc<RefCell<ForkSink>>>) -> bool {
+        unsafe {
+            let mut can_be_true = false;
+            let mut can_be_false = false;
+
+            let condition_symbol = BoolNEqExpression::new(left.clone(), right.clone(), self);
+            let neg_condition_symbol = BoolEqExpression::new(left, right, self);
+
+            let condition_ast = condition_symbol.get_z3_ast();
+            if Z3_solver_check_assumptions(self.z3_context, self.z3_solver, 1, &condition_ast) != 0 {
+                can_be_true = true
+            }
+
+            let neg_condition_ast = neg_condition_symbol.get_z3_ast();
+            if Z3_solver_check_assumptions(self.z3_context, self.z3_solver, 1, &neg_condition_ast) != 0 {
+                can_be_false = true
+            }
+
+            if can_be_true && can_be_false {
+                // Create fork with negative condition
+                fork_sink.unwrap().try_borrow_mut().unwrap().forks.push(Rc::new(RefCell::new(neg_condition_symbol)));
+
+                // continue with positive condition
+                // TODO: Add this assert to our data structures
+                Z3_solver_assert(self.z3_context, self.z3_solver, condition_ast);
+
+                true
+            } else if can_be_true {
+                true
+            } else if can_be_false {
+                false
+            } else {
+                unreachable!()
+            }
+        }
+    }
+
+    pub fn do_eq(&mut self, left: Rc<RefCell<dyn ActiveAst>>, right: Rc<RefCell<dyn ActiveAst>>, fork_sink: Option<Rc<RefCell<ForkSink>>>) -> bool {
+        unsafe {
+            let mut can_be_true = false;
+            let mut can_be_false = false;
+
+            let condition_symbol = BoolEqExpression::new(left.clone(), right.clone(), self);
+            let neg_condition_symbol = BoolNEqExpression::new(left, right, self);
+
+            let condition_ast = condition_symbol.get_z3_ast();
+            if Z3_solver_check_assumptions(self.z3_context, self.z3_solver, 1, &condition_ast) != 0 {
+                can_be_true = true
+            }
+
+            let neg_condition_ast = neg_condition_symbol.get_z3_ast();
+            if Z3_solver_check_assumptions(self.z3_context, self.z3_solver, 1, &neg_condition_ast) != 0 {
+                can_be_false = true
+            }
+
+            if can_be_true && can_be_false {
+                // Create fork with negative condition
+                fork_sink.unwrap().try_borrow_mut().unwrap().forks.push(Rc::new(RefCell::new(neg_condition_symbol)));
+
+                // continue with positive condition
+                // TODO: Add this assert to our data structures
+                Z3_solver_assert(self.z3_context, self.z3_solver, condition_ast);
+
+                true
+            } else if can_be_true {
+                true
+            } else if can_be_false {
+                false
+            } else {
+                unreachable!()
+            }
+        }
     }
 }
 

@@ -21,7 +21,7 @@ pub struct BitVectorConcrete {
 }
 
 impl BitVectorConcrete {
-    pub fn new(value: u64, width: u32, stdlib: &mut ScfiaStdlib) -> BitVectorConcrete {
+    pub fn new(value: u64, width: u32, stdlib: &ScfiaStdlib) -> BitVectorConcrete {
         unsafe {
             let sort = Z3_mk_bv_sort(stdlib.z3_context, width);
             // Z3_inc_ref(stdlib.z3_context, sort);
