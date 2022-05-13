@@ -1,4 +1,3 @@
-use crate::traits::ast::ActiveAst;
 use crate::traits::ast::Ast;
 use crate::traits::bit_vector::BitVector;
 use crate::traits::bit_vector_expression::BitVectorExpression;
@@ -19,18 +18,18 @@ use z3_sys::Z3_mk_sign_ext;
 #[derive(Debug)]
 pub struct BVSignExtendExpression {
     pub id: u64,
-    pub s1: Rc<RefCell<dyn ActiveAst>>,
+    pub s1: Rc<RefCell<dyn Ast>>,
     pub input_width: u32,
     pub output_width: u32,
     inherited_asts: Vec<Rc<RefCell<dyn Ast>>>,
-    discovered_asts: HashMap<u64, Weak<RefCell<dyn ActiveAst>>>,
+    discovered_asts: HashMap<u64, Weak<RefCell<dyn Ast>>>,
     z3_context: Z3_context,
     z3_ast: Z3_ast,
 }
 
 impl BVSignExtendExpression {
     pub fn new(
-        s1: Rc<RefCell<dyn ActiveAst>>,
+        s1: Rc<RefCell<dyn Ast>>,
         input_width: u32,
         output_width: u32,
         stdlib: &mut ScfiaStdlib,
@@ -58,18 +57,24 @@ impl BVSignExtendExpression {
 }
 
 impl Ast for BVSignExtendExpression {
+    fn get_id(&self) -> u64 {
+        self.id
+    }
+
     fn get_z3_ast(&self) -> Z3_ast {
         self.z3_ast
     }
-}
 
-impl ActiveAst for BVSignExtendExpression {
-    fn get_parents(&self, list: &mut Vec<Rc<RefCell<dyn ActiveAst>>>) {
+    fn get_parents(&self, list: &mut Vec<Rc<RefCell<dyn Ast>>>) {
         list.push(self.s1.clone());
     }
 
     fn inherit(&mut self, ast: Rc<RefCell<dyn Ast>>) {
         self.inherited_asts.push(ast)
+    }
+
+    fn get_cloned(&self, clone_map: &mut HashMap<u64, Rc<RefCell<dyn Ast>>>, cloned_stdlib: &mut ScfiaStdlib) -> Rc<RefCell<dyn Ast>> {
+        todo!()
     }
 }
 
@@ -83,7 +88,7 @@ impl Drop for BVSignExtendExpression {
     fn drop(&mut self) {
         // Retire expression, maintain z3 ast refcount
         let retired_expression = Rc::new(RefCell::new(RetiredBVSignExtendExpression {
-            _id: self.id,
+            id: self.id,
             _s1: Rc::downgrade(&self.s1),
             input_width: self.input_width,
             output_width: self.output_width,
@@ -92,7 +97,7 @@ impl Drop for BVSignExtendExpression {
         }));
 
         // Heirs are paraents and discovered symbols
-        let mut heirs: Vec<Rc<RefCell<dyn ActiveAst>>> = vec![];
+        let mut heirs: Vec<Rc<RefCell<dyn Ast>>> = vec![];
         self.get_parents(&mut heirs);
         for discovered_symbol in self.discovered_asts.values() {
             heirs.push(discovered_symbol.upgrade().unwrap())
@@ -115,8 +120,8 @@ impl Drop for BVSignExtendExpression {
 
 #[derive(Debug)]
 pub struct RetiredBVSignExtendExpression {
-    _id: u64,
-    _s1: Weak<RefCell<dyn ActiveAst>>,
+    id: u64,
+    _s1: Weak<RefCell<dyn Ast>>,
     input_width: u32,
     output_width: u32,
     z3_context: Z3_context,
@@ -124,8 +129,24 @@ pub struct RetiredBVSignExtendExpression {
 }
 
 impl Ast for RetiredBVSignExtendExpression {
+    fn get_id(&self) -> u64 {
+        self.id
+    }
+
     fn get_z3_ast(&self) -> Z3_ast {
         self.z3_ast
+    }
+
+    fn get_parents(&self, list: &mut Vec<Rc<RefCell<dyn Ast>>>) {
+        todo!()
+    }
+
+    fn inherit(&mut self, ast: Rc<RefCell<dyn Ast>>) {
+        todo!()
+    }
+
+    fn get_cloned(&self, clone_map: &mut HashMap<u64, Rc<RefCell<dyn Ast>>>, cloned_stdlib: &mut ScfiaStdlib) -> Rc<RefCell<dyn Ast>> {
+        todo!()
     }
 }
 

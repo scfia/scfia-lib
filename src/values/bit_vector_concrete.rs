@@ -9,7 +9,6 @@ use std::rc::Rc;
 use crate::ScfiaStdlib;
 use crate::traits::ast::Ast;
 use crate::traits::bit_vector::BitVector;
-use crate::traits::ast::ActiveAst;
 
 
 #[derive(Debug)]
@@ -42,15 +41,21 @@ impl BitVectorConcrete {
 }
 
 impl Ast for BitVectorConcrete {
+    fn get_id(&self) -> u64 {
+        unreachable!()
+    }    
+
     fn get_z3_ast(&self) -> Z3_ast {
         self.z3_ast
-    }    
-}
+    }
 
-impl ActiveAst for BitVectorConcrete {
-    fn get_parents(&self, _list: &mut Vec<Rc<RefCell<dyn ActiveAst>>>) {}
+    fn get_parents(&self, _list: &mut Vec<Rc<RefCell<dyn Ast>>>) {}
 
     fn inherit(&mut self, _ast: Rc<RefCell<dyn Ast>>) {}
+
+    fn get_cloned(&self, clone_map: &mut std::collections::HashMap<u64, Rc<RefCell<dyn Ast>>>, cloned_stdlib: &mut ScfiaStdlib) -> Rc<RefCell<dyn Ast>> {
+        todo!()
+    }
 }
 
 impl BitVector for BitVectorConcrete {
@@ -62,18 +67,5 @@ impl Drop for BitVectorConcrete {
         unsafe {
             Z3_dec_ref(self.z3_context, self.z3_ast)
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::rc::Rc;
-    use crate::ScfiaStdlib;
-    use crate::values::bit_vector_concrete::BitVectorConcrete;
-
-    #[test]
-    fn mk_bvc() {
-        let mut stdlib = ScfiaStdlib::new();
-        let _bvc = BitVectorConcrete::new(42, 32, &mut stdlib);
     }
 }

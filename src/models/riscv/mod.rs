@@ -8,6 +8,7 @@ pub mod rv32i;
 #[test]
 fn test_system_state() {
     let mut stdlib = ScfiaStdlib::new();
+
     let mut rv32i_system_state = rv32i::SystemState {
         x0:  Rc::new(RefCell::new(BitVectorConcrete::new(0b0, 32, &mut stdlib))),
         x1:  Rc::new(RefCell::new(BitVectorConcrete::new(0b0, 32, &mut stdlib))),
@@ -44,7 +45,12 @@ fn test_system_state() {
         x31:  Rc::new(RefCell::new(BitVectorConcrete::new(0b0, 32, &mut stdlib))),
     };
     unsafe {
-        let mut memory = Memory32 {};
-        rv32i::test(&mut rv32i_system_state, &mut stdlib, None, &mut memory)
+        loop {
+            let mut memory = Memory32 {};
+            rv32i::step(&mut rv32i_system_state, &mut stdlib, None, &mut memory);
+            rv32i_system_state.x2 = Rc::new(RefCell::new(BitVectorConcrete::new(0b0, 32, &mut stdlib)));
+            rv32i_system_state.pc = Rc::new(RefCell::new(BitVectorConcrete::new(0b0, 32, &mut stdlib)));
+            // println!("{:?}", &rv32i_system_state);
+        }
     };
 }

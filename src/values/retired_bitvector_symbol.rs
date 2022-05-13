@@ -6,7 +6,7 @@ use crate::{traits::{expression::{Expression, self}, bit_vector_expression::BitV
 
 #[derive(Debug)]
 pub struct RetiredBitvectorSymbol {
-    _symbol_id: u64,
+    symbol_id: u64,
     _expression: Option<Weak<RefCell<dyn BitVectorExpression>>>,
     z3_context: Z3_context,
     z3_ast: Z3_ast,
@@ -20,7 +20,7 @@ impl RetiredBitvectorSymbol {
         z3_ast: Z3_ast,
     ) -> RetiredBitvectorSymbol {
         RetiredBitvectorSymbol {
-            _symbol_id: symbol_id,
+            symbol_id,
             _expression: expression,
             z3_context,
             z3_ast,
@@ -29,8 +29,24 @@ impl RetiredBitvectorSymbol {
 }
 
 impl Ast for RetiredBitvectorSymbol {
+    fn get_id(&self) -> u64 {
+        self.symbol_id
+    }
+
     fn get_z3_ast(&self) -> Z3_ast {
         self.z3_ast
+    }
+
+    fn get_parents(&self, list: &mut Vec<Rc<RefCell<dyn Ast>>>) {
+        unreachable!()
+    }
+
+    fn inherit(&mut self, ast: Rc<RefCell<dyn Ast>>) {
+        unreachable!()
+    }
+
+    fn get_cloned(&self, clone_map: &mut std::collections::HashMap<u64, Rc<RefCell<dyn Ast>>>, cloned_stdlib: &mut ScfiaStdlib) -> Rc<RefCell<dyn Ast>> {
+        todo!()
     }
 }
 

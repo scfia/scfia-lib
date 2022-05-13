@@ -11,27 +11,44 @@ use std::cell::RefCell;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::rc::Weak;
-
-use crate::traits::symbol::Symbol;
+use std::vec;
 
 use expressions::bool_eq_expression::BoolEqExpression;
 use expressions::bool_neq_expression::BoolNEqExpression;
 use models::riscv::rv32i::ForkSink;
 use traits::ast::Ast;
 use traits::bit_vector_expression::BitVectorExpression;
-use traits::ast::ActiveAst;
 use values::bit_vector_symbol::BitVectorSymbol;
 use values::retired_bitvector_symbol::RetiredBitvectorSymbol;
+use z3_sys::Z3_L_FALSE;
+use z3_sys::Z3_ast_vector_dec_ref;
+use z3_sys::Z3_ast_vector_inc_ref;
+use z3_sys::Z3_ast_vector_size;
+use z3_sys::Z3_dec_ref;
 use z3_sys::Z3_del_context;
 use z3_sys::Z3_context;
+use z3_sys::Z3_finalize_memory;
+use z3_sys::Z3_inc_ref;
 use z3_sys::Z3_mk_context_rc;
 use z3_sys::Z3_del_config;
 use z3_sys::Z3_mk_config;
+use z3_sys::Z3_mk_eq;
+use z3_sys::Z3_mk_model;
+use z3_sys::Z3_model_dec_ref;
+use z3_sys::Z3_model_inc_ref;
 use z3_sys::Z3_solver;
 use z3_sys::Z3_mk_solver;
 use z3_sys::Z3_solver_assert;
+use z3_sys::Z3_solver_assert_and_track;
 use z3_sys::Z3_solver_check;
 use z3_sys::Z3_solver_check_assumptions;
+use z3_sys::Z3_solver_get_assertions;
+use z3_sys::Z3_solver_get_model;
+use z3_sys::Z3_solver_get_unsat_core;
+use z3_sys::Z3_solver_inc_ref;
+use z3_sys::Z3_solver_pop;
+use z3_sys::Z3_solver_push;
+use z3_sys::Z3_solver_reset;
 
 
 #[derive(Debug)]
@@ -51,6 +68,7 @@ impl ScfiaStdlib {
                 z3_solver: Z3_mk_solver(z3_context),
                 next_symbol_id: 0,
             };
+            Z3_solver_inc_ref(stdlib.z3_context, stdlib.z3_solver);
             Z3_del_config(z3_config);
             stdlib
         }
@@ -63,7 +81,7 @@ impl ScfiaStdlib {
     }
 
     
-    pub fn do_neq(&mut self, left: Rc<RefCell<dyn ActiveAst>>, right: Rc<RefCell<dyn ActiveAst>>, fork_sink: Option<Rc<RefCell<ForkSink>>>) -> bool {
+    pub fn do_neq(&mut self, left: Rc<RefCell<dyn Ast>>, right: Rc<RefCell<dyn Ast>>, fork_sink: Option<Rc<RefCell<ForkSink>>>) -> bool {
         unsafe {
             let mut can_be_true = false;
             let mut can_be_false = false;
@@ -72,12 +90,12 @@ impl ScfiaStdlib {
             let neg_condition_symbol = BoolEqExpression::new(left, right, self);
 
             let condition_ast = condition_symbol.get_z3_ast();
-            if Z3_solver_check_assumptions(self.z3_context, self.z3_solver, 1, &condition_ast) != 0 {
+            if Z3_solver_check_assumptions(self.z3_context, self.z3_solver, 1, &condition_ast) != -1 {
                 can_be_true = true
             }
 
             let neg_condition_ast = neg_condition_symbol.get_z3_ast();
-            if Z3_solver_check_assumptions(self.z3_context, self.z3_solver, 1, &neg_condition_ast) != 0 {
+            if Z3_solver_check_assumptions(self.z3_context, self.z3_solver, 1, &neg_condition_ast) != -1 {
                 can_be_false = true
             }
 
@@ -100,21 +118,49 @@ impl ScfiaStdlib {
         }
     }
 
-    pub fn do_eq(&mut self, left: Rc<RefCell<dyn ActiveAst>>, right: Rc<RefCell<dyn ActiveAst>>, fork_sink: Option<Rc<RefCell<ForkSink>>>) -> bool {
+    pub fn do_eq(&mut self, left: Rc<RefCell<dyn Ast>>, right: Rc<RefCell<dyn Ast>>, fork_sink: Option<Rc<RefCell<ForkSink>>>) -> bool {
         unsafe {
+            /*
             let mut can_be_true = false;
             let mut can_be_false = false;
 
             let condition_symbol = BoolEqExpression::new(left.clone(), right.clone(), self);
-            let neg_condition_symbol = BoolNEqExpression::new(left, right, self);
+            // let neg_condition_symbol = BoolNEqExpression::new(left, right, self);
 
             let condition_ast = condition_symbol.get_z3_ast();
-            if Z3_solver_check_assumptions(self.z3_context, self.z3_solver, 1, &condition_ast) != 0 {
+            if Z3_solver_check_assumptions(self.z3_context, self.z3_solver, 1, &condition_ast) != Z3_L_FALSE {
                 can_be_true = true
             }
+             */
+            let ast = Z3_mk_eq(
+                self.z3_context,
+                left.try_borrow().unwrap().get_z3_ast(),
+                right.try_borrow().unwrap().get_z3_ast(),
+            );
+            Z3_inc_ref(self.z3_context, ast);
+            let foo = Z3_solver_check_assumptions(self.z3_context, self.z3_solver, 1, &ast);
+            let core = Z3_solver_get_unsat_core(self.z3_context, self.z3_solver);
+            let ass = Z3_solver_get_assertions(self.z3_context, self.z3_solver);
+            let vectorSize = Z3_ast_vector_size(self.z3_context, ass);
+            println!("{}", vectorSize);
+            Z3_ast_vector_inc_ref(self.z3_context, core);
+            Z3_ast_vector_dec_ref(self.z3_context, core);
+            // Z3_ast_vector_dec_ref(self.z3_context, core);
+            Z3_dec_ref(self.z3_context, ast);
+            // Z3_finalize_memory();
+            Z3_solver_reset(self.z3_context, self.z3_solver);
 
+            /*
+            let model = Z3_solver_get_model(self.z3_context, self.z3_solver);
+            Z3_model_inc_ref(self.z3_context, model);
+            Z3_model_dec_ref(self.z3_context, model);
+            Z3_dec_ref(self.z3_context, ast);
+             */
+            return true;
+
+            /*
             let neg_condition_ast = neg_condition_symbol.get_z3_ast();
-            if Z3_solver_check_assumptions(self.z3_context, self.z3_solver, 1, &neg_condition_ast) != 0 {
+            if Z3_solver_check_assumptions(self.z3_context, self.z3_solver, 1, &neg_condition_ast) != Z3_L_FALSE {
                 can_be_false = true
             }
 
@@ -134,6 +180,7 @@ impl ScfiaStdlib {
             } else {
                 unreachable!()
             }
+             */
         }
     }
 }

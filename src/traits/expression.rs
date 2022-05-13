@@ -1,3 +1,3 @@
-use super::ast::ActiveAst;
+use super::ast::Ast;
 
-pub trait Expression: ActiveAst {}
+pub trait Expression: Ast {}

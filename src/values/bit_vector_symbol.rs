@@ -10,22 +10,21 @@ use z3_sys::{
     Z3_mk_string, Z3_solver_assert, _Z3_symbol, Z3_mk_bv_sort,
 };
 
-use crate::traits::ast::{ActiveAst, Ast};
+use crate::traits::ast::{Ast};
 use crate::traits::bit_vector::BitVector;
 use crate::traits::bit_vector_expression::BitVectorExpression;
 use crate::traits::expression::{self, Expression};
-use crate::Symbol;
 use crate::{traits::bool::Bool, ScfiaStdlib};
 
 use super::retired_bitvector_symbol::RetiredBitvectorSymbol;
 
 #[derive(Debug)]
 pub struct BitVectorSymbol {
-    pub symbol_id: u64,
+    pub id: u64,
     pub expression: Option<Rc<RefCell<dyn BitVectorExpression>>>,
     z3_context: Z3_context,
     z3_ast: Z3_ast,
-    discovered_relatives: HashMap<u64, Weak<RefCell<dyn ActiveAst>>>,
+    discovered_relatives: HashMap<u64, Weak<RefCell<dyn Ast>>>,
     retired_relatives: Vec<Rc<RefCell<dyn Ast>>>,
 }
 
@@ -59,7 +58,7 @@ impl BitVectorSymbol {
             }
 
             let bvs = BitVectorSymbol {
-                symbol_id,
+                id: symbol_id,
                 z3_context,
                 z3_ast,
                 expression,
@@ -73,13 +72,15 @@ impl BitVectorSymbol {
 }
 
 impl Ast for BitVectorSymbol {
+    fn get_id(&self) -> u64 {
+        self.id
+    }
+
     fn get_z3_ast(&self) -> Z3_ast {
         self.z3_ast
     }
-}
 
-impl ActiveAst for BitVectorSymbol {
-    fn get_parents(&self, list: &mut Vec<Rc<RefCell<dyn ActiveAst>>>) {
+    fn get_parents(&self, list: &mut Vec<Rc<RefCell<dyn Ast>>>) {
         if let Some(expression) = &self.expression {
             expression.try_borrow().unwrap().get_parents(list)
         }
@@ -88,21 +89,20 @@ impl ActiveAst for BitVectorSymbol {
     fn inherit(&mut self, ast: Rc<RefCell<dyn Ast>>) {
         self.retired_relatives.push(ast)
     }
+
+    fn get_cloned(&self, clone_map: &mut HashMap<u64, Rc<RefCell<dyn Ast>>>, cloned_stdlib: &mut ScfiaStdlib) -> Rc<RefCell<dyn Ast>> {
+        todo!()
+    }
 }
 
 impl BitVector for BitVectorSymbol {}
 
-impl Symbol for BitVectorSymbol {
-    fn get_symbol_id(&self) -> u64 {
-        self.symbol_id
-    }
-}
 
 impl Drop for BitVectorSymbol {
     fn drop(&mut self) {
         // Retire symbol, maintain z3 ast refcount
         let retired_symbol = Rc::new(RefCell::new(RetiredBitvectorSymbol::new(
-            self.symbol_id,
+            self.id,
             self.expression
                 .as_ref()
                 .map_or(None, |e| Some(Rc::downgrade(e))),
@@ -111,7 +111,7 @@ impl Drop for BitVectorSymbol {
         )));
 
         // Heirs are parents and discovered symbols
-        let mut heirs: Vec<Rc<RefCell<dyn ActiveAst>>> = vec![];
+        let mut heirs: Vec<Rc<RefCell<dyn Ast>>> = vec![];
         self.get_parents(&mut heirs);
         for discovered_symbol in self.discovered_relatives.values() {
             heirs.push(discovered_symbol.upgrade().unwrap())

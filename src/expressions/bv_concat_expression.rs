@@ -1,4 +1,3 @@
-use crate::traits::ast::ActiveAst;
 use crate::traits::ast::Ast;
 use crate::traits::bit_vector::BitVector;
 use crate::traits::bit_vector_expression::BitVectorExpression;
@@ -19,18 +18,18 @@ use z3_sys::Z3_mk_concat;
 #[derive(Debug)]
 pub struct BVConcatExpression {
     pub id: u64,
-    pub s1: Rc<RefCell<dyn ActiveAst>>,
-    pub s2: Rc<RefCell<dyn ActiveAst>>,
+    pub s1: Rc<RefCell<dyn Ast>>,
+    pub s2: Rc<RefCell<dyn Ast>>,
     inherited_asts: Vec<Rc<RefCell<dyn Ast>>>,
-    discovered_asts: HashMap<u64, Weak<RefCell<dyn ActiveAst>>>,
+    discovered_asts: HashMap<u64, Weak<RefCell<dyn Ast>>>,
     z3_context: Z3_context,
     z3_ast: Z3_ast,
 }
 
 impl BVConcatExpression {
     pub fn new(
-        s1: Rc<RefCell<dyn ActiveAst>>,
-        s2: Rc<RefCell<dyn ActiveAst>>,
+        s1: Rc<RefCell<dyn Ast>>,
+        s2: Rc<RefCell<dyn Ast>>,
         stdlib: &mut ScfiaStdlib,
     ) -> BVConcatExpression {
         unsafe {
@@ -55,19 +54,25 @@ impl BVConcatExpression {
 }
 
 impl Ast for BVConcatExpression {
+    fn get_id(&self) -> u64 {
+        self.id
+    }
+
     fn get_z3_ast(&self) -> Z3_ast {
         self.z3_ast
     }
-}
 
-impl ActiveAst for BVConcatExpression {
-    fn get_parents(&self, list: &mut Vec<Rc<RefCell<dyn ActiveAst>>>) {
+    fn get_parents(&self, list: &mut Vec<Rc<RefCell<dyn Ast>>>) {
         list.push(self.s1.clone());
         list.push(self.s2.clone());
     }
 
     fn inherit(&mut self, ast: Rc<RefCell<dyn Ast>>) {
         self.inherited_asts.push(ast)
+    }
+
+    fn get_cloned(&self, clone_map: &mut HashMap<u64, Rc<RefCell<dyn Ast>>>, cloned_stdlib: &mut ScfiaStdlib) -> Rc<RefCell<dyn Ast>> {
+        todo!()
     }
 }
 
@@ -81,7 +86,7 @@ impl Drop for BVConcatExpression {
     fn drop(&mut self) {
         // Retire expression, maintain z3 ast refcount
         let retired_expression = Rc::new(RefCell::new(RetiredBVConcatExpression {
-            _id: self.id,
+            id: self.id,
             _s1: Rc::downgrade(&self.s1),
             _s2: Rc::downgrade(&self.s2),
             z3_context: self.z3_context,
@@ -89,7 +94,7 @@ impl Drop for BVConcatExpression {
         }));
 
         // Heirs are paraents and discovered symbols
-        let mut heirs: Vec<Rc<RefCell<dyn ActiveAst>>> = vec![];
+        let mut heirs: Vec<Rc<RefCell<dyn Ast>>> = vec![];
         self.get_parents(&mut heirs);
         for discovered_symbol in self.discovered_asts.values() {
             heirs.push(discovered_symbol.upgrade().unwrap())
@@ -112,16 +117,32 @@ impl Drop for BVConcatExpression {
 
 #[derive(Debug)]
 pub struct RetiredBVConcatExpression {
-    _id: u64,
-    _s1: Weak<RefCell<dyn ActiveAst>>,
-    _s2: Weak<RefCell<dyn ActiveAst>>,
+    id: u64,
+    _s1: Weak<RefCell<dyn Ast>>,
+    _s2: Weak<RefCell<dyn Ast>>,
     z3_context: Z3_context,
     z3_ast: Z3_ast,
 }
 
 impl Ast for RetiredBVConcatExpression {
+    fn get_id(&self) -> u64 {
+        self.id
+    }
+
     fn get_z3_ast(&self) -> Z3_ast {
         self.z3_ast
+    }
+
+    fn get_parents(&self, list: &mut Vec<Rc<RefCell<dyn Ast>>>) {
+        todo!()
+    }
+
+    fn inherit(&mut self, ast: Rc<RefCell<dyn Ast>>) {
+        todo!()
+    }
+
+    fn get_cloned(&self, clone_map: &mut HashMap<u64, Rc<RefCell<dyn Ast>>>, cloned_stdlib: &mut ScfiaStdlib) -> Rc<RefCell<dyn Ast>> {
+        todo!()
     }
 }
 
