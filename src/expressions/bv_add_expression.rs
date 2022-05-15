@@ -5,9 +5,11 @@ use crate::traits::expression::Expression;
 use crate::ScfiaStdlib;
 use crate::values::ActiveValue;
 use crate::values::RetiredValue;
+use crate::values::bit_vector_concrete::BitVectorConcrete;
 use std::cell::Ref;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::ops::Deref;
 use std::rc::Rc;
 use std::rc::Weak;
 use z3_sys::Z3_ast;
@@ -41,6 +43,30 @@ impl BVAddExpression {
         s1: Rc<RefCell<ActiveValue>>,
         s2: Rc<RefCell<ActiveValue>>,
         stdlib: &mut ScfiaStdlib,
+    ) -> ActiveValue {
+        match s1.try_borrow().unwrap().deref() {
+            ActiveValue::BitvectorConcrete(e1) => {
+                match s2.try_borrow().unwrap().deref() {
+                    ActiveValue::BitvectorConcrete(e2) => {
+                        let one: u64 = 1;
+                        let mask = one.rotate_left(e2.width).overflowing_sub(1).0;
+                        let sum = e1.value.overflowing_add(e2.value).0; 
+                        let value = mask & sum;
+                        return ActiveValue::BitvectorConcrete(BitVectorConcrete::new(value, e2.width, stdlib));
+                    },
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+        ActiveValue::BitvectorAddExpression(Self::new_with_id(stdlib.get_symbol_id(), s1,  s2, stdlib))
+    }
+
+    pub fn new_with_id(
+        id: u64,
+        s1: Rc<RefCell<ActiveValue>>,
+        s2: Rc<RefCell<ActiveValue>>,
+        stdlib: &mut ScfiaStdlib,
     ) -> BVAddExpression {
         unsafe {
             let z3_context = stdlib.z3_context;
@@ -51,7 +77,7 @@ impl BVAddExpression {
             );
             Z3_inc_ref(z3_context, ast);
             BVAddExpression {
-                id: stdlib.get_symbol_id(),
+                id: id,
                 s1: s1,
                 s2: s2,
                 inherited_asts: vec![],

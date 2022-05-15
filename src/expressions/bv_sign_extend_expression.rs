@@ -5,9 +5,11 @@ use crate::traits::expression::Expression;
 use crate::ScfiaStdlib;
 use crate::values::ActiveValue;
 use crate::values::RetiredValue;
+use crate::values::bit_vector_concrete::BitVectorConcrete;
 use std::cell::Ref;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::ops::Deref;
 use std::rc::Rc;
 use std::rc::Weak;
 use z3_sys::Z3_ast;
@@ -45,6 +47,26 @@ impl BVSignExtendExpression {
         input_width: u32,
         output_width: u32,
         stdlib: &mut ScfiaStdlib,
+    ) -> ActiveValue {
+        match s1.try_borrow().unwrap().deref() {
+            ActiveValue::BitvectorConcrete(e) => {
+                // https://graphics.stanford.edu/~seander/bithacks.html#VariableSignExtend
+                let m: u64 = 1 << (e.width - 1);
+                let x = e.value & ((1 << e.width) - 1);
+                let value = (x ^ m).overflowing_sub(m).0;
+                return ActiveValue::BitvectorConcrete(BitVectorConcrete::new(value, output_width, stdlib));
+            }
+            _ => {}
+        }
+        ActiveValue::BitvectorSignExtendExpression(Self::new_with_id(stdlib.get_symbol_id(), s1, input_width, output_width, stdlib))
+    }
+
+    pub fn new_with_id(
+        id: u64,
+        s1: Rc<RefCell<ActiveValue>>,
+        input_width: u32,
+        output_width: u32,
+        stdlib: &mut ScfiaStdlib,
     ) -> BVSignExtendExpression {
         unsafe {
             let z3_context = stdlib.z3_context;
@@ -55,7 +77,7 @@ impl BVSignExtendExpression {
             );
             Z3_inc_ref(z3_context, ast);
             BVSignExtendExpression {
-                id: stdlib.get_symbol_id(),
+                id: id,
                 s1: s1,
                 input_width,
                 output_width,

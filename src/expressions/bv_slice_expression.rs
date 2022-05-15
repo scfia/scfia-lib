@@ -5,9 +5,11 @@ use crate::traits::expression::Expression;
 use crate::ScfiaStdlib;
 use crate::values::ActiveValue;
 use crate::values::RetiredValue;
+use crate::values::bit_vector_concrete::BitVectorConcrete;
 use std::cell::Ref;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::ops::Deref;
 use std::rc::Rc;
 use std::rc::Weak;
 use z3_sys::Z3_ast;
@@ -45,8 +47,18 @@ impl BVSliceExpression {
         high: u32,
         low: u32,
         stdlib: &mut ScfiaStdlib,
-    ) -> BVSliceExpression {
-        Self::new_with_id(stdlib.get_symbol_id(), s1, high, low, stdlib)
+    ) -> ActiveValue {
+        match s1.try_borrow().unwrap().deref() {
+            ActiveValue::BitvectorConcrete(e) => {
+                let shifted = e.value >> low;
+                let width = high - low + 1;
+                let mask = (1 << width) - 1;
+                let value = shifted & mask;
+                return ActiveValue::BitvectorConcrete(BitVectorConcrete::new(value, width, stdlib));
+            }
+            _ => {}
+        }
+        ActiveValue::BitvectorSliceExpression(Self::new_with_id(stdlib.get_symbol_id(), s1, high, low, stdlib))
     }
 
     pub fn new_with_id(

@@ -121,7 +121,6 @@ impl From<ActiveValue> for Rc<RefCell<ActiveValue>> {
     }
 }
 
-
 impl From<BitVectorConcrete> for Rc<RefCell<ActiveValue>> {
     fn from(s: BitVectorConcrete) -> Self {
         Rc::new(RefCell::new(ActiveValue::BitvectorConcrete(s)))
