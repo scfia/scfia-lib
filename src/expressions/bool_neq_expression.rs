@@ -1,9 +1,11 @@
 use crate::traits::ast::Ast;
 use crate::traits::bit_vector::BitVector;
 use crate::traits::bit_vector_expression::BitVectorExpression;
-use crate::traits::bool::Bool;
 use crate::traits::expression::Expression;
 use crate::ScfiaStdlib;
+use crate::values::ActiveValue;
+use crate::values::RetiredValue;
+use crate::values::Value;
 use std::cell::Ref;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -20,18 +22,27 @@ use z3_sys::Z3_mk_not;
 #[derive(Debug)]
 pub struct BoolNEqExpression {
     pub id: u64,
-    pub s1: Rc<RefCell<dyn Ast>>,
-    pub s2: Rc<RefCell<dyn Ast>>,
-    inherited_asts: Vec<Rc<RefCell<dyn Ast>>>,
-    discovered_asts: HashMap<u64, Weak<RefCell<dyn Ast>>>,
-    z3_context: Z3_context,
-    z3_ast: Z3_ast,
+    pub s1: Rc<RefCell<ActiveValue>>,
+    pub s2: Rc<RefCell<ActiveValue>>,
+    pub inherited_asts: Vec<Rc<RefCell<RetiredValue>>>,
+    pub discovered_asts: HashMap<u64, Weak<RefCell<ActiveValue>>>,
+    pub z3_context: Z3_context,
+    pub z3_ast: Z3_ast,
+}
+
+#[derive(Debug)]
+pub struct RetiredBoolNEqExpression {
+    id: u64,
+    s1: u64,
+    s2: u64,
+    pub z3_context: Z3_context,
+    pub z3_ast: Z3_ast,
 }
 
 impl BoolNEqExpression {
     pub fn new(
-        s1: Rc<RefCell<dyn Ast>>,
-        s2: Rc<RefCell<dyn Ast>>,
+        s1: Rc<RefCell<ActiveValue>>,
+        s2: Rc<RefCell<ActiveValue>>,
         stdlib: &mut ScfiaStdlib,
     ) -> BoolNEqExpression {
         unsafe {
@@ -56,94 +67,46 @@ impl BoolNEqExpression {
     }
 }
 
-impl Ast for BoolNEqExpression {
-    fn get_id(&self) -> u64 {
-        self.id
-    }
-
-    fn get_z3_ast(&self) -> Z3_ast {
-        self.z3_ast
-    }
-
-    fn get_parents(&self, list: &mut Vec<Rc<RefCell<dyn Ast>>>) {
-        list.push(self.s1.clone());
-        list.push(self.s2.clone());
-    }
-
-    fn inherit(&mut self, ast: Rc<RefCell<dyn Ast>>) {
-        self.inherited_asts.push(ast)
-    }
-
-    fn get_cloned(&self, clone_map: &mut HashMap<u64, Rc<RefCell<dyn Ast>>>, cloned_stdlib: &mut ScfiaStdlib) -> Rc<RefCell<dyn Ast>> {
-        todo!()
-    }
-}
-
-impl Bool for BoolNEqExpression {}
-
-impl Expression for BoolNEqExpression {}
-
 impl Drop for BoolNEqExpression {
     fn drop(&mut self) {
         // Retire expression, maintain z3 ast refcount
-        let retired_expression = Rc::new(RefCell::new(RetiredBoolNEqExpression {
+        let retired_expression = Rc::new(RefCell::new(RetiredValue::RetiredBoolNEqExpression(RetiredBoolNEqExpression {
             id: self.id,
-            _s1: Rc::downgrade(&self.s1),
-            _s2: Rc::downgrade(&self.s2),
+            s1: self.s1.try_borrow().unwrap().get_id(),
+            s2: self.s2.try_borrow().unwrap().get_id(),
             z3_context: self.z3_context,
             z3_ast: self.z3_ast,
-        }));
+        })));
 
-        // Heirs are paraents and discovered symbols
-        let mut heirs: Vec<Rc<RefCell<dyn Ast>>> = vec![];
-        self.get_parents(&mut heirs);
+        // Heirs are parents and discovered symbols
+        let mut heirs: Vec<Rc<RefCell<ActiveValue>>> = vec![self.s1.clone(), self.s2.clone()];
         for discovered_symbol in self.discovered_asts.values() {
-            heirs.push(discovered_symbol.upgrade().unwrap())
+            let discovered_symbol = discovered_symbol.upgrade().unwrap();
+            let mut discovered_symbol_ref = discovered_symbol.try_borrow_mut().unwrap();
+            discovered_symbol_ref.forget(self.id);
+            heirs.push(discovered_symbol.clone())
         }
 
         // For each heir...
-        for parent in &heirs {
-            let mut parent_ref = parent.try_borrow_mut().unwrap();
+        for heir in &heirs {
+            let mut heir_ref = heir.try_borrow_mut().unwrap();
 
             // Pass on inherited symbols
             for inherited in &self.inherited_asts {
-                parent_ref.inherit(inherited.clone())
+                heir_ref.inherit(inherited.clone())
             }
 
             // Inherit
-            parent_ref.inherit(retired_expression.clone());
+            heir_ref.inherit(retired_expression.clone());
+
+            // Acquaint all heirs
+            for other_heir in &heirs {
+                if let Ok(mut other_heir_ref) = other_heir.try_borrow_mut() {
+                    heir_ref.discover(other_heir_ref.get_id(), Rc::downgrade(other_heir));
+                    other_heir_ref.discover(heir_ref.get_id(), Rc::downgrade(heir));
+                }                
+            }
         }
-    }
-}
-
-#[derive(Debug)]
-pub struct RetiredBoolNEqExpression {
-    id: u64,
-    _s1: Weak<RefCell<dyn Ast>>,
-    _s2: Weak<RefCell<dyn Ast>>,
-    z3_context: Z3_context,
-    z3_ast: Z3_ast,
-}
-
-impl Ast for RetiredBoolNEqExpression {
-    fn get_id(&self) -> u64 {
-        self.id
-    }
-
-    fn get_z3_ast(&self) -> Z3_ast {
-        self.z3_ast
-    }
-
-    fn get_parents(&self, list: &mut Vec<Rc<RefCell<dyn Ast>>>) {
-        todo!()
-    }
-
-    fn inherit(&mut self, ast: Rc<RefCell<dyn Ast>>) {
-        todo!()
-    }
-
-    fn get_cloned(&self, clone_map: &mut HashMap<u64, Rc<RefCell<dyn Ast>>>, cloned_stdlib: &mut ScfiaStdlib) -> Rc<RefCell<dyn Ast>> {
-        todo!()
     }
 }
 
