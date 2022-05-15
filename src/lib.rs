@@ -120,46 +120,18 @@ impl ScfiaStdlib {
 
     pub fn do_eq(&mut self, left: Rc<RefCell<dyn Ast>>, right: Rc<RefCell<dyn Ast>>, fork_sink: Option<Rc<RefCell<ForkSink>>>) -> bool {
         unsafe {
-            /*
             let mut can_be_true = false;
             let mut can_be_false = false;
 
             let condition_symbol = BoolEqExpression::new(left.clone(), right.clone(), self);
-            // let neg_condition_symbol = BoolNEqExpression::new(left, right, self);
-
             let condition_ast = condition_symbol.get_z3_ast();
+            let neg_condition_symbol = BoolNEqExpression::new(left, right, self);
+            let neg_condition_ast = neg_condition_symbol.get_z3_ast();
+
             if Z3_solver_check_assumptions(self.z3_context, self.z3_solver, 1, &condition_ast) != Z3_L_FALSE {
                 can_be_true = true
             }
-             */
-            let ast = Z3_mk_eq(
-                self.z3_context,
-                left.try_borrow().unwrap().get_z3_ast(),
-                right.try_borrow().unwrap().get_z3_ast(),
-            );
-            Z3_inc_ref(self.z3_context, ast);
-            let foo = Z3_solver_check_assumptions(self.z3_context, self.z3_solver, 1, &ast);
-            let core = Z3_solver_get_unsat_core(self.z3_context, self.z3_solver);
-            let ass = Z3_solver_get_assertions(self.z3_context, self.z3_solver);
-            let vectorSize = Z3_ast_vector_size(self.z3_context, ass);
-            println!("{}", vectorSize);
-            Z3_ast_vector_inc_ref(self.z3_context, core);
-            Z3_ast_vector_dec_ref(self.z3_context, core);
-            // Z3_ast_vector_dec_ref(self.z3_context, core);
-            Z3_dec_ref(self.z3_context, ast);
-            // Z3_finalize_memory();
-            Z3_solver_reset(self.z3_context, self.z3_solver);
 
-            /*
-            let model = Z3_solver_get_model(self.z3_context, self.z3_solver);
-            Z3_model_inc_ref(self.z3_context, model);
-            Z3_model_dec_ref(self.z3_context, model);
-            Z3_dec_ref(self.z3_context, ast);
-             */
-            return true;
-
-            /*
-            let neg_condition_ast = neg_condition_symbol.get_z3_ast();
             if Z3_solver_check_assumptions(self.z3_context, self.z3_solver, 1, &neg_condition_ast) != Z3_L_FALSE {
                 can_be_false = true
             }
@@ -180,7 +152,6 @@ impl ScfiaStdlib {
             } else {
                 unreachable!()
             }
-             */
         }
     }
 }
