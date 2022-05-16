@@ -39,6 +39,15 @@ pub enum RetiredValue {
     RetiredBitvectorSliceExpression(RetiredBVSliceExpression),
 }
 
+impl ActiveValue {
+    pub fn as_concrete_bitvector(&self) -> &BitVectorConcrete {
+        match self {
+            ActiveValue::BitvectorConcrete(e) => e,
+            _ => panic!()
+        }
+    }
+}
+
 impl Ast for ActiveValue {
     fn get_id(&self) -> u64 {
         match self {

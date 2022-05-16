@@ -20,21 +20,6 @@ pub struct RV32iSystemState {
     pub stdlib: ScfiaStdlib,
 }
 
-impl RV32iSystemState {
-    pub fn step(&mut self) {
-        unsafe {
-            eprintln!("{:?}", self.system_state.pc);
-            step(&mut self.system_state, &mut self.stdlib, None, &mut self.memory);
-        }
-    }
-}
-
-impl fmt::Debug for RV32iSystemState {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "RV32iSystemState {{ system_state = {:?} }}", &self.system_state)
-    }
-}
-
 #[derive(Debug)]
 pub struct ForkSink {
     pub predecessor: SystemState,
@@ -81,6 +66,38 @@ pub struct SystemState {
 #[derive(Debug)]
 pub struct ComplexSpecialStruct {
     pub some_flag: Rc<RefCell<ActiveValue>>,
+}
+
+impl RV32iSystemState {
+    pub fn step(&mut self) {
+        unsafe {
+            eprintln!("{:?}", self.system_state.pc);
+            step(&mut self.system_state, &mut self.stdlib, None, &mut self.memory);
+        }
+    }
+
+    pub fn step_forking(&mut self) -> Vec<RV32iSystemState> {
+        unsafe {
+            eprintln!("{:?}", self.system_state.pc);
+            let mut fork_sink = ForkSink::new(unimplemented!());
+            unimplemented!()
+        }
+    }
+}
+
+impl fmt::Debug for RV32iSystemState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "RV32iSystemState {{ system_state = {:?} }}", &self.system_state)
+    }
+}
+
+impl ForkSink {
+    pub fn new(predecessor: SystemState) -> Self {
+        ForkSink {
+            predecessor,
+            forks: vec![]
+        }
+    }
 }
 
 pub unsafe fn reset(state: *mut SystemState, _stdlib: *mut ScfiaStdlib, _fork_sink: Option<Rc<RefCell<ForkSink>>>, _memory: &mut Memory32) {

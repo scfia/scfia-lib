@@ -100,8 +100,9 @@ fn test_system_state() {
         stdlib,
     };
 
-    loop {
+    while rv32i_system_state.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x770 {
         rv32i_system_state.step();
     }
     
+    let successors = rv32i_system_state.step_forking();
 }
