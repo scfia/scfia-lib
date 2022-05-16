@@ -3,7 +3,8 @@ name = "scfia-lib"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 z3-sys = { path = "../z3.rs/z3-sys" }
+
+[dev-dependencies]
+xmas-elf = "0.7"

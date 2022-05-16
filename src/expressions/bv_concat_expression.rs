@@ -5,9 +5,11 @@ use crate::traits::expression::Expression;
 use crate::ScfiaStdlib;
 use crate::values::ActiveValue;
 use crate::values::RetiredValue;
+use crate::values::bit_vector_concrete::BitVectorConcrete;
 use std::cell::Ref;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::ops::Deref;
 use std::rc::Rc;
 use std::rc::Weak;
 use z3_sys::Z3_ast;
@@ -39,6 +41,28 @@ pub struct RetiredBVConcatExpression {
 
 impl BVConcatExpression {
     pub fn new(
+        s1: Rc<RefCell<ActiveValue>>,
+        s2: Rc<RefCell<ActiveValue>>,
+        stdlib: &mut ScfiaStdlib,
+    ) -> ActiveValue {
+        match s1.try_borrow().unwrap().deref() {
+            ActiveValue::BitvectorConcrete(e1) => {
+                match s2.try_borrow().unwrap().deref() {
+                    ActiveValue::BitvectorConcrete(e2) => {
+                        let e1_shifted = e1.value << e2.width;
+                        let value = e1_shifted | e2.value;
+                        return ActiveValue::BitvectorConcrete(BitVectorConcrete::new(value, e2.width + e1.width, stdlib)); 
+                    },
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+        ActiveValue::BitvectorConcatExpression(Self::new_with_id(stdlib.get_symbol_id(), s1,  s2, stdlib))
+    }
+
+    pub fn new_with_id(
+        id: u64,
         s1: Rc<RefCell<ActiveValue>>,
         s2: Rc<RefCell<ActiveValue>>,
         stdlib: &mut ScfiaStdlib,
@@ -106,8 +130,6 @@ impl Drop for BVConcatExpression {
         }
     }
 }
-
-
 
 impl Drop for RetiredBVConcatExpression {
     fn drop(&mut self) {

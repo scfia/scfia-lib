@@ -1,4 +1,5 @@
 use crate::{traits::bit_vector::BitVector, ScfiaStdlib};
+use std::fmt;
 use std::rc::Rc;
 use std::cell::RefCell;
 
@@ -11,6 +12,28 @@ use crate::expressions::bv_sign_extend_expression::BVSignExtendExpression;
 use crate::expressions::bv_slice_expression::BVSliceExpression;
 use crate::memory::memory32::Memory32;
 use crate::values::bit_vector_concrete::BitVectorConcrete;
+
+
+pub struct RV32iSystemState {
+    pub system_state: SystemState,
+    pub memory: Memory32,
+    pub stdlib: ScfiaStdlib,
+}
+
+impl RV32iSystemState {
+    pub fn step(&mut self) {
+        unsafe {
+            eprintln!("{:?}", self.system_state.pc);
+            step(&mut self.system_state, &mut self.stdlib, None, &mut self.memory);
+        }
+    }
+}
+
+impl fmt::Debug for RV32iSystemState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "RV32iSystemState {{ system_state = {:?} }}", &self.system_state)
+    }
+}
 
 #[derive(Debug)]
 pub struct ForkSink {

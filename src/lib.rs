@@ -161,13 +161,3 @@ impl Drop for ScfiaStdlib {
         unsafe { Z3_del_context(self.z3_context) }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::ScfiaStdlib;
-
-    #[test]
-    fn mk_context() {
-        ScfiaStdlib::new();
-    }
-}

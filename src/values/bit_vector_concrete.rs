@@ -6,6 +6,7 @@ use z3_sys::Z3_mk_unsigned_int64;
 use z3_sys::Z3_ast;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::fmt;
 use std::rc::Rc;
 use std::rc::Weak;
 use crate::ScfiaStdlib;
@@ -16,7 +17,6 @@ use super::ActiveValue;
 use super::RetiredValue;
 
 
-#[derive(Debug)]
 pub struct BitVectorConcrete {
     pub id: u64,
     pub value: u64,
@@ -57,6 +57,12 @@ impl BitVectorConcrete {
             };
             bvc
         }
+    }
+}
+
+impl fmt::Debug for BitVectorConcrete {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&format!("BitVectorConcrete {{ value=0x{:x}, width={} }}", self.value, self.width))
     }
 }
 
