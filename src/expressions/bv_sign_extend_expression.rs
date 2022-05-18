@@ -33,7 +33,7 @@ pub struct BVSignExtendExpression {
 
 #[derive(Debug)]
 pub struct RetiredBVSignExtendExpression {
-    id: u64,
+    pub id: u64,
     s1: u64,
     input_width: u32,
     output_width: u32,

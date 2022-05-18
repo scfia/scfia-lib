@@ -12,5 +12,4 @@ pub trait Ast: Any + Debug + 'static {
     fn inherit(&mut self, ast: Rc<RefCell<RetiredValue>>);
     fn discover(&mut self, ast_id: u64, ast: Weak<RefCell<ActiveValue>>);
     fn forget(&mut self, id: u64);
-    fn get_cloned(&self, clone_map: &mut HashMap<u64, Rc<RefCell<Value>>>, cloned_stdlib: &mut ScfiaStdlib) -> Rc<RefCell<dyn Ast>>;
 }

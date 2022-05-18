@@ -19,6 +19,22 @@ impl StableMemoryRegion32 {
             length
         }
     }
+
+    pub fn clone_to_stdlib(
+        &self,
+        cloned_active_values: &mut HashMap<u64, Rc<RefCell<ActiveValue>>>,
+        cloned_retired_values: &mut HashMap<u64, Rc<RefCell<crate::values::RetiredValue>>>,
+        cloned_stdlib: &mut crate::ScfiaStdlib
+    ) -> Self {
+        let mut cloned_region = StableMemoryRegion32::new(self.start_address, self.length);
+
+        for (key, value) in self.memory.iter() {
+            let cloned_value = value.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+            cloned_region.memory.insert(*key, cloned_value);
+        }
+
+        cloned_region
+    }
 }
 
 impl MemoryRegion32 for StableMemoryRegion32 {
@@ -53,7 +69,7 @@ impl MemoryRegion32 for StableMemoryRegion32 {
                     self.memory.insert(address + byte, v.into());
                 }
             },
-            _ => todo!(),
+            _ => unimplemented!(),
         }
     }
 }

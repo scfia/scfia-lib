@@ -8,6 +8,7 @@ pub mod memory;
 pub mod models;
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::rc::Weak;
@@ -19,6 +20,7 @@ use models::riscv::rv32i::ForkSink;
 use traits::ast::Ast;
 use traits::bit_vector_expression::BitVectorExpression;
 use values::ActiveValue;
+use values::RetiredValue;
 use values::bit_vector_symbol::BitVectorSymbol;
 use z3_sys::Z3_L_FALSE;
 use z3_sys::Z3_ast_vector_dec_ref;
@@ -53,20 +55,26 @@ use z3_sys::Z3_solver_reset;
 
 #[derive(Debug)]
 pub struct ScfiaStdlib {
+    next_symbol_id: u64,
+    pub retired_symbols_map: HashMap<u64, Rc<RefCell<RetiredValue>>>,
     pub z3_context: Z3_context,
     z3_solver: Z3_solver,
-    next_symbol_id: u64,
 }
 
 impl ScfiaStdlib {
     pub fn new() -> ScfiaStdlib {
+        Self::new_with_next_id(0)
+    }
+
+    pub fn new_with_next_id(next_symbol_id: u64) -> ScfiaStdlib {
         unsafe {
             let z3_config = Z3_mk_config();
             let z3_context = Z3_mk_context_rc(z3_config);
             let stdlib = ScfiaStdlib {
                 z3_context,
                 z3_solver: Z3_mk_solver(z3_context),
-                next_symbol_id: 0,
+                next_symbol_id,
+                retired_symbols_map: HashMap::new(),
             };
             Z3_solver_inc_ref(stdlib.z3_context, stdlib.z3_solver);
             Z3_del_config(z3_config);
@@ -86,7 +94,7 @@ impl ScfiaStdlib {
             let mut can_be_true = false;
             let mut can_be_false = false;
 
-            let condition_symbol = ActiveValue::BoolNEqExpression(BoolNEqExpression::new(left.clone(), right.clone(), self));
+            let mut condition_symbol = ActiveValue::BoolNEqExpression(BoolNEqExpression::new(left.clone(), right.clone(), self));
             let neg_condition_symbol = ActiveValue::BoolEqExpression(BoolEqExpression::new(left.clone(), right.clone(), self));
 
             let condition_ast = condition_symbol.get_z3_ast();
@@ -101,12 +109,11 @@ impl ScfiaStdlib {
 
             if can_be_true && can_be_false {
                 // Create fork with negative condition
-                fork_sink.unwrap().try_borrow_mut().unwrap().forks.push(neg_condition_symbol.into());
+                println!("fork condition {:?}", &neg_condition_symbol);
+                fork_sink.unwrap().try_borrow_mut().unwrap().fork_conditions.push(neg_condition_symbol.into());
 
                 // continue with positive condition
-                // TODO: Add this assert to our data structures
-                Z3_solver_assert(self.z3_context, self.z3_solver, condition_ast);
-
+                condition_symbol.assert(self);
                 true
             } else if can_be_true {
                 true
@@ -138,10 +145,11 @@ impl ScfiaStdlib {
 
             if can_be_true && can_be_false {
                 // Create fork with negative condition
-                fork_sink.unwrap().try_borrow_mut().unwrap().forks.push(neg_condition_symbol.into());
+                fork_sink.unwrap().try_borrow_mut().unwrap().fork_conditions.push(neg_condition_symbol.into());
 
                 // continue with positive condition
                 // TODO: Add this assert to our data structures
+                panic!();
                 Z3_solver_assert(self.z3_context, self.z3_solver, condition_ast);
 
                 true

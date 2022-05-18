@@ -38,6 +38,10 @@ pub struct RetiredBitvectorConcrete {
 
 impl BitVectorConcrete {
     pub fn new(value: u64, width: u32, stdlib: &mut ScfiaStdlib) -> BitVectorConcrete {
+        Self::new_with_id(stdlib.get_symbol_id(), value, width, stdlib)
+    }
+
+    pub fn new_with_id(id: u64, value: u64, width: u32, stdlib: &mut ScfiaStdlib) -> BitVectorConcrete {
         unsafe {
             let sort = Z3_mk_bv_sort(stdlib.z3_context, width);
             // Z3_inc_ref(stdlib.z3_context, sort);
@@ -47,7 +51,7 @@ impl BitVectorConcrete {
 
             // let z3_ast = stdlib.z3_context
             let bvc = BitVectorConcrete {
-                id: stdlib.get_symbol_id(),
+                id,
                 value: value,
                 width: width,
                 inherited_asts: vec![],
@@ -58,11 +62,22 @@ impl BitVectorConcrete {
             bvc
         }
     }
+
+    pub fn clone_to_stdlib(
+        &self,
+        cloned_active_values: &mut HashMap<u64, Rc<RefCell<ActiveValue>>>,
+        cloned_retired_values: &mut HashMap<u64, Rc<RefCell<RetiredValue>>>,
+        cloned_stdlib: &mut ScfiaStdlib,
+    ) -> Rc<RefCell<ActiveValue>> {
+        let clone: Rc<RefCell<ActiveValue>> = Self::new_with_id(self.id, self.value, self.width, cloned_stdlib).into();
+        cloned_active_values.insert(self.id, clone.clone());
+        clone
+    }
 }
 
 impl fmt::Debug for BitVectorConcrete {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&format!("BitVectorConcrete {{ value=0x{:x}, width={} }}", self.value, self.width))
+        f.write_str(&format!("BitVectorConcrete {{ value=0x{:x}, width={}, id={} }}", self.value, self.width, self.id))
     }
 }
 

@@ -18,6 +18,7 @@ use z3_sys::Z3_inc_ref;
 use z3_sys::Z3_mk_bvadd;
 use z3_sys::Z3_mk_eq;
 use z3_sys::Z3_mk_not;
+use z3_sys::Z3_solver_assert;
 
 #[derive(Debug)]
 pub struct BoolNEqExpression {
@@ -26,15 +27,19 @@ pub struct BoolNEqExpression {
     pub s2: Rc<RefCell<ActiveValue>>,
     pub inherited_asts: Vec<Rc<RefCell<RetiredValue>>>,
     pub discovered_asts: HashMap<u64, Weak<RefCell<ActiveValue>>>,
+    pub is_assert: bool,
     pub z3_context: Z3_context,
     pub z3_ast: Z3_ast,
 }
 
 #[derive(Debug)]
 pub struct RetiredBoolNEqExpression {
-    id: u64,
-    s1: u64,
-    s2: u64,
+    pub id: u64,
+    s1_id: u64,
+    s1: Weak<RefCell<ActiveValue>>,
+    s2_id: u64,
+    s2: Weak<RefCell<ActiveValue>>,
+    pub is_assert: bool,
     pub z3_context: Z3_context,
     pub z3_ast: Z3_ast,
 }
@@ -60,9 +65,18 @@ impl BoolNEqExpression {
                 s2: s2,
                 inherited_asts: vec![],
                 discovered_asts: HashMap::new(),
+                is_assert: false,
                 z3_context: z3_context,
                 z3_ast: ast,
             }
+        }
+    }
+
+    pub fn assert(&mut self, stdlib: &mut ScfiaStdlib) {
+        println!("asserting BoolNEqExpression {:?}", self);
+        self.is_assert = true;
+        unsafe {
+            Z3_solver_assert(stdlib.z3_context, stdlib.z3_solver, self.z3_ast);
         }
     }
 }
@@ -72,8 +86,11 @@ impl Drop for BoolNEqExpression {
         // Retire expression, maintain z3 ast refcount
         let retired_expression = Rc::new(RefCell::new(RetiredValue::RetiredBoolNEqExpression(RetiredBoolNEqExpression {
             id: self.id,
-            s1: self.s1.try_borrow().unwrap().get_id(),
-            s2: self.s2.try_borrow().unwrap().get_id(),
+            s1_id: self.s1.try_borrow().unwrap().get_id(),
+            s1: Rc::downgrade(&self.s1),
+            s2_id: self.s2.try_borrow().unwrap().get_id(),
+            s2: Rc::downgrade(&self.s2),
+            is_assert: self.is_assert,
             z3_context: self.z3_context,
             z3_ast: self.z3_ast,
         })));
@@ -107,6 +124,55 @@ impl Drop for BoolNEqExpression {
                 }                
             }
         }
+    }
+}
+
+impl RetiredBoolNEqExpression {
+    pub fn clone_to_stdlib(
+        &self,
+        cloned_active_values: &mut HashMap<u64, Rc<RefCell<ActiveValue>>>,
+        cloned_retired_values: &mut HashMap<u64, Rc<RefCell<RetiredValue>>>,
+        cloned_stdlib: &mut ScfiaStdlib
+    ) -> Rc<RefCell<RetiredValue>> {
+        let s1_ast = if let Some(s1) = cloned_active_values.get(&self.s1_id) {
+            s1.try_borrow().unwrap().get_z3_ast()
+        } else if let Some(s1) = self.s1.upgrade() {
+            s1.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib).try_borrow().unwrap().get_z3_ast()
+        } else {
+            cloned_retired_values.get(&self.s1_id).unwrap().try_borrow().unwrap().get_z3_ast()
+        };
+
+        let s2_ast = if let Some(s2) = cloned_active_values.get(&self.s2_id) {
+            s2.try_borrow().unwrap().get_z3_ast()
+        } else if let Some(s2) = self.s2.upgrade() {
+            s2.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib).try_borrow().unwrap().get_z3_ast()
+        } else {
+            cloned_retired_values.get(&self.s2_id).unwrap().try_borrow().unwrap().get_z3_ast()
+        };
+
+        let neg_expression: Rc<RefCell<RetiredValue>> = unsafe {
+            let z3_ast = Z3_mk_not(cloned_stdlib.z3_context,
+                Z3_mk_eq(
+                    cloned_stdlib.z3_context,
+                    s1_ast,
+                    s2_ast,
+                )
+            );
+            Z3_inc_ref(cloned_stdlib.z3_context, z3_ast);
+            RetiredBoolNEqExpression {
+                id: self.id,
+                is_assert: self.is_assert,
+                s1_id: self.s1_id,
+                s1: self.s1.clone(),
+                s2_id: self.s2_id,
+                s2: self.s2.clone(),
+                z3_context: cloned_stdlib.z3_context,
+                z3_ast
+            }
+        }.into();
+
+        cloned_retired_values.insert(self.id, neg_expression.clone());
+        neg_expression
     }
 }
 

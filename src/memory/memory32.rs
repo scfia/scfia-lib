@@ -1,6 +1,6 @@
-use std::{rc::Rc, cell::RefCell, ops::Deref};
+use std::{rc::Rc, cell::RefCell, ops::Deref, collections::HashMap};
 
-use crate::{traits::{bit_vector::BitVector, ast::Ast}, ScfiaStdlib, values::{bit_vector_concrete::BitVectorConcrete, ActiveValue}};
+use crate::{traits::{bit_vector::BitVector, ast::Ast}, ScfiaStdlib, values::{bit_vector_concrete::BitVectorConcrete, ActiveValue, RetiredValue}};
 use crate::memory::MemoryRegion32;
 
 use super::{stable_memory_region32::StableMemoryRegion32, volatile_memory_region::VolatileMemoryRegion32};
@@ -67,5 +67,25 @@ impl Memory32 {
                 return region.write(address, value, stdlib)
             }
         }
+    }
+
+    pub fn clone_to_stdlib(
+        &self,
+        cloned_active_values: &mut HashMap<u64, Rc<RefCell<ActiveValue>>>,
+        cloned_retired_values: &mut HashMap<u64, Rc<RefCell<RetiredValue>>>,
+        cloned_stdlib: &mut ScfiaStdlib
+    ) -> Self {
+        let mut cloned_memory = Self::new();
+
+        for region in &self.stable_memory_regions {
+            let cloned_region = region.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+            cloned_memory.stable_memory_regions.push(cloned_region);
+        }
+
+        for region in &self.volatile_memory_regions {
+            cloned_memory.volatile_memory_regions.push(VolatileMemoryRegion32 { start_address: region.start_address, length: region.length })
+        }
+
+        cloned_memory
     }
 }

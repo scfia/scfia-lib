@@ -33,7 +33,7 @@ pub struct BVSliceExpression {
 
 #[derive(Debug)]
 pub struct RetiredBVSliceExpression {
-    id: u64,
+    pub id: u64,
     s1: u64,
     high: u32,
     low: u32,
@@ -106,7 +106,7 @@ impl Drop for BVSliceExpression {
         // Heirs are parents and discovered symbols
         let mut heirs: Vec<Rc<RefCell<ActiveValue>>> = vec![self.s1.clone()];
         for discovered_symbol in self.discovered_asts.values() {
-            eprintln!("upgrading discovered symbol {:?}", discovered_symbol);
+            println!("upgrading discovered symbol {:?}", discovered_symbol);
             let discovered_symbol = discovered_symbol.upgrade().unwrap();
             let mut discovered_symbol_ref = discovered_symbol.try_borrow_mut().unwrap();
             discovered_symbol_ref.forget(self.id);

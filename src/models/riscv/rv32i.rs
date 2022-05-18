@@ -1,7 +1,11 @@
+use z3_sys::Z3_solver_assert;
+
 use crate::{traits::bit_vector::BitVector, ScfiaStdlib};
 use std::fmt;
+use std::ops::Deref;
 use std::rc::Rc;
 use std::cell::RefCell;
+use std::collections::HashMap;
 
 use crate::Ast;
 use crate::values::ActiveValue;
@@ -22,8 +26,7 @@ pub struct RV32iSystemState {
 
 #[derive(Debug)]
 pub struct ForkSink {
-    pub predecessor: SystemState,
-    pub forks: Vec<ActiveValue>,
+    pub fork_conditions: Vec<Rc<RefCell<ActiveValue>>>,
 }
 
 #[derive(Debug)]
@@ -71,16 +74,93 @@ pub struct ComplexSpecialStruct {
 impl RV32iSystemState {
     pub fn step(&mut self) {
         unsafe {
-            eprintln!("{:?}", self.system_state.pc);
+            println!("stepping {:?}", self.system_state.pc);
             step(&mut self.system_state, &mut self.stdlib, None, &mut self.memory);
         }
     }
 
-    pub fn step_forking(&mut self) -> Vec<RV32iSystemState> {
+    pub fn step_forking(self) -> Vec<RV32iSystemState> {
         unsafe {
-            eprintln!("{:?}", self.system_state.pc);
-            let mut fork_sink = ForkSink::new(unimplemented!());
-            unimplemented!()
+            println!("stepping {:?}", self.system_state.pc);
+            let mut successors = vec![];
+            let mut candidates = vec![self.clone_to_stdlib(None)];
+            
+            while let Some(mut current) = candidates.pop() {
+                // Step current candidate
+                let fork_sink = Rc::new(RefCell::new(ForkSink::new()));
+                println!("stepping candidate");
+                step(&mut current.system_state, &mut current.stdlib, Some(fork_sink.clone()), &mut current.memory);
+
+                // Convert forks to candidates
+                let f = fork_sink.try_borrow().unwrap();
+                for condition in &f.fork_conditions {
+                    candidates.push(self.clone_to_stdlib(Some(condition.clone())));
+                }
+
+                successors.push(current)
+            }
+
+            successors
+        }
+    }
+
+    fn clone_to_stdlib(&self, fork_condition: Option<Rc<RefCell<ActiveValue>>>) -> RV32iSystemState {
+        println!("cloning state");
+        let next_symbol_id = if let Some(fork_condition) = &fork_condition {
+            fork_condition.try_borrow().unwrap().get_id()
+        } else {
+            self.stdlib.next_symbol_id
+        };
+
+        let mut cloned_stdlib = ScfiaStdlib::new_with_next_id(next_symbol_id);
+        let mut cloned_active_values = HashMap::new();
+        let mut cloned_retired_values = HashMap::new();
+        if let Some(fork_condition) = fork_condition {
+            println!("cloning fork condition");
+            let cloned_fork_condition = fork_condition.try_borrow().unwrap().clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib);
+            cloned_fork_condition.try_borrow_mut().unwrap().assert(&mut cloned_stdlib);
+        }
+
+        let cloned_memory = self.memory.clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib);
+
+        RV32iSystemState {
+            system_state: SystemState {
+                pc: self.system_state.pc.try_borrow().unwrap().clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib),
+                x0: self.system_state.x0.try_borrow().unwrap().clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib),
+                x1: self.system_state.x1.try_borrow().unwrap().clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib),
+                x2: self.system_state.x2.try_borrow().unwrap().clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib),
+                x3: self.system_state.x3.try_borrow().unwrap().clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib),
+                x4: self.system_state.x4.try_borrow().unwrap().clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib),
+                x5: self.system_state.x5.try_borrow().unwrap().clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib),
+                x6: self.system_state.x6.try_borrow().unwrap().clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib),
+                x7: self.system_state.x7.try_borrow().unwrap().clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib),
+                x8: self.system_state.x8.try_borrow().unwrap().clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib),
+                x9: self.system_state.x9.try_borrow().unwrap().clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib),
+                x10: self.system_state.x10.try_borrow().unwrap().clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib),
+                x11: self.system_state.x11.try_borrow().unwrap().clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib),
+                x12: self.system_state.x12.try_borrow().unwrap().clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib),
+                x13: self.system_state.x13.try_borrow().unwrap().clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib),
+                x14: self.system_state.x14.try_borrow().unwrap().clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib),
+                x15: self.system_state.x15.try_borrow().unwrap().clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib),
+                x16: self.system_state.x16.try_borrow().unwrap().clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib),
+                x17: self.system_state.x17.try_borrow().unwrap().clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib),
+                x18: self.system_state.x18.try_borrow().unwrap().clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib),
+                x19: self.system_state.x19.try_borrow().unwrap().clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib),
+                x20: self.system_state.x20.try_borrow().unwrap().clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib),
+                x21: self.system_state.x21.try_borrow().unwrap().clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib),
+                x22: self.system_state.x22.try_borrow().unwrap().clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib),
+                x23: self.system_state.x23.try_borrow().unwrap().clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib),
+                x24: self.system_state.x24.try_borrow().unwrap().clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib),
+                x25: self.system_state.x25.try_borrow().unwrap().clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib),
+                x26: self.system_state.x26.try_borrow().unwrap().clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib),
+                x27: self.system_state.x27.try_borrow().unwrap().clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib),
+                x28: self.system_state.x28.try_borrow().unwrap().clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib),
+                x29: self.system_state.x29.try_borrow().unwrap().clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib),
+                x30: self.system_state.x30.try_borrow().unwrap().clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib),
+                x31: self.system_state.x31.try_borrow().unwrap().clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut cloned_stdlib),
+            },
+            memory: cloned_memory,
+            stdlib: cloned_stdlib,
         }
     }
 }
@@ -92,10 +172,9 @@ impl fmt::Debug for RV32iSystemState {
 }
 
 impl ForkSink {
-    pub fn new(predecessor: SystemState) -> Self {
+    pub fn new() -> Self {
         ForkSink {
-            predecessor,
-            forks: vec![]
+            fork_conditions: vec![]
         }
     }
 }

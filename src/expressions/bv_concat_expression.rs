@@ -32,7 +32,7 @@ pub struct BVConcatExpression {
 
 #[derive(Debug)]
 pub struct RetiredBVConcatExpression {
-    id: u64,
+    pub id: u64,
     s1: u64,
     s2: u64,
     pub z3_context: Z3_context,

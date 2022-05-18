@@ -5,12 +5,11 @@
             "name": "(Windows) Launch",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceRoot}/target/debug/deps/scfia_lib-dc183bedcfa7cd1f.exe",
+            "program": "${workspaceRoot}/target/debug/deps/lib-da564eda91388454.exe",
             "args": [],
-            "stopAtEntry": false,
+            "stopAtEntry": true,
             "cwd": "${workspaceRoot}",
             "environment": [],
-            "externalConsole": true,
             "logging": { "trace": true, "traceResponse": true }
         }
     ]

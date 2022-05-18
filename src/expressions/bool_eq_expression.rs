@@ -17,6 +17,7 @@ use z3_sys::Z3_dec_ref;
 use z3_sys::Z3_inc_ref;
 use z3_sys::Z3_mk_bvadd;
 use z3_sys::Z3_mk_eq;
+use z3_sys::Z3_solver_assert;
 
 #[derive(Debug)]
 pub struct BoolEqExpression {
@@ -25,21 +26,32 @@ pub struct BoolEqExpression {
     pub s2: Rc<RefCell<ActiveValue>>,
     pub inherited_asts: Vec<Rc<RefCell<RetiredValue>>>,
     pub discovered_asts: HashMap<u64, Weak<RefCell<ActiveValue>>>,
+    pub is_assert: bool,
     pub z3_context: Z3_context,
     pub z3_ast: Z3_ast,
 }
 
 #[derive(Debug)]
 pub struct RetiredBoolEqExpression {
-    id: u64,
+    pub id: u64,
     s1: u64,
     s2: u64,
+    pub is_assert: bool,
     pub z3_context: Z3_context,
     pub z3_ast: Z3_ast,
 }
 
 impl BoolEqExpression {
     pub fn new(
+        s1: Rc<RefCell<ActiveValue>>,
+        s2: Rc<RefCell<ActiveValue>>,
+        stdlib: &mut ScfiaStdlib,
+    ) -> BoolEqExpression {
+        Self::new_with_id(stdlib.get_symbol_id(), s1, s2, stdlib)
+    }
+
+    pub fn new_with_id(
+        id: u64,
         s1: Rc<RefCell<ActiveValue>>,
         s2: Rc<RefCell<ActiveValue>>,
         stdlib: &mut ScfiaStdlib,
@@ -53,14 +65,54 @@ impl BoolEqExpression {
             );
             Z3_inc_ref(z3_context, ast);
             BoolEqExpression {
-                id: stdlib.get_symbol_id(),
+                id,
                 s1: s1,
                 s2: s2,
                 inherited_asts: vec![],
                 discovered_asts: HashMap::new(),
+                is_assert: false,
                 z3_context: z3_context,
                 z3_ast: ast,
             }
+        }
+    }
+
+    pub fn clone_to_stdlib(
+        &self,
+        cloned_active_values: &mut HashMap<u64, Rc<RefCell<ActiveValue>>>,
+        cloned_retired_values: &mut HashMap<u64, Rc<RefCell<RetiredValue>>>,
+        cloned_stdlib: &mut ScfiaStdlib
+    ) -> Rc<RefCell<ActiveValue>> {
+        if let Some(eq_expression) = cloned_active_values.get(&self.id) {
+            return eq_expression.clone()
+        }
+
+        let s1 = self.s1.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+        let s2 = self.s2.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+        let mut cloned_expression = Self::new_with_id(self.id, s1, s2, cloned_stdlib);
+
+        for inherited_ast in self.inherited_asts.iter().rev() {
+            cloned_expression.inherited_asts.push(inherited_ast.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib));
+        }
+
+        // TODO discovered asts
+
+        if self.is_assert {
+            unsafe {
+                Z3_solver_assert(cloned_stdlib.z3_context, cloned_stdlib.z3_solver, cloned_expression.z3_ast);
+            }
+        }
+        
+        let cloned_expression: Rc<RefCell<ActiveValue>> = cloned_expression.into();
+        cloned_active_values.insert(self.id, cloned_expression.clone());
+        cloned_expression
+    }
+
+    pub fn assert(&mut self, stdlib: &mut ScfiaStdlib) {
+        println!("asserting BoolEqExpression {:?}", self);
+        self.is_assert = true;
+        unsafe {
+            Z3_solver_assert(stdlib.z3_context, stdlib.z3_solver, self.z3_ast);
         }
     }
 }
@@ -72,6 +124,7 @@ impl Drop for BoolEqExpression {
             id: self.id,
             s1: self.s1.try_borrow().unwrap().get_id(),
             s2: self.s2.try_borrow().unwrap().get_id(),
+            is_assert: self.is_assert,
             z3_context: self.z3_context,
             z3_ast: self.z3_ast,
         })));

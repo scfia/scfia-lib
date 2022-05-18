@@ -21,6 +21,7 @@ use super::{ActiveValue, RetiredValue};
 #[derive(Debug)]
 pub struct BitVectorSymbol {
     pub id: u64,
+    pub width: u32,
     pub expression: Option<Rc<RefCell<ActiveValue>>>,
     pub inherited_asts: Vec<Rc<RefCell<RetiredValue>>>,
     pub discovered_asts: HashMap<u64, Weak<RefCell<ActiveValue>>>,
@@ -30,8 +31,9 @@ pub struct BitVectorSymbol {
 
 #[derive(Debug)]
 pub struct RetiredBitvectorSymbol {
-    id: u64,
-    expression: Option<u64>,
+    pub id: u64,
+    pub expression_id: Option<u64>,
+    pub expression: Option<Weak<RefCell<ActiveValue>>>,
     pub z3_context: Z3_context,
     pub z3_ast: Z3_ast,
 }
@@ -42,10 +44,18 @@ impl BitVectorSymbol {
         width: u32,
         stdlib: &mut ScfiaStdlib,
     ) -> Self {
+        Self::new_with_id(stdlib.get_symbol_id(), width, expression, stdlib)
+    }
+
+    pub fn new_with_id(
+        id: u64,
+        width: u32,
+        expression: Option<Rc<RefCell<ActiveValue>>>,
+        stdlib: &mut ScfiaStdlib,
+    ) -> Self {
         unsafe {
             let z3_ast;
             let z3_context = stdlib.z3_context;
-            let symbol_id = stdlib.get_symbol_id();
 
             z3_ast = Z3_mk_const(
                 z3_context,
@@ -62,7 +72,8 @@ impl BitVectorSymbol {
             }
 
             let bvs = BitVectorSymbol {
-                id: symbol_id,
+                id,
+                width,
                 expression,
                 inherited_asts: vec![],
                 discovered_asts: HashMap::new(),
@@ -73,6 +84,43 @@ impl BitVectorSymbol {
             bvs
         }
     }
+
+    pub fn clone_to_stdlib(
+        &self,
+        cloned_active_values: &mut HashMap<u64, Rc<RefCell<ActiveValue>>>,
+        cloned_retired_values: &mut HashMap<u64, Rc<RefCell<RetiredValue>>>,
+        cloned_stdlib: &mut ScfiaStdlib,
+    ) -> Rc<RefCell<ActiveValue>> {
+        if let Some(value) = cloned_active_values.get(&self.id) {
+            return value.clone();
+        }
+
+        let cloned_expression = if let Some(expression) = &self.expression {
+            Some(expression.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib))
+        } else {
+            None
+        };
+
+        let mut cloned_symbol = Self::new_with_id(
+            self.id,
+            self.width,
+            cloned_expression,
+            cloned_stdlib
+        );
+
+        let cloned_symbol: Rc<RefCell<ActiveValue>> = cloned_symbol.into();
+        cloned_active_values.insert(self.id, cloned_symbol.clone());
+
+        for inherited_ast in self.inherited_asts.iter().rev() {
+            let cloned_inherited_ast = inherited_ast.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+            cloned_symbol.try_borrow_mut().unwrap().inherit(cloned_inherited_ast);
+        }
+
+        // TODO clone discovered values
+
+        cloned_symbol
+    }
+
 }
 
 impl Drop for BitVectorSymbol {
@@ -80,7 +128,8 @@ impl Drop for BitVectorSymbol {
         // Retire expression, maintain z3 ast refcount
         let retired_expression = Rc::new(RefCell::new(RetiredValue::RetiredBitvectorSymbol(RetiredBitvectorSymbol {
             id: self.id,
-            expression: if let Some(expression) = &self.expression { Some(expression.try_borrow().unwrap().get_id()) } else { None },
+            expression_id: if let Some(expression) = &self.expression { Some(expression.try_borrow().unwrap().get_id()) } else { None },
+            expression: if let Some(expression) = &self.expression { Some(Rc::downgrade(expression)) } else { None },
             z3_context: self.z3_context,
             z3_ast: self.z3_ast,
         })));
