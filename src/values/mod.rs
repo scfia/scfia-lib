@@ -108,11 +108,6 @@ impl RetiredValue {
             x => println!("clone_to_stdlib RetiredValue {:?}", &x),
         }
 
-        let id = self.get_id();
-        if let Some(translated_value) = cloned_retired_values.get(&id) {
-            return translated_value.clone();
-        }
-
         match self {
             RetiredValue::RetiredBitvectorConcrete(_) => todo!(),
             RetiredValue::RetiredBitvectorSymbol(_) => todo!(),

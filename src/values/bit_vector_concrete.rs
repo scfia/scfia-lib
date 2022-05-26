@@ -123,3 +123,9 @@ impl Drop for BitVectorConcrete {
         }
     }
 }
+
+impl Drop for RetiredBitvectorConcrete {
+    fn drop(&mut self) {
+        unsafe { Z3_dec_ref(self.z3_context, self.z3_ast) }
+    }
+}
