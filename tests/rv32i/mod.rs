@@ -104,5 +104,23 @@ fn test_system_state() {
         rv32i_system_state.step();
     }
     
-    let successors = rv32i_system_state.step_forking();
+    let mut successors = rv32i_system_state.step_forking();
+    let mut panicking = successors.remove(0);
+    let mut continuing = successors.remove(0);
+    /*
+    println!("continuing with panic state");
+    loop {
+        panicking.step()
+    }
+    */
+
+    // continuing.step_forking();
+
+    /*
+    loop {
+        continuing.step()
+    }
+    */
+
+
 }
