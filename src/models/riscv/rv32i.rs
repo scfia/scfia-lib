@@ -175,7 +175,24 @@ pub unsafe fn step(state: *mut SystemState, _stdlib: *mut ScfiaStdlib, _fork_sin
     }
     else if _stdlib.as_mut().unwrap().do_eq(opcode.clone(), BitVectorConcrete::new(0b100011, 7, _stdlib.as_mut().unwrap()).into(), _fork_sink.clone()) {
         let funct3: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 14, 12, _stdlib.as_mut().unwrap()).into();
-        if _stdlib.as_mut().unwrap().do_eq(funct3.clone(), BitVectorConcrete::new(0b10, 3, _stdlib.as_mut().unwrap()).into(), _fork_sink.clone()) {
+        if _stdlib.as_mut().unwrap().do_eq(funct3.clone(), BitVectorConcrete::new(0b0, 3, _stdlib.as_mut().unwrap()).into(), _fork_sink.clone()) {
+            let rs1: Rc<RefCell<ActiveValue>> = extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink.clone(), _memory);
+            let rs2: Rc<RefCell<ActiveValue>> = extract_rs2_32(instruction_32.clone(), _stdlib, _fork_sink.clone(), _memory);
+            let offset_11_5: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 25, _stdlib.as_mut().unwrap()).into();
+            let offset_4_0: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 11, 7, _stdlib.as_mut().unwrap()).into();
+            let offset: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(offset_11_5.clone(), offset_4_0.clone(), _stdlib.as_mut().unwrap()).into();
+            let offset_32: Rc<RefCell<ActiveValue>> = BVSignExtendExpression::new(offset.clone(), 12, 32, _stdlib.as_mut().unwrap()).into();
+            let base_address: Rc<RefCell<ActiveValue>> = register_read_BV32(state, rs1.clone(), _stdlib, _fork_sink.clone(), _memory);
+            let address: Rc<RefCell<ActiveValue>> = BVAddExpression::new(base_address.clone(), offset_32.clone(), _stdlib.as_mut().unwrap()).into();
+            let value_32: Rc<RefCell<ActiveValue>> = register_read_BV32(state, rs2.clone(), _stdlib, _fork_sink.clone(), _memory);
+            let value: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(value_32.clone(), 7, 0, _stdlib.as_mut().unwrap()).into();
+            _memory.write(address.clone(), value.clone(), _stdlib.as_mut().unwrap());
+            progress_pc_4(state, _stdlib, _fork_sink.clone(), _memory);
+        }
+        else if _stdlib.as_mut().unwrap().do_eq(funct3.clone(), BitVectorConcrete::new(0b1, 3, _stdlib.as_mut().unwrap()).into(), _fork_sink.clone()) {
+            unimplemented!();
+        }
+        else if _stdlib.as_mut().unwrap().do_eq(funct3.clone(), BitVectorConcrete::new(0b10, 3, _stdlib.as_mut().unwrap()).into(), _fork_sink.clone()) {
             let rs1: Rc<RefCell<ActiveValue>> = extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink.clone(), _memory);
             let rs2: Rc<RefCell<ActiveValue>> = extract_rs2_32(instruction_32.clone(), _stdlib, _fork_sink.clone(), _memory);
             let offset_11_5: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 25, _stdlib.as_mut().unwrap()).into();

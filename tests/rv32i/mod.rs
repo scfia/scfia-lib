@@ -116,11 +116,11 @@ fn test_system_state() {
 
     // continuing.step_forking();
 
-    /*
+    
     loop {
         continuing.step()
     }
-    */
+    
 
 
 }

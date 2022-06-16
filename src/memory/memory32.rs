@@ -56,6 +56,7 @@ impl Memory32 {
     }
 
     fn write_concrete(&mut self, address: u32, value: Rc<RefCell<ActiveValue>>, stdlib: &mut ScfiaStdlib) {
+        // TODO ensure read fits in region
         for region in &mut self.stable_memory_regions {
             if address >= region.start_address && address < region.start_address + region.length {
                 return region.write(address, value, stdlib)
