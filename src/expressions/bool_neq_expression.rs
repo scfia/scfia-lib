@@ -50,6 +50,15 @@ impl BoolNEqExpression {
         s2: Rc<RefCell<ActiveValue>>,
         stdlib: &mut ScfiaStdlib,
     ) -> BoolNEqExpression {
+        Self::new_with_id(stdlib.get_symbol_id(), s1, s2, stdlib)
+    }
+
+    pub fn new_with_id(
+        id: u64,
+        s1: Rc<RefCell<ActiveValue>>,
+        s2: Rc<RefCell<ActiveValue>>,
+        stdlib: &mut ScfiaStdlib,
+    ) -> BoolNEqExpression {
         unsafe {
             let z3_context = stdlib.z3_context;
             let ast = Z3_mk_not(z3_context,
@@ -60,7 +69,7 @@ impl BoolNEqExpression {
                 ));
             Z3_inc_ref(z3_context, ast);
             BoolNEqExpression {
-                id: stdlib.get_symbol_id(),
+                id,
                 s1: s1,
                 s2: s2,
                 inherited_asts: vec![],
@@ -72,8 +81,56 @@ impl BoolNEqExpression {
         }
     }
 
+    pub fn clone_to_stdlib(
+        &self,
+        cloned_active_values: &mut HashMap<u64, Rc<RefCell<ActiveValue>>>,
+        cloned_retired_values: &mut HashMap<u64, Rc<RefCell<RetiredValue>>>,
+        cloned_stdlib: &mut ScfiaStdlib
+    ) -> Rc<RefCell<ActiveValue>> {
+        // Check translated values map
+        if let Some(eq_expression) = cloned_active_values.get(&self.id) {
+            return eq_expression.clone()
+        }
+
+        // Clone s1, s2
+        let s1 = self.s1.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+        let s2 = self.s2.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+
+        // Build clone
+        let cloned_expression = Self::new_with_id(self.id, s1, s2, cloned_stdlib);
+        if self.is_assert {
+            unsafe {
+                Z3_solver_assert(cloned_stdlib.z3_context, cloned_stdlib.z3_solver, cloned_expression.z3_ast);
+            }
+        }
+        let cloned_expression: Rc<RefCell<ActiveValue>> = cloned_expression.into();
+        cloned_active_values.insert(self.id, cloned_expression.clone());
+
+        // Clone inherited values
+        let mut cloned_inherited = vec![];
+        for inherited_ast in self.inherited_asts.iter().rev() {
+            cloned_inherited.push(inherited_ast.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib));
+        }
+
+        // Clone discovered values
+        let mut cloned_discovered = vec![];
+        for discovered_ast in self.discovered_asts.values() {
+            cloned_discovered.push(discovered_ast.upgrade().unwrap().try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib));
+        }
+
+        // Update clone with retirees and discoveries
+        let mut cloned_expression_ref = cloned_expression.try_borrow_mut().unwrap();
+        for cloned_inherited_ast in cloned_inherited {
+            cloned_expression_ref.inherit(cloned_inherited_ast)
+        }
+        for cloned_discovered_value in cloned_discovered {
+            cloned_expression_ref.discover(cloned_discovered_value.try_borrow().unwrap().get_id(), Rc::downgrade(&cloned_discovered_value))
+        }
+
+        cloned_expression.clone()
+    }
+
     pub fn assert(&mut self, stdlib: &mut ScfiaStdlib) {
-        println!("asserting BoolNEqExpression {:?}", self);
         self.is_assert = true;
         unsafe {
             Z3_solver_assert(stdlib.z3_context, stdlib.z3_solver, self.z3_ast);

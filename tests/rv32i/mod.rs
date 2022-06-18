@@ -1,17 +1,43 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::{env, fs};
 
+use scfia_lib::expressions::bool_neq_expression::BoolNEqExpression;
 use scfia_lib::memory::stable_memory_region32::StableMemoryRegion32;
 use scfia_lib::memory::MemoryRegion32;
 use scfia_lib::memory::volatile_memory_region::VolatileMemoryRegion32;
 use scfia_lib::models::riscv::rv32i::RV32iSystemState;
+use scfia_lib::traits::ast::Ast;
 use scfia_lib::values::ActiveValue;
+use scfia_lib::values::bit_vector_symbol::BitVectorSymbol;
 use scfia_lib::{
     memory::memory32::Memory32, models::riscv::rv32i,
     values::bit_vector_concrete::BitVectorConcrete, ScfiaStdlib,
 };
 use xmas_elf::program::ProgramHeader::Ph32;
 use xmas_elf::{program, ElfFile};
+use z3_sys::Z3_solver_check_assumptions;
+
+
+fn wtf() {
+    unsafe {
+        let mut stdlib = ScfiaStdlib::new();
+        let left = ActiveValue::BitvectorSymbol(BitVectorSymbol::new(None, 32, &mut stdlib)).into();
+        let right = ActiveValue::BitvectorConcrete(BitVectorConcrete::new(0, 32, &mut stdlib)).into();
+
+        let neg_condition_symbol = ActiveValue::BoolNEqExpression(BoolNEqExpression::new(left, right, &mut stdlib));
+        let neg_condition_ast = neg_condition_symbol.get_z3_ast();
+        assert_eq!(1, Z3_solver_check_assumptions(stdlib.z3_context, stdlib.z3_solver, 1, &neg_condition_ast));
+    }
+}
+
+fn test_branches() {
+    let mut stdlib = ScfiaStdlib::new();
+    let mut s1: Rc<RefCell<ActiveValue>> = ActiveValue::BitvectorSymbol(BitVectorSymbol::new(None, 32, &mut stdlib)).into();
+    let mut s2 = ActiveValue::BitvectorConcrete(BitVectorConcrete::new(0, 32, &mut stdlib)).into();
+    stdlib.do_eq(s1.clone(), s2, None);
+}
 
 #[test]
 fn test_system_state() {
@@ -100,6 +126,7 @@ fn test_system_state() {
         stdlib,
     };
 
+    println!("Stepping until NIC1 queue_pfn check");
     while rv32i_system_state.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x770 {
         rv32i_system_state.step();
     }
@@ -107,20 +134,29 @@ fn test_system_state() {
     let mut successors = rv32i_system_state.step_forking();
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
-    /*
-    println!("continuing with panic state");
-    loop {
+
+    println!("Stepping panic until loop");
+    while panicking.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x18 {
         panicking.step()
     }
-    */
 
-    // continuing.step_forking();
-
-    
-    loop {
+    println!("Stepping until NIC1 queue_num_max check");
+    while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x77c {
         continuing.step()
     }
     
+    let mut successors = continuing.step_forking();
+    let mut panicking = successors.remove(0);
+    let mut continuing = successors.remove(0);
+    
+    println!("Stepping panic until loop");
+    while panicking.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x18 {
+        panicking.step()
+    }
 
+    println!("Stepping...");
+    loop {
+        continuing.step()
+    }
 
 }

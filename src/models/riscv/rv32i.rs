@@ -1,5 +1,6 @@
 use z3_sys::Z3_solver_assert;
 
+use crate::values::bit_vector_symbol::BitVectorSymbol;
 use crate::{traits::bit_vector::BitVector, ScfiaStdlib};
 use std::fmt;
 use std::ops::Deref;
@@ -310,8 +311,8 @@ pub unsafe fn step(state: *mut SystemState, _stdlib: *mut ScfiaStdlib, _fork_sin
     else if _stdlib.as_mut().unwrap().do_eq(opcode.clone(), BitVectorConcrete::new(0b1100011, 7, _stdlib.as_mut().unwrap()).into(), _fork_sink.clone()) {
         let funct3: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 14, 12, _stdlib.as_mut().unwrap()).into();
         if _stdlib.as_mut().unwrap().do_eq(funct3.clone(), BitVectorConcrete::new(0b0, 3, _stdlib.as_mut().unwrap()).into(), _fork_sink.clone()) {
-            let lhs: Rc<RefCell<ActiveValue>> = register_read_BV32(state, extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink.clone(), _memory), _stdlib, _fork_sink.clone(), _memory);
-            let rhs: Rc<RefCell<ActiveValue>> = register_read_BV32(state, extract_rs2_32(instruction_32.clone(), _stdlib, _fork_sink.clone(), _memory), _stdlib, _fork_sink.clone(), _memory);
+            let mut lhs: Rc<RefCell<ActiveValue>> = register_read_BV32(state, extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink.clone(), _memory), _stdlib, _fork_sink.clone(), _memory);
+            let mut rhs: Rc<RefCell<ActiveValue>> = register_read_BV32(state, extract_rs2_32(instruction_32.clone(), _stdlib, _fork_sink.clone(), _memory), _stdlib, _fork_sink.clone(), _memory);
             if _stdlib.as_mut().unwrap().do_eq(lhs.clone(), rhs.clone(), _fork_sink.clone()) {
                 let imm_4_1: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 11, 8, _stdlib.as_mut().unwrap()).into();
                 let imm_10_5: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 30, 25, _stdlib.as_mut().unwrap()).into();

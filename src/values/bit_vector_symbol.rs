@@ -7,7 +7,7 @@ use std::{borrow::BorrowMut, cell::RefCell, rc::Rc};
 
 use z3_sys::{
     Z3_ast, Z3_context, Z3_dec_ref, Z3_inc_ref, Z3_mk_bool_sort, Z3_mk_const, Z3_mk_fresh_const,
-    Z3_mk_string, Z3_solver_assert, _Z3_symbol, Z3_mk_bv_sort,
+    Z3_mk_string, Z3_solver_assert, _Z3_symbol, Z3_mk_bv_sort, Z3_string,
 };
 
 use crate::traits::ast::{Ast};
@@ -57,9 +57,9 @@ impl BitVectorSymbol {
             let z3_ast;
             let z3_context = stdlib.z3_context;
 
-            z3_ast = Z3_mk_const(
+            z3_ast = Z3_mk_fresh_const(
                 z3_context,
-                0 as *mut _Z3_symbol,
+                0 as Z3_string,
                 Z3_mk_bv_sort(stdlib.z3_context, width),
             );
             Z3_inc_ref(z3_context, z3_ast);

@@ -26,6 +26,7 @@ impl fmt::Debug for VolatileMemoryRegion32 {
 
 impl MemoryRegion32 for VolatileMemoryRegion32 {
     fn read(&mut self, address: u32, width: u32, stdlib: &mut crate::ScfiaStdlib) -> Rc<RefCell<ActiveValue>> {
+        println!("<= 0x{:x} (volatile)", address);
         ActiveValue::BitvectorSymbol(BitVectorSymbol::new(None, width, stdlib)).into()
     }
 

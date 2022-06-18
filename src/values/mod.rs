@@ -71,10 +71,10 @@ impl ActiveValue {
         }
 
         match self {
-            ActiveValue::BitvectorConcrete(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib).into(),
+            ActiveValue::BitvectorConcrete(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
             ActiveValue::BitvectorSymbol(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
             ActiveValue::BoolEqExpression(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
-            ActiveValue::BoolNEqExpression(_) => unimplemented!(),
+            ActiveValue::BoolNEqExpression(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
             ActiveValue::BitvectorAddExpression(_) => unimplemented!(),
             ActiveValue::BitvectorConcatExpression(_) => unimplemented!(),
             ActiveValue::BitvectorOrExpression(_) => unimplemented!(),
@@ -84,6 +84,7 @@ impl ActiveValue {
     }
 
     pub fn assert(&mut self, stdlib: &mut ScfiaStdlib) {
+        println!("+++++++++ asserting {:?}", self.get_id());
         match self {
             ActiveValue::BoolEqExpression(x) => x.assert(stdlib),
             ActiveValue::BoolNEqExpression(x) => x.assert(stdlib),
@@ -111,7 +112,7 @@ impl RetiredValue {
         match self {
             RetiredValue::RetiredBitvectorConcrete(_) => todo!(),
             RetiredValue::RetiredBitvectorSymbol(_) => todo!(),
-            RetiredValue::RetiredBoolEqExpression(_) => todo!(),
+            RetiredValue::RetiredBoolEqExpression(x) => x.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
             RetiredValue::RetiredBoolNEqExpression(x) => x.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
             RetiredValue::RetiredBitvectorAddExpression(_) => todo!(),
             RetiredValue::RetiredBitvectorConcatExpression(_) => todo!(),

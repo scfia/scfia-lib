@@ -52,13 +52,15 @@ use z3_sys::Z3_solver_pop;
 use z3_sys::Z3_solver_push;
 use z3_sys::Z3_solver_reset;
 
+use crate::values::bit_vector_concrete::BitVectorConcrete;
+
 
 #[derive(Debug)]
 pub struct ScfiaStdlib {
     next_symbol_id: u64,
     pub retired_symbols_map: HashMap<u64, Rc<RefCell<RetiredValue>>>,
     pub z3_context: Z3_context,
-    z3_solver: Z3_solver,
+    pub z3_solver: Z3_solver,
 }
 
 impl ScfiaStdlib {
@@ -130,7 +132,7 @@ impl ScfiaStdlib {
             let mut can_be_true = false;
             let mut can_be_false = false;
 
-            let condition_symbol = ActiveValue::BoolEqExpression(BoolEqExpression::new(left.clone(), right.clone(), self));
+            let mut condition_symbol = ActiveValue::BoolEqExpression(BoolEqExpression::new(left.clone(), right.clone(), self));
             let condition_ast = condition_symbol.get_z3_ast();
             let neg_condition_symbol = ActiveValue::BoolNEqExpression(BoolNEqExpression::new(left, right, self));
             let neg_condition_ast = neg_condition_symbol.get_z3_ast();
@@ -145,12 +147,11 @@ impl ScfiaStdlib {
 
             if can_be_true && can_be_false {
                 // Create fork with negative condition
+                println!("fork condition {:?}", &neg_condition_symbol);
                 fork_sink.unwrap().try_borrow_mut().unwrap().fork_conditions.push(neg_condition_symbol.into());
 
                 // continue with positive condition
-                // TODO: Add this assert to our data structures
-                panic!();
-                Z3_solver_assert(self.z3_context, self.z3_solver, condition_ast);
+                condition_symbol.assert(self);
 
                 true
             } else if can_be_true {

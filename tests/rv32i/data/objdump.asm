@@ -505,10 +505,10 @@ Disassembly of section .text:
      760:	03212023          	sw	s2,32(sp)
      764:	00062483          	lw	s1,0(a2)
      768:	02b4a823          	sw	a1,48(s1)
-     76c:	0404a583          	lw	a1,64(s1)
+     76c:	0404a583          	lw	a1,64(s1)      # queue_pfn (should be 0)
      770:	06059063          	bnez	a1,7d0 <_ZN20simple_router_risc_v6virtio23VirtioMMIONetworkDevice19configure_virtqueue17h8622c35bd62bc04bE.llvm.16428960419682550808+0x80>
      774:	00050413          	mv	s0,a0
-     778:	0344a503          	lw	a0,52(s1)
+     778:	0344a503          	lw	a0,52(s1)      # queue_num_max (should be >= 1024)
      77c:	08050463          	beqz	a0,804 <_ZN20simple_router_risc_v6virtio23VirtioMMIONetworkDevice19configure_virtqueue17h8622c35bd62bc04bE.llvm.16428960419682550808+0xb4>
      780:	40000913          	li	s2,1024
      784:	0b256a63          	bltu	a0,s2,838 <_ZN20simple_router_risc_v6virtio23VirtioMMIONetworkDevice19configure_virtqueue17h8622c35bd62bc04bE.llvm.16428960419682550808+0xe8>
