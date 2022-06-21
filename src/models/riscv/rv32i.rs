@@ -8,8 +8,12 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use crate::Ast;
-use crate::values::{ActiveValue, RetiredValue};
+use crate::values::ActiveValue;
+use crate::values::RetiredValue;
 use crate::expressions::bv_add_expression::BVAddExpression;
+use crate::expressions::bv_and_expression::BVAndExpression;
+use crate::expressions::bv_shift_right_logical_expression::BVShiftRightLogicalExpression;
+use crate::expressions::bv_shift_left_logical_expression::BVShiftLeftLogicalExpression;
 use crate::expressions::bool_less_than_uint_expression::BoolLessThanUIntExpression;
 use crate::expressions::bool_eq_expression::BoolEqExpression;
 use crate::expressions::bool_neq_expression::BoolNEqExpression;
@@ -25,6 +29,56 @@ pub struct RV32iSystemState {
     pub system_state: SystemState,
     pub memory: Memory32,
     pub stdlib: ScfiaStdlib,
+}
+
+#[derive(Debug)]
+pub struct ForkSink {
+    pub forks: Vec<RV32iSystemStateFork>,
+}
+
+#[derive(Debug)]
+pub struct RV32iSystemStateFork {
+    cloned_stdlib: ScfiaStdlib,
+    cloned_active_values: HashMap<u64, Rc<RefCell<ActiveValue>>>,
+    cloned_retired_values: HashMap<u64, Rc<RefCell<RetiredValue>>>
+}
+
+impl RV32iSystemStateFork {
+    pub fn new(next_symbol_id: u64) -> Self {
+        RV32iSystemStateFork {
+            cloned_stdlib: ScfiaStdlib::new_with_next_id(next_symbol_id),
+            cloned_active_values: HashMap::new(),
+            cloned_retired_values: HashMap::new()
+        }
+    }
+}
+
+impl fmt::Debug for RV32iSystemState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "RV32iSystemState {{ system_state = {:?} }}", &self.system_state)
+    }
+}
+
+impl ForkSink {
+    pub fn new() -> Self {
+        ForkSink {
+            forks: vec![]
+        }
+    }
+
+    pub fn fork(&mut self, fork_condition: Rc<RefCell<ActiveValue>>) {
+        let mut fork = RV32iSystemStateFork::new(fork_condition.try_borrow().unwrap().get_id());
+
+        let cloned_condition = fork_condition.try_borrow().unwrap().clone_to_stdlib(
+            &mut fork.cloned_active_values,
+            &mut fork.cloned_retired_values,
+            &mut fork.cloned_stdlib);
+
+        cloned_condition.try_borrow_mut().unwrap().assert(&mut fork.cloned_stdlib);
+        // cloned_condition will reside in cloned_active_values and thus stay active
+
+        self.forks.push(fork);
+    }
 }
 
 
@@ -144,12 +198,49 @@ pub unsafe fn step(state: *mut SystemState, _stdlib: *mut ScfiaStdlib, _fork_sin
             register_write_BV32(state, rd.clone(), result.clone(), _stdlib, _fork_sink.clone(), _memory);
             progress_pc_4(state, _stdlib, _fork_sink.clone(), _memory);
         }
+        else if _stdlib.as_mut().unwrap().do_condition(BoolEqExpression::new(funct3.clone(), BitVectorConcrete::new(0b1, 3, _stdlib.as_mut().unwrap()).into(), _stdlib.as_mut().unwrap()).into(), _fork_sink.clone()) {
+            let funct7: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 25, _stdlib.as_mut().unwrap()).into();
+            if _stdlib.as_mut().unwrap().do_condition(BoolEqExpression::new(funct7.clone(), BitVectorConcrete::new(0b0, 7, _stdlib.as_mut().unwrap()).into(), _stdlib.as_mut().unwrap()).into(), _fork_sink.clone()) {
+                let rd: Rc<RefCell<ActiveValue>> = extract_rd_32(instruction_32.clone(), _stdlib, _fork_sink.clone(), _memory);
+                let rs1: Rc<RefCell<ActiveValue>> = extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink.clone(), _memory);
+                let shamt: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 24, 20, _stdlib.as_mut().unwrap()).into();
+                let result: Rc<RefCell<ActiveValue>> = BVShiftLeftLogicalExpression::new(register_read_BV32(state, rs1.clone(), _stdlib, _fork_sink.clone(), _memory), shamt.clone(), 32, 5, _stdlib.as_mut().unwrap()).into();
+                register_write_BV32(state, rd.clone(), result.clone(), _stdlib, _fork_sink.clone(), _memory);
+                progress_pc_4(state, _stdlib, _fork_sink.clone(), _memory);
+            }
+            else {
+                unimplemented!();
+            }
+        }
+        else if _stdlib.as_mut().unwrap().do_condition(BoolEqExpression::new(funct3.clone(), BitVectorConcrete::new(0b101, 3, _stdlib.as_mut().unwrap()).into(), _stdlib.as_mut().unwrap()).into(), _fork_sink.clone()) {
+            let funct7: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 25, _stdlib.as_mut().unwrap()).into();
+            if _stdlib.as_mut().unwrap().do_condition(BoolEqExpression::new(funct7.clone(), BitVectorConcrete::new(0b0, 7, _stdlib.as_mut().unwrap()).into(), _stdlib.as_mut().unwrap()).into(), _fork_sink.clone()) {
+                let rd: Rc<RefCell<ActiveValue>> = extract_rd_32(instruction_32.clone(), _stdlib, _fork_sink.clone(), _memory);
+                let rs1: Rc<RefCell<ActiveValue>> = extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink.clone(), _memory);
+                let shamt: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 24, 20, _stdlib.as_mut().unwrap()).into();
+                let result: Rc<RefCell<ActiveValue>> = BVShiftRightLogicalExpression::new(register_read_BV32(state, rs1.clone(), _stdlib, _fork_sink.clone(), _memory), shamt.clone(), 32, 5, _stdlib.as_mut().unwrap()).into();
+                register_write_BV32(state, rd.clone(), result.clone(), _stdlib, _fork_sink.clone(), _memory);
+                progress_pc_4(state, _stdlib, _fork_sink.clone(), _memory);
+            }
+            else {
+                unimplemented!();
+            }
+        }
         else if _stdlib.as_mut().unwrap().do_condition(BoolEqExpression::new(funct3.clone(), BitVectorConcrete::new(0b110, 3, _stdlib.as_mut().unwrap()).into(), _stdlib.as_mut().unwrap()).into(), _fork_sink.clone()) {
             let rd: Rc<RefCell<ActiveValue>> = extract_rd_32(instruction_32.clone(), _stdlib, _fork_sink.clone(), _memory);
             let rs1: Rc<RefCell<ActiveValue>> = extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink.clone(), _memory);
             let imm: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 20, _stdlib.as_mut().unwrap()).into();
             let imm_32: Rc<RefCell<ActiveValue>> = BVSignExtendExpression::new(imm.clone(), 12, 32, _stdlib.as_mut().unwrap()).into();
             let result: Rc<RefCell<ActiveValue>> = BVOrExpression::new(register_read_BV32(state, rs1.clone(), _stdlib, _fork_sink.clone(), _memory), imm_32.clone(), _stdlib.as_mut().unwrap()).into();
+            register_write_BV32(state, rd.clone(), result.clone(), _stdlib, _fork_sink.clone(), _memory);
+            progress_pc_4(state, _stdlib, _fork_sink.clone(), _memory);
+        }
+        else if _stdlib.as_mut().unwrap().do_condition(BoolEqExpression::new(funct3.clone(), BitVectorConcrete::new(0b111, 3, _stdlib.as_mut().unwrap()).into(), _stdlib.as_mut().unwrap()).into(), _fork_sink.clone()) {
+            let rd: Rc<RefCell<ActiveValue>> = extract_rd_32(instruction_32.clone(), _stdlib, _fork_sink.clone(), _memory);
+            let rs1: Rc<RefCell<ActiveValue>> = extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink.clone(), _memory);
+            let imm: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 20, _stdlib.as_mut().unwrap()).into();
+            let imm_32: Rc<RefCell<ActiveValue>> = BVSignExtendExpression::new(imm.clone(), 12, 32, _stdlib.as_mut().unwrap()).into();
+            let result: Rc<RefCell<ActiveValue>> = BVAndExpression::new(register_read_BV32(state, rs1.clone(), _stdlib, _fork_sink.clone(), _memory), imm_32.clone(), _stdlib.as_mut().unwrap()).into();
             register_write_BV32(state, rd.clone(), result.clone(), _stdlib, _fork_sink.clone(), _memory);
             progress_pc_4(state, _stdlib, _fork_sink.clone(), _memory);
         }
@@ -337,7 +428,37 @@ pub unsafe fn step(state: *mut SystemState, _stdlib: *mut ScfiaStdlib, _fork_sin
             let lhs: Rc<RefCell<ActiveValue>> = register_read_BV32(state, extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink.clone(), _memory), _stdlib, _fork_sink.clone(), _memory);
             let rhs: Rc<RefCell<ActiveValue>> = register_read_BV32(state, extract_rs2_32(instruction_32.clone(), _stdlib, _fork_sink.clone(), _memory), _stdlib, _fork_sink.clone(), _memory);
             if _stdlib.as_mut().unwrap().do_condition(BoolLessThanUIntExpression::new(lhs.clone(), rhs.clone(), _stdlib.as_mut().unwrap()).into(), _fork_sink.clone()) {
-                unimplemented!();
+                let imm_4_1: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 11, 8, _stdlib.as_mut().unwrap()).into();
+                let imm_10_5: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 30, 25, _stdlib.as_mut().unwrap()).into();
+                let imm11: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 7, 7, _stdlib.as_mut().unwrap()).into();
+                let imm12: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 31, _stdlib.as_mut().unwrap()).into();
+                let imm_4_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(imm_4_1.clone(), BitVectorConcrete::new(0b0, 1, _stdlib.as_mut().unwrap()).into(), _stdlib.as_mut().unwrap()).into();
+                let imm_10_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(imm_10_5.clone(), imm_4_0.clone(), _stdlib.as_mut().unwrap()).into();
+                let imm_11_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(imm11.clone(), imm_10_0.clone(), _stdlib.as_mut().unwrap()).into();
+                let imm_12_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(imm12.clone(), imm_11_0.clone(), _stdlib.as_mut().unwrap()).into();
+                let offset: Rc<RefCell<ActiveValue>> = BVSignExtendExpression::new(imm_12_0.clone(), 13, 32, _stdlib.as_mut().unwrap()).into();
+                let address: Rc<RefCell<ActiveValue>> = BVAddExpression::new((*state).pc.clone(), offset.clone(), _stdlib.as_mut().unwrap()).into();
+                (*state).pc = address.clone();
+            }
+            else {
+                progress_pc_4(state, _stdlib, _fork_sink.clone(), _memory);
+            }
+        }
+        else if _stdlib.as_mut().unwrap().do_condition(BoolEqExpression::new(funct3.clone(), BitVectorConcrete::new(0b111, 3, _stdlib.as_mut().unwrap()).into(), _stdlib.as_mut().unwrap()).into(), _fork_sink.clone()) {
+            let lhs: Rc<RefCell<ActiveValue>> = register_read_BV32(state, extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink.clone(), _memory), _stdlib, _fork_sink.clone(), _memory);
+            let rhs: Rc<RefCell<ActiveValue>> = register_read_BV32(state, extract_rs2_32(instruction_32.clone(), _stdlib, _fork_sink.clone(), _memory), _stdlib, _fork_sink.clone(), _memory);
+            if _stdlib.as_mut().unwrap().do_condition(BoolLessThanUIntExpression::new(rhs.clone(), lhs.clone(), _stdlib.as_mut().unwrap()).into(), _fork_sink.clone()) {
+                let imm_4_1: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 11, 8, _stdlib.as_mut().unwrap()).into();
+                let imm_10_5: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 30, 25, _stdlib.as_mut().unwrap()).into();
+                let imm11: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 7, 7, _stdlib.as_mut().unwrap()).into();
+                let imm12: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 31, _stdlib.as_mut().unwrap()).into();
+                let imm_4_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(imm_4_1.clone(), BitVectorConcrete::new(0b0, 1, _stdlib.as_mut().unwrap()).into(), _stdlib.as_mut().unwrap()).into();
+                let imm_10_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(imm_10_5.clone(), imm_4_0.clone(), _stdlib.as_mut().unwrap()).into();
+                let imm_11_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(imm11.clone(), imm_10_0.clone(), _stdlib.as_mut().unwrap()).into();
+                let imm_12_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(imm12.clone(), imm_11_0.clone(), _stdlib.as_mut().unwrap()).into();
+                let offset: Rc<RefCell<ActiveValue>> = BVSignExtendExpression::new(imm_12_0.clone(), 13, 32, _stdlib.as_mut().unwrap()).into();
+                let address: Rc<RefCell<ActiveValue>> = BVAddExpression::new((*state).pc.clone(), offset.clone(), _stdlib.as_mut().unwrap()).into();
+                (*state).pc = address.clone();
             }
             else {
                 progress_pc_4(state, _stdlib, _fork_sink.clone(), _memory);
@@ -617,7 +738,7 @@ pub unsafe fn execute_add32(state: *mut SystemState, destination_id: Rc<RefCell<
 impl RV32iSystemState {
     pub fn step(&mut self) {
         unsafe {
-            println!("RV32iSystemState stepping {:?}", self.system_state.pc);
+            println!("stepping {:?}", self.system_state.pc);
             step(&mut self.system_state, &mut self.stdlib, None, &mut self.memory);
         }
     }
@@ -627,7 +748,7 @@ impl RV32iSystemState {
             println!("RV32iSystemState stepping {:?} (forking)", self.system_state.pc);
             let mut successors = vec![];
             let mut candidates = vec![self.clone_to_stdlib(RV32iSystemStateFork::new(self.stdlib.next_symbol_id))];
-            println!("RV32iSystemState stepping candidates");
+            println!("RV32iSystemState stepping candidate");
             
             while let Some(mut current) = candidates.pop() {
                 // Step current candidate
@@ -649,9 +770,7 @@ impl RV32iSystemState {
     }
 
     fn clone_to_stdlib(&self, mut fork: RV32iSystemStateFork) -> RV32iSystemState {
-        fork.cloned_stdlib.assert_consistency();
         let cloned_memory = self.memory.clone_to_stdlib(&mut fork.cloned_active_values, &mut fork.cloned_retired_values, &mut fork.cloned_stdlib);
-        fork.cloned_stdlib.assert_consistency();
 
         RV32iSystemState {
             system_state: SystemState {
@@ -691,55 +810,5 @@ impl RV32iSystemState {
             memory: cloned_memory,
             stdlib: fork.cloned_stdlib,
         }
-    }
-}
-
-#[derive(Debug)]
-pub struct ForkSink {
-    pub forks: Vec<RV32iSystemStateFork>,
-}
-
-#[derive(Debug)]
-pub struct RV32iSystemStateFork {
-    cloned_stdlib: ScfiaStdlib,
-    cloned_active_values: HashMap<u64, Rc<RefCell<ActiveValue>>>,
-    cloned_retired_values: HashMap<u64, Rc<RefCell<RetiredValue>>>
-}
-
-impl RV32iSystemStateFork {
-    pub fn new(next_symbol_id: u64) -> Self {
-        RV32iSystemStateFork {
-            cloned_stdlib: ScfiaStdlib::new_with_next_id(next_symbol_id),
-            cloned_active_values: HashMap::new(),
-            cloned_retired_values: HashMap::new()
-        }
-    }
-}
-
-impl fmt::Debug for RV32iSystemState {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "RV32iSystemState {{ system_state = {:?} }}", &self.system_state)
-    }
-}
-
-impl ForkSink {
-    pub fn new() -> Self {
-        ForkSink {
-            forks: vec![]
-        }
-    }
-
-    pub fn fork(&mut self, fork_condition: Rc<RefCell<ActiveValue>>) {
-        let mut fork = RV32iSystemStateFork::new(fork_condition.try_borrow().unwrap().get_id());
-
-        let cloned_condition = fork_condition.try_borrow().unwrap().clone_to_stdlib(
-            &mut fork.cloned_active_values,
-            &mut fork.cloned_retired_values,
-            &mut fork.cloned_stdlib);
-
-        cloned_condition.try_borrow_mut().unwrap().assert(&mut fork.cloned_stdlib);
-        // cloned_condition will reside in cloned_active_values and thus stay active
-
-        self.forks.push(fork);
     }
 }

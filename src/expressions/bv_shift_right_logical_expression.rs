@@ -17,9 +17,12 @@ use z3_sys::Z3_context;
 use z3_sys::Z3_dec_ref;
 use z3_sys::Z3_inc_ref;
 use z3_sys::Z3_mk_bvadd;
+use z3_sys::Z3_mk_bvand;
+use z3_sys::Z3_mk_bvlshr;
+use z3_sys::Z3_mk_zero_ext;
 
 #[derive(Debug)]
-pub struct BVAddExpression {
+pub struct BVShiftRightLogicalExpression {
     pub id: u64,
     pub s1: Rc<RefCell<ActiveValue>>,
     pub s2: Rc<RefCell<ActiveValue>>,
@@ -30,7 +33,7 @@ pub struct BVAddExpression {
 }
 
 #[derive(Debug)]
-pub struct RetiredBVAddExpression {
+pub struct RetiredBVShiftRightLogicalExpression {
     pub id: u64,
     s1: u64,
     s2: u64,
@@ -38,45 +41,37 @@ pub struct RetiredBVAddExpression {
     pub z3_ast: Z3_ast,
 }
 
-impl BVAddExpression {
+impl BVShiftRightLogicalExpression {
     pub fn new(
         s1: Rc<RefCell<ActiveValue>>,
         s2: Rc<RefCell<ActiveValue>>,
+        input_width: u32,
+        shamt_width: u32,
         stdlib: &mut ScfiaStdlib,
     ) -> ActiveValue {
-        match s1.try_borrow().unwrap().deref() {
-            ActiveValue::BitvectorConcrete(e1) => {
-                match s2.try_borrow().unwrap().deref() {
-                    ActiveValue::BitvectorConcrete(e2) => {
-                        let one: u64 = 1;
-                        let mask = one.rotate_left(e2.width).overflowing_sub(1).0;
-                        let sum = e1.value.overflowing_add(e2.value).0; 
-                        let value = mask & sum;
-                        return ActiveValue::BitvectorConcrete(BitVectorConcrete::new(value, e2.width, stdlib));
-                    },
-                    _ => {}
-                }
-            }
-            _ => {}
-        }
-        ActiveValue::BitvectorAddExpression(Self::new_with_id(stdlib.get_symbol_id(), s1,  s2, stdlib))
+        ActiveValue::BitvectorShiftRightLogicalExpression(Self::new_with_id(stdlib.get_symbol_id(), s1, s2, input_width, shamt_width, stdlib))
     }
 
     pub fn new_with_id(
         id: u64,
         s1: Rc<RefCell<ActiveValue>>,
         s2: Rc<RefCell<ActiveValue>>,
+        input_width: u32,
+        shamt_width: u32,
         stdlib: &mut ScfiaStdlib,
-    ) -> BVAddExpression {
+    ) -> BVShiftRightLogicalExpression {
         unsafe {
             let z3_context = stdlib.z3_context;
-            let ast = Z3_mk_bvadd(
+            let ast = Z3_mk_bvlshr(
                 stdlib.z3_context,
                 s1.try_borrow().unwrap().get_z3_ast(),
-                s2.try_borrow().unwrap().get_z3_ast(),
+                Z3_mk_zero_ext(
+                    stdlib.z3_context,
+                    input_width - shamt_width,
+                    s2.try_borrow().unwrap().get_z3_ast()),
             );
             Z3_inc_ref(z3_context, ast);
-            BVAddExpression {
+            BVShiftRightLogicalExpression {
                 id: id,
                 s1: s1,
                 s2: s2,
@@ -89,10 +84,10 @@ impl BVAddExpression {
     }
 }
 
-impl Drop for BVAddExpression {
+impl Drop for BVShiftRightLogicalExpression {
     fn drop(&mut self) {
         // Retire expression, maintain z3 ast refcount
-        let retired_expression = Rc::new(RefCell::new(RetiredValue::RetiredBitvectorAddExpression(RetiredBVAddExpression {
+        let retired_expression = Rc::new(RefCell::new(RetiredValue::RetiredBitvectorShiftRightLogicalExpression(RetiredBVShiftRightLogicalExpression {
             id: self.id,
             s1: self.s1.try_borrow().unwrap().get_id(),
             s2: self.s2.try_borrow().unwrap().get_id(),
@@ -132,7 +127,7 @@ impl Drop for BVAddExpression {
     }
 }
 
-impl Drop for RetiredBVAddExpression {
+impl Drop for RetiredBVShiftRightLogicalExpression {
     fn drop(&mut self) {
         unsafe { Z3_dec_ref(self.z3_context, self.z3_ast) }
     }
