@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::{env, fs};
 
+use scfia_lib::expressions::bool_eq_expression::BoolEqExpression;
 use scfia_lib::expressions::bool_neq_expression::BoolNEqExpression;
+use scfia_lib::expressions::bool_not_expression::BoolNotExpression;
 use scfia_lib::memory::stable_memory_region32::StableMemoryRegion32;
 use scfia_lib::memory::MemoryRegion32;
 use scfia_lib::memory::volatile_memory_region::VolatileMemoryRegion32;
@@ -17,26 +19,88 @@ use scfia_lib::{
 };
 use xmas_elf::program::ProgramHeader::Ph32;
 use xmas_elf::{program, ElfFile};
-use z3_sys::Z3_solver_check_assumptions;
+use z3_sys::{Z3_solver_check_assumptions, Z3_L_TRUE};
 
 
-fn wtf() {
+fn wtf3() {
     unsafe {
         let mut stdlib = ScfiaStdlib::new();
-        let left = ActiveValue::BitvectorSymbol(BitVectorSymbol::new(None, 32, &mut stdlib)).into();
-        let right = ActiveValue::BitvectorConcrete(BitVectorConcrete::new(0, 32, &mut stdlib)).into();
-
-        let neg_condition_symbol = ActiveValue::BoolNEqExpression(BoolNEqExpression::new(left, right, &mut stdlib));
-        let neg_condition_ast = neg_condition_symbol.get_z3_ast();
-        assert_eq!(1, Z3_solver_check_assumptions(stdlib.z3_context, stdlib.z3_solver, 1, &neg_condition_ast));
+        let expression_replacement = ActiveValue::BoolEqExpression(BoolEqExpression::new(
+            ActiveValue::BitvectorConcrete(BitVectorConcrete::new(0x64, 7, &mut stdlib)).into(),
+            ActiveValue::BitvectorConcrete(BitVectorConcrete::new(0x3, 7, &mut stdlib)).into(),
+            &mut stdlib)).into();
+        
+        let negated_expression_replacement = ActiveValue::BoolNotExpression(BoolNotExpression::new(expression_replacement, &mut stdlib));
+        let negated_z3_ast = negated_expression_replacement.get_z3_ast();
+        assert_eq!(Z3_solver_check_assumptions(stdlib.z3_context, stdlib.z3_solver, 1, &negated_z3_ast), Z3_L_TRUE);
     }
 }
 
-fn test_branches() {
+fn wtf2() {
     let mut stdlib = ScfiaStdlib::new();
-    let mut s1: Rc<RefCell<ActiveValue>> = ActiveValue::BitvectorSymbol(BitVectorSymbol::new(None, 32, &mut stdlib)).into();
-    let mut s2 = ActiveValue::BitvectorConcrete(BitVectorConcrete::new(0, 32, &mut stdlib)).into();
-    stdlib.do_eq(s1.clone(), s2, None);
+    let expression = ActiveValue::BoolEqExpression(
+        BoolEqExpression::new(
+            ActiveValue::BitvectorConcrete(BitVectorConcrete::new(0x64, 7, &mut stdlib)).into(),
+            ActiveValue::BitvectorConcrete(BitVectorConcrete::new(0x3, 7, &mut stdlib)).into(),
+            &mut stdlib)).into();
+    
+    println!("{}", stdlib.do_condition(expression, None));
+}
+
+fn wtf() {
+    unsafe {
+        let op: u32= 0x0404a583;
+        let mut stdlib = ScfiaStdlib::new();
+        let op_value = ActiveValue::BitvectorConcrete(BitVectorConcrete::new(op as u64, 32, &mut stdlib));
+        let dummy_value = ActiveValue::BitvectorConcrete(BitVectorConcrete::new(42, 32, &mut stdlib));
+        let mut memory = Memory32::new();
+        let mut stable = StableMemoryRegion32::new(0 as u32, 0x4000 as u32);
+        stable.write(0x1000, op_value.into(), &mut stdlib);
+        stable.write(0x40, dummy_value.into(), &mut stdlib);
+        memory.stable_memory_regions.push(stable);
+
+        let mut rv32i_system_state = RV32iSystemState {
+            system_state: rv32i::SystemState {
+                x0: BitVectorConcrete::new(0b0, 32, &mut stdlib).into(),
+                x1: BitVectorConcrete::new(0b0, 32, &mut stdlib).into(),
+                x2: BitVectorConcrete::new(0b0, 32, &mut stdlib).into(),
+                x3: BitVectorConcrete::new(0b0, 32, &mut stdlib).into(),
+                x4: BitVectorConcrete::new(0b0, 32, &mut stdlib).into(),
+                x5: BitVectorConcrete::new(0b0, 32, &mut stdlib).into(),
+                x6: BitVectorConcrete::new(0b0, 32, &mut stdlib).into(),
+                x7: BitVectorConcrete::new(0b0, 32, &mut stdlib).into(),
+                x8: BitVectorConcrete::new(0b0, 32, &mut stdlib).into(),
+                x9: BitVectorConcrete::new(0b0, 32, &mut stdlib).into(),
+                x10: BitVectorConcrete::new(0b0, 32, &mut stdlib).into(),
+                x11: BitVectorConcrete::new(0b0, 32, &mut stdlib).into(),
+                x12: BitVectorConcrete::new(0b0, 32, &mut stdlib).into(),
+                x13: BitVectorConcrete::new(0b0, 32, &mut stdlib).into(),
+                x14: BitVectorConcrete::new(0b0, 32, &mut stdlib).into(),
+                x15: BitVectorConcrete::new(0b0, 32, &mut stdlib).into(),
+                x16: BitVectorConcrete::new(0b0, 32, &mut stdlib).into(),
+                x17: BitVectorConcrete::new(0b0, 32, &mut stdlib).into(),
+                x18: BitVectorConcrete::new(0b0, 32, &mut stdlib).into(),
+                x19: BitVectorConcrete::new(0b0, 32, &mut stdlib).into(),
+                x20: BitVectorConcrete::new(0b0, 32, &mut stdlib).into(),
+                x21: BitVectorConcrete::new(0b0, 32, &mut stdlib).into(),
+                x22: BitVectorConcrete::new(0b0, 32, &mut stdlib).into(),
+                x23: BitVectorConcrete::new(0b0, 32, &mut stdlib).into(),
+                x24: BitVectorConcrete::new(0b0, 32, &mut stdlib).into(),
+                x25: BitVectorConcrete::new(0b0, 32, &mut stdlib).into(),
+                x26: BitVectorConcrete::new(0b0, 32, &mut stdlib).into(),
+                x27: BitVectorConcrete::new(0b0, 32, &mut stdlib).into(),
+                x28: BitVectorConcrete::new(0b0, 32, &mut stdlib).into(),
+                x29: BitVectorConcrete::new(0b0, 32, &mut stdlib).into(),
+                x30: BitVectorConcrete::new(0b0, 32, &mut stdlib).into(),
+                x31: BitVectorConcrete::new(0b0, 32, &mut stdlib).into(),
+                pc: BitVectorConcrete::new(0x00001000, 32, &mut stdlib).into(),
+            },
+            memory,
+            stdlib,
+        };
+
+        rv32i_system_state.step()
+    }
 }
 
 #[test]
@@ -140,7 +204,7 @@ fn test_system_state() {
         panicking.step()
     }
 
-    println!("Stepping until NIC1 queue_num_max check");
+    println!("Stepping until NIC1 queue_num_max 0 check");
     while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x77c {
         continuing.step()
     }
@@ -154,7 +218,17 @@ fn test_system_state() {
         panicking.step()
     }
 
-    println!("Stepping...");
+    println!("Stepping until NIC1 queue_num_max <1024 check");
+    while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x784 {
+        continuing.step()
+    }
+
+    println!("----------------------------------------------------------------------------------------------------------------------------------------");
+    let mut successors = continuing.step_forking();
+    let mut panicking = successors.remove(0);
+    let mut continuing = successors.remove(0);
+
+    println!("Stepping until X...");
     loop {
         continuing.step()
     }

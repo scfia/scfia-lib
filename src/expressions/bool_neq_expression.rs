@@ -165,13 +165,13 @@ impl Drop for BoolNEqExpression {
         for heir in &heirs {
             let mut heir_ref = heir.try_borrow_mut().unwrap();
 
+            // Inherit
+            heir_ref.inherit(retired_expression.clone());
+
             // Pass on inherited symbols
             for inherited in &self.inherited_asts {
                 heir_ref.inherit(inherited.clone())
             }
-
-            // Inherit
-            heir_ref.inherit(retired_expression.clone());
 
             // Acquaint all heirs
             for other_heir in &heirs {

@@ -16,11 +16,12 @@ use z3_sys::Z3_context;
 use z3_sys::Z3_dec_ref;
 use z3_sys::Z3_inc_ref;
 use z3_sys::Z3_mk_bvadd;
-use z3_sys::Z3_mk_eq;
+use z3_sys::Z3_mk_bvult;
+use z3_sys::Z3_mk_lt;
 use z3_sys::Z3_solver_assert;
 
 #[derive(Debug)]
-pub struct BoolEqExpression {
+pub struct BoolLessThanUIntExpression {
     pub id: u64,
     pub s1: Rc<RefCell<ActiveValue>>,
     pub s2: Rc<RefCell<ActiveValue>>,
@@ -32,7 +33,7 @@ pub struct BoolEqExpression {
 }
 
 #[derive(Debug)]
-pub struct RetiredBoolEqExpression {
+pub struct RetiredBoolLessThanUIntExpression {
     pub id: u64,
     s1_id: u64,
     s1: Weak<RefCell<ActiveValue>>,
@@ -43,12 +44,12 @@ pub struct RetiredBoolEqExpression {
     pub z3_ast: Z3_ast,
 }
 
-impl BoolEqExpression {
+impl BoolLessThanUIntExpression {
     pub fn new(
         s1: Rc<RefCell<ActiveValue>>,
         s2: Rc<RefCell<ActiveValue>>,
         stdlib: &mut ScfiaStdlib,
-    ) -> BoolEqExpression {
+    ) -> BoolLessThanUIntExpression {
         Self::new_with_id(stdlib.get_symbol_id(), s1, s2, stdlib)
     }
 
@@ -57,16 +58,16 @@ impl BoolEqExpression {
         s1: Rc<RefCell<ActiveValue>>,
         s2: Rc<RefCell<ActiveValue>>,
         stdlib: &mut ScfiaStdlib,
-    ) -> BoolEqExpression {
+    ) -> BoolLessThanUIntExpression {
         unsafe {
             let z3_context = stdlib.z3_context;
-            let ast = Z3_mk_eq(
+            let ast = Z3_mk_bvult(
                 stdlib.z3_context,
                 s1.try_borrow().unwrap().get_z3_ast(),
                 s2.try_borrow().unwrap().get_z3_ast(),
             );
             Z3_inc_ref(z3_context, ast);
-            BoolEqExpression {
+            BoolLessThanUIntExpression {
                 id,
                 s1: s1,
                 s2: s2,
@@ -136,10 +137,10 @@ impl BoolEqExpression {
     }
 }
 
-impl Drop for BoolEqExpression {
+impl Drop for BoolLessThanUIntExpression {
     fn drop(&mut self) {
         // Retire expression, maintain z3 ast refcount
-        let retired_expression = Rc::new(RefCell::new(RetiredValue::RetiredBoolEqExpression(RetiredBoolEqExpression {
+        let retired_expression = Rc::new(RefCell::new(RetiredValue::RetiredBoolLessThanUIntExpression(RetiredBoolLessThanUIntExpression {
             id: self.id,
             s1_id: self.s1.try_borrow().unwrap().get_id(),
             s1: Rc::downgrade(&self.s1),
@@ -182,7 +183,7 @@ impl Drop for BoolEqExpression {
     }
 }
 
-impl RetiredBoolEqExpression {
+impl RetiredBoolLessThanUIntExpression {
     pub fn clone_to_stdlib(
         &self,
         cloned_active_values: &mut HashMap<u64, Rc<RefCell<ActiveValue>>>,
@@ -206,13 +207,13 @@ impl RetiredBoolEqExpression {
         };
 
         let cloned: Rc<RefCell<RetiredValue>> = unsafe {
-            let z3_ast = Z3_mk_eq(
+            let z3_ast = Z3_mk_bvult(
                 cloned_stdlib.z3_context,
                 s1_ast,
                 s2_ast,
             );
             Z3_inc_ref(cloned_stdlib.z3_context, z3_ast);
-            RetiredBoolEqExpression {
+            RetiredBoolLessThanUIntExpression {
                 id: self.id,
                 is_assert: self.is_assert,
                 s1_id: self.s1_id,
@@ -229,7 +230,7 @@ impl RetiredBoolEqExpression {
     }
 }
 
-impl Drop for RetiredBoolEqExpression {
+impl Drop for RetiredBoolLessThanUIntExpression {
     fn drop(&mut self) {
         unsafe { Z3_dec_ref(self.z3_context, self.z3_ast) }
     }

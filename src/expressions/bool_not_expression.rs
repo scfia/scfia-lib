@@ -17,13 +17,13 @@ use z3_sys::Z3_dec_ref;
 use z3_sys::Z3_inc_ref;
 use z3_sys::Z3_mk_bvadd;
 use z3_sys::Z3_mk_eq;
+use z3_sys::Z3_mk_not;
 use z3_sys::Z3_solver_assert;
 
 #[derive(Debug)]
-pub struct BoolEqExpression {
+pub struct BoolNotExpression {
     pub id: u64,
     pub s1: Rc<RefCell<ActiveValue>>,
-    pub s2: Rc<RefCell<ActiveValue>>,
     pub inherited_asts: Vec<Rc<RefCell<RetiredValue>>>,
     pub discovered_asts: HashMap<u64, Weak<RefCell<ActiveValue>>>,
     pub is_assert: bool,
@@ -32,44 +32,38 @@ pub struct BoolEqExpression {
 }
 
 #[derive(Debug)]
-pub struct RetiredBoolEqExpression {
+pub struct RetiredBoolNotExpression {
     pub id: u64,
     s1_id: u64,
     s1: Weak<RefCell<ActiveValue>>,
-    s2_id: u64,
-    s2: Weak<RefCell<ActiveValue>>,
     pub is_assert: bool,
     pub z3_context: Z3_context,
     pub z3_ast: Z3_ast,
 }
 
-impl BoolEqExpression {
+impl BoolNotExpression {
     pub fn new(
         s1: Rc<RefCell<ActiveValue>>,
-        s2: Rc<RefCell<ActiveValue>>,
         stdlib: &mut ScfiaStdlib,
-    ) -> BoolEqExpression {
-        Self::new_with_id(stdlib.get_symbol_id(), s1, s2, stdlib)
+    ) -> BoolNotExpression {
+        Self::new_with_id(stdlib.get_symbol_id(), s1, stdlib)
     }
 
     pub fn new_with_id(
         id: u64,
         s1: Rc<RefCell<ActiveValue>>,
-        s2: Rc<RefCell<ActiveValue>>,
         stdlib: &mut ScfiaStdlib,
-    ) -> BoolEqExpression {
+    ) -> BoolNotExpression {
         unsafe {
             let z3_context = stdlib.z3_context;
-            let ast = Z3_mk_eq(
+            let ast = Z3_mk_not(
                 stdlib.z3_context,
                 s1.try_borrow().unwrap().get_z3_ast(),
-                s2.try_borrow().unwrap().get_z3_ast(),
             );
             Z3_inc_ref(z3_context, ast);
-            BoolEqExpression {
+            BoolNotExpression {
                 id,
                 s1: s1,
-                s2: s2,
                 inherited_asts: vec![],
                 discovered_asts: HashMap::new(),
                 is_assert: false,
@@ -92,10 +86,9 @@ impl BoolEqExpression {
 
         // Clone s1, s2
         let s1 = self.s1.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
-        let s2 = self.s2.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
 
         // Build clone
-        let cloned_expression = Self::new_with_id(self.id, s1, s2, cloned_stdlib);
+        let cloned_expression = Self::new_with_id(self.id, s1, cloned_stdlib);
         if self.is_assert {
             unsafe {
                 Z3_solver_assert(cloned_stdlib.z3_context, cloned_stdlib.z3_solver, cloned_expression.z3_ast);
@@ -136,22 +129,20 @@ impl BoolEqExpression {
     }
 }
 
-impl Drop for BoolEqExpression {
+impl Drop for BoolNotExpression {
     fn drop(&mut self) {
         // Retire expression, maintain z3 ast refcount
-        let retired_expression = Rc::new(RefCell::new(RetiredValue::RetiredBoolEqExpression(RetiredBoolEqExpression {
+        let retired_expression = Rc::new(RefCell::new(RetiredValue::RetiredBoolNotExpression(RetiredBoolNotExpression {
             id: self.id,
             s1_id: self.s1.try_borrow().unwrap().get_id(),
             s1: Rc::downgrade(&self.s1),
-            s2_id: self.s2.try_borrow().unwrap().get_id(),
-            s2: Rc::downgrade(&self.s2),
             is_assert: self.is_assert,
             z3_context: self.z3_context,
             z3_ast: self.z3_ast,
         })));
 
         // Heirs are parents and discovered symbols
-        let mut heirs: Vec<Rc<RefCell<ActiveValue>>> = vec![self.s1.clone(), self.s2.clone()];
+        let mut heirs: Vec<Rc<RefCell<ActiveValue>>> = vec![self.s1.clone()];
         for discovered_symbol in self.discovered_asts.values() {
             let discovered_symbol = discovered_symbol.upgrade().unwrap();
             let mut discovered_symbol_ref = discovered_symbol.try_borrow_mut().unwrap();
@@ -162,7 +153,7 @@ impl Drop for BoolEqExpression {
         // For each heir...
         for heir in &heirs {
             let mut heir_ref = heir.try_borrow_mut().unwrap();
-            
+
             // Inherit
             heir_ref.inherit(retired_expression.clone());
 
@@ -182,43 +173,35 @@ impl Drop for BoolEqExpression {
     }
 }
 
-impl RetiredBoolEqExpression {
+impl RetiredBoolNotExpression {
     pub fn clone_to_stdlib(
         &self,
         cloned_active_values: &mut HashMap<u64, Rc<RefCell<ActiveValue>>>,
         cloned_retired_values: &mut HashMap<u64, Rc<RefCell<RetiredValue>>>,
         cloned_stdlib: &mut ScfiaStdlib
     ) -> Rc<RefCell<RetiredValue>> {
+        // println!("RetiredBoolNotExpression getting parent ast {}", self.s1_id);
         let s1_ast = if let Some(s1) = cloned_active_values.get(&self.s1_id) {
             s1.try_borrow().unwrap().get_z3_ast()
         } else if let Some(s1) = self.s1.upgrade() {
             s1.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib).try_borrow().unwrap().get_z3_ast()
+        } else if let Some(s1) = cloned_retired_values.get(&self.s1_id) {
+            s1.try_borrow().unwrap().get_z3_ast()
         } else {
-            cloned_retired_values.get(&self.s1_id).unwrap().try_borrow().unwrap().get_z3_ast()
-        };
-
-        let s2_ast = if let Some(s2) = cloned_active_values.get(&self.s2_id) {
-            s2.try_borrow().unwrap().get_z3_ast()
-        } else if let Some(s2) = self.s2.upgrade() {
-            s2.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib).try_borrow().unwrap().get_z3_ast()
-        } else {
-            cloned_retired_values.get(&self.s2_id).unwrap().try_borrow().unwrap().get_z3_ast()
+            panic!("Retired parent {} not found in cloned_retired_values\n{:?}", self.s1_id, self);
         };
 
         let cloned: Rc<RefCell<RetiredValue>> = unsafe {
-            let z3_ast = Z3_mk_eq(
+            let z3_ast = Z3_mk_not(
                 cloned_stdlib.z3_context,
                 s1_ast,
-                s2_ast,
             );
             Z3_inc_ref(cloned_stdlib.z3_context, z3_ast);
-            RetiredBoolEqExpression {
+            RetiredBoolNotExpression {
                 id: self.id,
                 is_assert: self.is_assert,
                 s1_id: self.s1_id,
                 s1: self.s1.clone(),
-                s2_id: self.s2_id,
-                s2: self.s2.clone(),
                 z3_context: cloned_stdlib.z3_context,
                 z3_ast
             }
@@ -229,7 +212,7 @@ impl RetiredBoolEqExpression {
     }
 }
 
-impl Drop for RetiredBoolEqExpression {
+impl Drop for RetiredBoolNotExpression {
     fn drop(&mut self) {
         unsafe { Z3_dec_ref(self.z3_context, self.z3_ast) }
     }

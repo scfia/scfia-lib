@@ -111,7 +111,7 @@ impl BitVectorSymbol {
         let cloned_symbol: Rc<RefCell<ActiveValue>> = cloned_symbol.into();
         cloned_active_values.insert(self.id, cloned_symbol.clone());
 
-        for inherited_ast in self.inherited_asts.iter().rev() {
+        for inherited_ast in self.inherited_asts.iter() {
             let cloned_inherited_ast = inherited_ast.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
             cloned_symbol.try_borrow_mut().unwrap().inherit(cloned_inherited_ast);
         }
@@ -150,13 +150,13 @@ impl Drop for BitVectorSymbol {
         for heir in &heirs {
             let mut heir_ref = heir.try_borrow_mut().unwrap();
 
+            // Inherit
+            heir_ref.inherit(retired_expression.clone());
+
             // Pass on inherited symbols
             for inherited in &self.inherited_asts {
                 heir_ref.inherit(inherited.clone())
             }
-
-            // Inherit
-            heir_ref.inherit(retired_expression.clone());
 
             // Acquaint all heirs
             for other_heir in &heirs {

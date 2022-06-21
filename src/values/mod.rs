@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::{Rc, Weak}};
 use std::collections::HashMap;
 use z3_sys::Z3_solver_assert;
 
-use crate::ScfiaStdlib;
+use crate::{ScfiaStdlib, expressions::{bool_less_than_uint_expression::{BoolLessThanUIntExpression, RetiredBoolLessThanUIntExpression}, bool_not_expression::{RetiredBoolNotExpression, BoolNotExpression}}};
 
 use crate::{expressions::{bool_eq_expression::{BoolEqExpression, RetiredBoolEqExpression}, bool_neq_expression::{BoolNEqExpression, RetiredBoolNEqExpression}, bv_add_expression::{BVAddExpression, RetiredBVAddExpression}, bv_concat_expression::{BVConcatExpression, RetiredBVConcatExpression}, bv_or_expression::{BVOrExpression, RetiredBVOrExpression}, bv_sign_extend_expression::{BVSignExtendExpression, RetiredBVSignExtendExpression}, bv_slice_expression::{BVSliceExpression, RetiredBVSliceExpression}}, traits::ast::Ast};
 
@@ -22,7 +22,9 @@ pub enum ActiveValue {
     BitvectorConcrete(BitVectorConcrete),
     BitvectorSymbol(BitVectorSymbol),
     BoolEqExpression(BoolEqExpression),
+    BoolLessThanUIntExpression(BoolLessThanUIntExpression),
     BoolNEqExpression(BoolNEqExpression),
+    BoolNotExpression(BoolNotExpression),
     BitvectorAddExpression(BVAddExpression),
     BitvectorConcatExpression(BVConcatExpression),
     BitvectorOrExpression(BVOrExpression),
@@ -35,7 +37,9 @@ pub enum RetiredValue {
     RetiredBitvectorConcrete(RetiredBitvectorConcrete),
     RetiredBitvectorSymbol(RetiredBitvectorSymbol),
     RetiredBoolEqExpression(RetiredBoolEqExpression),
+    RetiredBoolLessThanUIntExpression(RetiredBoolLessThanUIntExpression),
     RetiredBoolNEqExpression(RetiredBoolNEqExpression),
+    RetiredBoolNotExpression(RetiredBoolNotExpression),
     RetiredBitvectorAddExpression(RetiredBVAddExpression),
     RetiredBitvectorConcatExpression(RetiredBVConcatExpression),
     RetiredBitvectorOrExpression(RetiredBVOrExpression),
@@ -64,13 +68,13 @@ impl ActiveValue {
         let id = self.get_id();
         match self {
             ActiveValue::BitvectorConcrete(_) => {},
-            x => println!("clone_to_stdlib ActiveValue {:?}", &x),
+            x => println!("clone_to_stdlib ActiveValue {:?}", x),
         }
         if let Some(translated_value) = cloned_active_values.get(&id) {
             return translated_value.clone();
         }
 
-        match self {
+        let clone = match self {
             ActiveValue::BitvectorConcrete(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
             ActiveValue::BitvectorSymbol(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
             ActiveValue::BoolEqExpression(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
@@ -80,7 +84,10 @@ impl ActiveValue {
             ActiveValue::BitvectorOrExpression(_) => unimplemented!(),
             ActiveValue::BitvectorSignExtendExpression(_) => unimplemented!(),
             ActiveValue::BitvectorSliceExpression(_) => unimplemented!(),
-        }
+            ActiveValue::BoolLessThanUIntExpression(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
+            ActiveValue::BoolNotExpression(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
+        };
+        clone
     }
 
     pub fn assert(&mut self, stdlib: &mut ScfiaStdlib) {
@@ -88,6 +95,8 @@ impl ActiveValue {
         match self {
             ActiveValue::BoolEqExpression(x) => x.assert(stdlib),
             ActiveValue::BoolNEqExpression(x) => x.assert(stdlib),
+            ActiveValue::BoolNotExpression(x) => x.assert(stdlib),
+            ActiveValue::BoolLessThanUIntExpression(x) => x.assert(stdlib),
             x => panic!("{:?}", &x),
         }
     }
@@ -119,6 +128,8 @@ impl RetiredValue {
             RetiredValue::RetiredBitvectorOrExpression(_) => todo!(),
             RetiredValue::RetiredBitvectorSignExtendExpression(_) => todo!(),
             RetiredValue::RetiredBitvectorSliceExpression(_) => todo!(),
+            RetiredValue::RetiredBoolLessThanUIntExpression(_) => todo!(),
+            RetiredValue::RetiredBoolNotExpression(x) => x.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
         }
     }
 
@@ -133,6 +144,8 @@ impl RetiredValue {
             RetiredValue::RetiredBitvectorOrExpression(e) => e.id,
             RetiredValue::RetiredBitvectorSignExtendExpression(e) => e.id,
             RetiredValue::RetiredBitvectorSliceExpression(e) => e.id,
+            RetiredValue::RetiredBoolLessThanUIntExpression(e) => e.id,
+            RetiredValue::RetiredBoolNotExpression(e) => e.id,
         }
     }
 
@@ -147,6 +160,8 @@ impl RetiredValue {
             RetiredValue::RetiredBitvectorOrExpression(e) => e.z3_ast,
             RetiredValue::RetiredBitvectorSignExtendExpression(e) => e.z3_ast,
             RetiredValue::RetiredBitvectorSliceExpression(e) => e.z3_ast,
+            RetiredValue::RetiredBoolLessThanUIntExpression(e) => e.z3_ast,
+            RetiredValue::RetiredBoolNotExpression(e) => e.z3_ast,
         }
     }
 }
@@ -163,6 +178,8 @@ impl Ast for ActiveValue {
             ActiveValue::BitvectorOrExpression(e) => e.id,
             ActiveValue::BitvectorSignExtendExpression(e) => e.id,
             ActiveValue::BitvectorSliceExpression(e) => e.id,
+            ActiveValue::BoolLessThanUIntExpression(e) => e.id,
+            ActiveValue::BoolNotExpression(e) => e.id,
         }
     }
 
@@ -177,6 +194,8 @@ impl Ast for ActiveValue {
             ActiveValue::BitvectorOrExpression(e) => e.z3_ast,
             ActiveValue::BitvectorSignExtendExpression(e) => e.z3_ast,
             ActiveValue::BitvectorSliceExpression(e) => e.z3_ast,
+            ActiveValue::BoolLessThanUIntExpression(e) => e.z3_ast,
+            ActiveValue::BoolNotExpression(e) => e.z3_ast,
         }
     }
 
@@ -191,6 +210,8 @@ impl Ast for ActiveValue {
             ActiveValue::BitvectorOrExpression(e) => e.inherited_asts.push(ast),
             ActiveValue::BitvectorSignExtendExpression(e) => e.inherited_asts.push(ast),
             ActiveValue::BitvectorSliceExpression(e) => e.inherited_asts.push(ast),
+            ActiveValue::BoolLessThanUIntExpression(e) => e.inherited_asts.push(ast),
+            ActiveValue::BoolNotExpression(e) => e.inherited_asts.push(ast),
         }
     }
 
@@ -205,6 +226,8 @@ impl Ast for ActiveValue {
             ActiveValue::BitvectorOrExpression(e) => { e.discovered_asts.remove(&id); },
             ActiveValue::BitvectorSignExtendExpression(e) => { e.discovered_asts.remove(&id); },
             ActiveValue::BitvectorSliceExpression(e) => { e.discovered_asts.remove(&id); },
+            ActiveValue::BoolLessThanUIntExpression(e) => { e.discovered_asts.remove(&id); },
+            ActiveValue::BoolNotExpression(e) => { e.discovered_asts.remove(&id); },
         }
     }
 
@@ -219,6 +242,8 @@ impl Ast for ActiveValue {
             ActiveValue::BitvectorOrExpression(e) => { e.discovered_asts.insert(ast_id, ast); },
             ActiveValue::BitvectorSignExtendExpression(e) => { e.discovered_asts.insert(ast_id, ast); },
             ActiveValue::BitvectorSliceExpression(e) => { e.discovered_asts.insert(ast_id, ast); },
+            ActiveValue::BoolLessThanUIntExpression(_) => todo!(),
+            ActiveValue::BoolNotExpression(_) => todo!(),
         }
     }
 }
@@ -247,9 +272,21 @@ impl From<BoolEqExpression> for Rc<RefCell<ActiveValue>> {
     }
 }
 
+impl From<BoolLessThanUIntExpression> for Rc<RefCell<ActiveValue>> {
+    fn from(s: BoolLessThanUIntExpression) -> Self {
+        Rc::new(RefCell::new(ActiveValue::BoolLessThanUIntExpression(s)))
+    }
+}
+
 impl From<BoolNEqExpression> for Rc<RefCell<ActiveValue>> {
     fn from(s: BoolNEqExpression) -> Self {
         Rc::new(RefCell::new(ActiveValue::BoolNEqExpression(s)))
+    }
+}
+
+impl From<BoolNotExpression> for Rc<RefCell<ActiveValue>> {
+    fn from(s: BoolNotExpression) -> Self {
+        Rc::new(RefCell::new(ActiveValue::BoolNotExpression(s)))
     }
 }
 
@@ -307,9 +344,21 @@ impl From<RetiredBoolEqExpression> for Rc<RefCell<RetiredValue>> {
     }
 }
 
+impl From<RetiredBoolLessThanUIntExpression> for Rc<RefCell<RetiredValue>> {
+    fn from(s: RetiredBoolLessThanUIntExpression) -> Self {
+        Rc::new(RefCell::new(RetiredValue::RetiredBoolLessThanUIntExpression(s)))
+    }
+}
+
 impl From<RetiredBoolNEqExpression> for Rc<RefCell<RetiredValue>> {
     fn from(s: RetiredBoolNEqExpression) -> Self {
         Rc::new(RefCell::new(RetiredValue::RetiredBoolNEqExpression(s)))
+    }
+}
+
+impl From<RetiredBoolNotExpression> for Rc<RefCell<RetiredValue>> {
+    fn from(s: RetiredBoolNotExpression) -> Self {
+        Rc::new(RefCell::new(RetiredValue::RetiredBoolNotExpression(s)))
     }
 }
 

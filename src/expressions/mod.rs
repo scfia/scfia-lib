@@ -1,5 +1,7 @@
 pub mod bool_eq_expression;
+pub mod bool_less_than_uint_expression;
 pub mod bool_neq_expression;
+pub mod bool_not_expression;
 pub mod bv_add_expression;
 pub mod bv_concat_expression;
 pub mod bv_or_expression;

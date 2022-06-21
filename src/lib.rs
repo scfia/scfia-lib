@@ -16,6 +16,7 @@ use std::vec;
 
 use expressions::bool_eq_expression::BoolEqExpression;
 use expressions::bool_neq_expression::BoolNEqExpression;
+use expressions::bool_not_expression::BoolNotExpression;
 use models::riscv::rv32i::ForkSink;
 use traits::ast::Ast;
 use traits::bit_vector_expression::BitVectorExpression;
@@ -23,6 +24,7 @@ use values::ActiveValue;
 use values::RetiredValue;
 use values::bit_vector_symbol::BitVectorSymbol;
 use z3_sys::Z3_L_FALSE;
+use z3_sys::Z3_L_TRUE;
 use z3_sys::Z3_ast_vector_dec_ref;
 use z3_sys::Z3_ast_vector_inc_ref;
 use z3_sys::Z3_ast_vector_size;
@@ -36,6 +38,7 @@ use z3_sys::Z3_del_config;
 use z3_sys::Z3_mk_config;
 use z3_sys::Z3_mk_eq;
 use z3_sys::Z3_mk_model;
+use z3_sys::Z3_mk_not;
 use z3_sys::Z3_model_dec_ref;
 use z3_sys::Z3_model_inc_ref;
 use z3_sys::Z3_solver;
@@ -90,51 +93,23 @@ impl ScfiaStdlib {
         symbol_id
     }
 
-    
-    pub fn do_neq(&mut self, left: Rc<RefCell<ActiveValue>>, right: Rc<RefCell<ActiveValue>>, fork_sink: Option<Rc<RefCell<ForkSink>>>) -> bool {
+    pub fn assert_consistency(&mut self) {
         unsafe {
-            let mut can_be_true = false;
-            let mut can_be_false = false;
-
-            let mut condition_symbol = ActiveValue::BoolNEqExpression(BoolNEqExpression::new(left.clone(), right.clone(), self));
-            let neg_condition_symbol = ActiveValue::BoolEqExpression(BoolEqExpression::new(left.clone(), right.clone(), self));
-
-            let condition_ast = condition_symbol.get_z3_ast();
-            if Z3_solver_check_assumptions(self.z3_context, self.z3_solver, 1, &condition_ast) != -1 {
-                can_be_true = true
-            }
-
-            let neg_condition_ast = neg_condition_symbol.get_z3_ast();
-            if Z3_solver_check_assumptions(self.z3_context, self.z3_solver, 1, &neg_condition_ast) != -1 {
-                can_be_false = true
-            }
-
-            if can_be_true && can_be_false {
-                // Create fork with negative condition
-                println!("fork condition {:?}", &neg_condition_symbol);
-                fork_sink.unwrap().try_borrow_mut().unwrap().fork_conditions.push(neg_condition_symbol.into());
-
-                // continue with positive condition
-                condition_symbol.assert(self);
-                true
-            } else if can_be_true {
-                true
-            } else if can_be_false {
-                false
-            } else {
-                unreachable!()
-            }
+            assert_eq!(Z3_solver_check(self.z3_context, self.z3_solver), Z3_L_TRUE);
         }
     }
 
-    pub fn do_eq(&mut self, left: Rc<RefCell<ActiveValue>>, right: Rc<RefCell<ActiveValue>>, fork_sink: Option<Rc<RefCell<ForkSink>>>) -> bool {
+    pub fn do_condition(&mut self, expression: Rc<RefCell<ActiveValue>>, fork_sink: Option<Rc<RefCell<ForkSink>>>) -> bool {
         unsafe {
+            assert_eq!(Z3_solver_check(self.z3_context, self.z3_solver), Z3_L_TRUE);
             let mut can_be_true = false;
             let mut can_be_false = false;
 
-            let mut condition_symbol = ActiveValue::BoolEqExpression(BoolEqExpression::new(left.clone(), right.clone(), self));
-            let condition_ast = condition_symbol.get_z3_ast();
-            let neg_condition_symbol = ActiveValue::BoolNEqExpression(BoolNEqExpression::new(left, right, self));
+            let condition_ast = {
+                let condition_symbol = expression.try_borrow_mut().unwrap();
+                condition_symbol.get_z3_ast()
+            };
+            let neg_condition_symbol = ActiveValue::BoolNotExpression(BoolNotExpression::new(expression.clone(), self));
             let neg_condition_ast = neg_condition_symbol.get_z3_ast();
 
             if Z3_solver_check_assumptions(self.z3_context, self.z3_solver, 1, &condition_ast) != Z3_L_FALSE {
@@ -147,11 +122,13 @@ impl ScfiaStdlib {
 
             if can_be_true && can_be_false {
                 // Create fork with negative condition
-                println!("fork condition {:?}", &neg_condition_symbol);
-                fork_sink.unwrap().try_borrow_mut().unwrap().fork_conditions.push(neg_condition_symbol.into());
+                println!("FORK!");
+                println!("negcondition={:?}", &neg_condition_symbol);
+                println!("condition={:?}", &expression);
+                fork_sink.unwrap().try_borrow_mut().unwrap().fork(neg_condition_symbol.into());
 
                 // continue with positive condition
-                condition_symbol.assert(self);
+                expression.try_borrow_mut().unwrap().assert(self);
 
                 true
             } else if can_be_true {
@@ -159,7 +136,7 @@ impl ScfiaStdlib {
             } else if can_be_false {
                 false
             } else {
-                unreachable!()
+                unreachable!("expression= {:?}, can_be_true={}, can_be_false={}", expression, can_be_true, can_be_false)
             }
         }
     }
