@@ -4,7 +4,7 @@ use z3_sys::Z3_solver_assert;
 
 use crate::{ScfiaStdlib, expressions::{bool_less_than_uint_expression::{BoolLessThanUIntExpression, RetiredBoolLessThanUIntExpression}, bool_not_expression::{RetiredBoolNotExpression, BoolNotExpression}, bv_and_expression::{BVAndExpression, RetiredBVAndExpression}, bv_shift_right_logical_expression::{BVShiftRightLogicalExpression, RetiredBVShiftRightLogicalExpression}, bv_shift_left_logical_expression::{BVShiftLeftLogicalExpression, RetiredBVShiftLeftLogicalExpression}}};
 
-use crate::{expressions::{bool_eq_expression::{BoolEqExpression, RetiredBoolEqExpression}, bool_neq_expression::{BoolNEqExpression, RetiredBoolNEqExpression}, bv_add_expression::{BVAddExpression, RetiredBVAddExpression}, bv_concat_expression::{BVConcatExpression, RetiredBVConcatExpression}, bv_or_expression::{BVOrExpression, RetiredBVOrExpression}, bv_sign_extend_expression::{BVSignExtendExpression, RetiredBVSignExtendExpression}, bv_slice_expression::{BVSliceExpression, RetiredBVSliceExpression}}, traits::ast::Ast};
+use crate::{expressions::{bool_eq_expression::{BoolEqExpression, RetiredBoolEqExpression}, bool_neq_expression::{BoolNEqExpression, RetiredBoolNEqExpression}, bv_add_expression::{BVAddExpression, RetiredBVAddExpression}, bv_concat_expression::{BVConcatExpression, RetiredBVConcatExpression}, bv_or_expression::{BVOrExpression, RetiredBVOrExpression}, bv_sign_extend_expression::{BVSignExtendExpression, RetiredBVSignExtendExpression}, bv_slice_expression::{BVSliceExpression, RetiredBVSliceExpression}}};
 
 use self::{bit_vector_concrete::{BitVectorConcrete, RetiredBitvectorConcrete}, bit_vector_symbol::{BitVectorSymbol, RetiredBitvectorSymbol}};
 
@@ -184,8 +184,8 @@ impl RetiredValue {
     }
 }
 
-impl Ast for ActiveValue {
-    fn get_id(&self) -> u64 {
+impl ActiveValue {
+    pub fn get_id(&self) -> u64 {
         match self {
             ActiveValue::BitvectorConcrete(e) => e.id,
             ActiveValue::BitvectorSymbol(e) => e.id,
@@ -204,7 +204,7 @@ impl Ast for ActiveValue {
         }
     }
 
-    fn get_z3_ast(&self) -> z3_sys::Z3_ast {
+    pub fn get_z3_ast(&self) -> z3_sys::Z3_ast {
         match self {
             ActiveValue::BitvectorConcrete(e) => e.z3_ast,
             ActiveValue::BitvectorSymbol(e) => e.z3_ast,
@@ -223,26 +223,27 @@ impl Ast for ActiveValue {
         }
     }
 
-    fn inherit(&mut self, ast: Rc<RefCell<RetiredValue>>) {
+    pub fn inherit(&mut self, ast_id: u64, ast: Rc<RefCell<RetiredValue>>) {
+        // println!("{} inheriting {:?}", self.get_id(), ast);
         match self {
-            ActiveValue::BitvectorConcrete(e) => e.inherited_asts.push(ast),
-            ActiveValue::BitvectorSymbol(e) => e.inherited_asts.push(ast),
-            ActiveValue::BoolEqExpression(e) => e.inherited_asts.push(ast),
-            ActiveValue::BoolNEqExpression(e) => e.inherited_asts.push(ast),
-            ActiveValue::BitvectorAddExpression(e) => e.inherited_asts.push(ast),
-            ActiveValue::BitvectorConcatExpression(e) => e.inherited_asts.push(ast),
-            ActiveValue::BitvectorOrExpression(e) => e.inherited_asts.push(ast),
-            ActiveValue::BitvectorSignExtendExpression(e) => e.inherited_asts.push(ast),
-            ActiveValue::BitvectorSliceExpression(e) => e.inherited_asts.push(ast),
-            ActiveValue::BoolLessThanUIntExpression(e) => e.inherited_asts.push(ast),
-            ActiveValue::BoolNotExpression(e) => e.inherited_asts.push(ast),
-            ActiveValue::BitvectorAndExpression(e) => e.inherited_asts.push(ast),
-            ActiveValue::BitvectorShiftRightLogicalExpression(e) => e.inherited_asts.push(ast),
-            ActiveValue::BitvectorShiftLeftLogicalExpression(e) => e.inherited_asts.push(ast),
+            ActiveValue::BitvectorConcrete(e) => {},
+            ActiveValue::BitvectorSymbol(e) => { e.inherited_asts.insert(ast_id, ast); },
+            ActiveValue::BoolEqExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
+            ActiveValue::BoolNEqExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
+            ActiveValue::BitvectorAddExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
+            ActiveValue::BitvectorConcatExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
+            ActiveValue::BitvectorOrExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
+            ActiveValue::BitvectorSignExtendExpression(e) =>{ e.inherited_asts.insert(ast_id, ast); },
+            ActiveValue::BitvectorSliceExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
+            ActiveValue::BoolLessThanUIntExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
+            ActiveValue::BoolNotExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
+            ActiveValue::BitvectorAndExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
+            ActiveValue::BitvectorShiftRightLogicalExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
+            ActiveValue::BitvectorShiftLeftLogicalExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
         }
     }
 
-    fn forget(&mut self, id: u64) {
+    pub fn forget(&mut self, id: u64) {
         match self {
             ActiveValue::BitvectorConcrete(e) => { e.discovered_asts.remove(&id); },
             ActiveValue::BitvectorSymbol(e) => { e.discovered_asts.remove(&id); },
@@ -261,7 +262,7 @@ impl Ast for ActiveValue {
         }
     }
 
-    fn discover(&mut self, ast_id: u64, ast: Weak<RefCell<ActiveValue>>) {
+    pub fn discover(&mut self, ast_id: u64, ast: Weak<RefCell<ActiveValue>>) {
         match self {
             ActiveValue::BitvectorConcrete(e) => { e.discovered_asts.insert(ast_id, ast); },
             ActiveValue::BitvectorSymbol(e) => { e.discovered_asts.insert(ast_id, ast); },

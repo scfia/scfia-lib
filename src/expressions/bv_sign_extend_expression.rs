@@ -1,13 +1,10 @@
-use crate::traits::ast::Ast;
-use crate::traits::bit_vector::BitVector;
-use crate::traits::bit_vector_expression::BitVectorExpression;
-use crate::traits::expression::Expression;
 use crate::ScfiaStdlib;
 use crate::values::ActiveValue;
 use crate::values::RetiredValue;
 use crate::values::bit_vector_concrete::BitVectorConcrete;
 use std::cell::Ref;
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::rc::Rc;
@@ -19,13 +16,16 @@ use z3_sys::Z3_inc_ref;
 use z3_sys::Z3_mk_bvadd;
 use z3_sys::Z3_mk_sign_ext;
 
+use super::inherit;
+
 #[derive(Debug)]
 pub struct BVSignExtendExpression {
     pub id: u64,
+    pub s1_id: u64,
     pub s1: Rc<RefCell<ActiveValue>>,
     pub input_width: u32,
     pub output_width: u32,
-    pub inherited_asts: Vec<Rc<RefCell<RetiredValue>>>,
+    pub inherited_asts: BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
     pub discovered_asts: HashMap<u64, Weak<RefCell<ActiveValue>>>,
     pub z3_context: Z3_context,
     pub z3_ast: Z3_ast,
@@ -70,18 +70,26 @@ impl BVSignExtendExpression {
     ) -> BVSignExtendExpression {
         unsafe {
             let z3_context = stdlib.z3_context;
+            let s1_ast;
+            let s1_id;
+            {
+                let s1 = s1.try_borrow().unwrap();
+                s1_ast = s1.get_z3_ast();
+                s1_id = s1.get_id();
+            }
             let ast = Z3_mk_sign_ext(
                 stdlib.z3_context,
                 output_width - input_width,
-                s1.try_borrow().unwrap().get_z3_ast(),
+                s1_ast,
             );
             Z3_inc_ref(z3_context, ast);
             BVSignExtendExpression {
                 id: id,
+                s1_id,
                 s1: s1,
                 input_width,
                 output_width,
-                inherited_asts: vec![],
+                inherited_asts: BTreeMap::new(),
                 discovered_asts: HashMap::new(),
                 z3_context: z3_context,
                 z3_ast: ast,
@@ -93,44 +101,26 @@ impl BVSignExtendExpression {
 impl Drop for BVSignExtendExpression {
     fn drop(&mut self) {
         // Retire expression, maintain z3 ast refcount
+        let s1_id = self.s1.try_borrow().unwrap().get_id();
         let retired_expression = Rc::new(RefCell::new(RetiredValue::RetiredBitvectorSignExtendExpression(RetiredBVSignExtendExpression {
             id: self.id,
-            s1: self.s1.try_borrow().unwrap().get_id(),
+            s1: s1_id,
             input_width: self.input_width,
             output_width: self.output_width,
             z3_context: self.z3_context,
             z3_ast: self.z3_ast,
         })));
 
-        // Heirs are parents and discovered symbols
-        let mut heirs: Vec<Rc<RefCell<ActiveValue>>> = vec![self.s1.clone()];
-        for discovered_symbol in self.discovered_asts.values() {
-            let discovered_symbol = discovered_symbol.upgrade().unwrap();
-            let mut discovered_symbol_ref = discovered_symbol.try_borrow_mut().unwrap();
-            discovered_symbol_ref.forget(self.id);
-            heirs.push(discovered_symbol.clone())
-        }
-
-        // For each heir...
-        for heir in &heirs {
-            let mut heir_ref = heir.try_borrow_mut().unwrap();
-
-            // Inherit
-            heir_ref.inherit(retired_expression.clone());
-
-            // Pass on inherited symbols
-            for inherited in &self.inherited_asts {
-                heir_ref.inherit(inherited.clone())
-            }
-
-            // Acquaint all heirs
-            for other_heir in &heirs {
-                if let Ok(mut other_heir_ref) = other_heir.try_borrow_mut() {
-                    heir_ref.discover(other_heir_ref.get_id(), Rc::downgrade(other_heir));
-                    other_heir_ref.discover(heir_ref.get_id(), Rc::downgrade(heir));
-                }                
-            }
-        }
+        let parents = vec![
+            (s1_id, self.s1.clone()),
+        ];
+        inherit(
+            self.id,
+            retired_expression,
+            parents,
+            &self.inherited_asts,
+            &self.discovered_asts
+        );
     }
 }
 

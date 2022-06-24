@@ -18,8 +18,6 @@ use expressions::bool_eq_expression::BoolEqExpression;
 use expressions::bool_neq_expression::BoolNEqExpression;
 use expressions::bool_not_expression::BoolNotExpression;
 use models::riscv::rv32i::ForkSink;
-use traits::ast::Ast;
-use traits::bit_vector_expression::BitVectorExpression;
 use values::ActiveValue;
 use values::RetiredValue;
 use values::bit_vector_symbol::BitVectorSymbol;

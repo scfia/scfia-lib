@@ -1,13 +1,10 @@
-use crate::traits::ast::Ast;
-use crate::traits::bit_vector::BitVector;
-use crate::traits::bit_vector_expression::BitVectorExpression;
-use crate::traits::expression::Expression;
 use crate::ScfiaStdlib;
 use crate::values::ActiveValue;
 use crate::values::RetiredValue;
 use crate::values::Value;
 use std::cell::Ref;
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::rc::Weak;
@@ -20,11 +17,13 @@ use z3_sys::Z3_mk_eq;
 use z3_sys::Z3_mk_not;
 use z3_sys::Z3_solver_assert;
 
+use super::inherit;
+
 #[derive(Debug)]
 pub struct BoolNotExpression {
     pub id: u64,
     pub s1: Rc<RefCell<ActiveValue>>,
-    pub inherited_asts: Vec<Rc<RefCell<RetiredValue>>>,
+    pub inherited_asts: BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
     pub discovered_asts: HashMap<u64, Weak<RefCell<ActiveValue>>>,
     pub is_assert: bool,
     pub z3_context: Z3_context,
@@ -64,7 +63,7 @@ impl BoolNotExpression {
             BoolNotExpression {
                 id,
                 s1: s1,
-                inherited_asts: vec![],
+                inherited_asts: BTreeMap::new(),
                 discovered_asts: HashMap::new(),
                 is_assert: false,
                 z3_context: z3_context,
@@ -99,8 +98,8 @@ impl BoolNotExpression {
 
         // Clone inherited values
         let mut cloned_inherited = vec![];
-        for inherited_ast in self.inherited_asts.iter().rev() {
-            cloned_inherited.push(inherited_ast.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib));
+        for (inherited_ast_id, inherited_ast) in self.inherited_asts.iter().rev() {
+            cloned_inherited.push((inherited_ast_id, inherited_ast.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib)));
         }
 
         // Clone discovered values
@@ -111,8 +110,8 @@ impl BoolNotExpression {
 
         // Update clone with retirees and discoveries
         let mut cloned_expression_ref = cloned_expression.try_borrow_mut().unwrap();
-        for cloned_inherited_ast in cloned_inherited {
-            cloned_expression_ref.inherit(cloned_inherited_ast)
+        for (cloned_inherited_ast_id, cloned_inherited_ast) in cloned_inherited {
+            cloned_expression_ref.inherit(*cloned_inherited_ast_id, cloned_inherited_ast)
         }
         for cloned_discovered_value in cloned_discovered {
             cloned_expression_ref.discover(cloned_discovered_value.try_borrow().unwrap().get_id(), Rc::downgrade(&cloned_discovered_value))
@@ -132,44 +131,26 @@ impl BoolNotExpression {
 impl Drop for BoolNotExpression {
     fn drop(&mut self) {
         // Retire expression, maintain z3 ast refcount
+        let s1_id = self.s1.try_borrow().unwrap().get_id();
         let retired_expression = Rc::new(RefCell::new(RetiredValue::RetiredBoolNotExpression(RetiredBoolNotExpression {
             id: self.id,
-            s1_id: self.s1.try_borrow().unwrap().get_id(),
+            s1_id: s1_id,
             s1: Rc::downgrade(&self.s1),
             is_assert: self.is_assert,
             z3_context: self.z3_context,
             z3_ast: self.z3_ast,
         })));
 
-        // Heirs are parents and discovered symbols
-        let mut heirs: Vec<Rc<RefCell<ActiveValue>>> = vec![self.s1.clone()];
-        for discovered_symbol in self.discovered_asts.values() {
-            let discovered_symbol = discovered_symbol.upgrade().unwrap();
-            let mut discovered_symbol_ref = discovered_symbol.try_borrow_mut().unwrap();
-            discovered_symbol_ref.forget(self.id);
-            heirs.push(discovered_symbol.clone())
-        }
-
-        // For each heir...
-        for heir in &heirs {
-            let mut heir_ref = heir.try_borrow_mut().unwrap();
-
-            // Inherit
-            heir_ref.inherit(retired_expression.clone());
-
-            // Pass on inherited symbols
-            for inherited in &self.inherited_asts {
-                heir_ref.inherit(inherited.clone())
-            }
-
-            // Acquaint all heirs
-            for other_heir in &heirs {
-                if let Ok(mut other_heir_ref) = other_heir.try_borrow_mut() {
-                    heir_ref.discover(other_heir_ref.get_id(), Rc::downgrade(other_heir));
-                    other_heir_ref.discover(heir_ref.get_id(), Rc::downgrade(heir));
-                }                
-            }
-        }
+        let parents = vec![
+            (s1_id, self.s1.clone()),
+        ];
+        inherit(
+            self.id,
+            retired_expression,
+            parents,
+            &self.inherited_asts,
+            &self.discovered_asts
+        );
     }
 }
 

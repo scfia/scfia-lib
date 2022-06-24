@@ -10,7 +10,6 @@ use scfia_lib::memory::stable_memory_region32::StableMemoryRegion32;
 use scfia_lib::memory::MemoryRegion32;
 use scfia_lib::memory::volatile_memory_region::VolatileMemoryRegion32;
 use scfia_lib::models::riscv::rv32i::RV32iSystemState;
-use scfia_lib::traits::ast::Ast;
 use scfia_lib::values::ActiveValue;
 use scfia_lib::values::bit_vector_symbol::BitVectorSymbol;
 use scfia_lib::{

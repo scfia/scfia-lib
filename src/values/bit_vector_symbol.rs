@@ -1,6 +1,6 @@
 use std::borrow::Borrow;
 use std::cell::Ref;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, BTreeMap};
 use std::hash::Hash;
 use std::rc::Weak;
 use std::{borrow::BorrowMut, cell::RefCell, rc::Rc};
@@ -10,10 +10,6 @@ use z3_sys::{
     Z3_mk_string, Z3_solver_assert, _Z3_symbol, Z3_mk_bv_sort, Z3_string,
 };
 
-use crate::traits::ast::{Ast};
-use crate::traits::bit_vector::BitVector;
-use crate::traits::bit_vector_expression::BitVectorExpression;
-use crate::traits::expression::{self, Expression};
 use crate::{ScfiaStdlib};
 
 use super::{ActiveValue, RetiredValue};
@@ -22,8 +18,8 @@ use super::{ActiveValue, RetiredValue};
 pub struct BitVectorSymbol {
     pub id: u64,
     pub width: u32,
-    pub expression: Option<Rc<RefCell<ActiveValue>>>,
-    pub inherited_asts: Vec<Rc<RefCell<RetiredValue>>>,
+    pub expression: Option<(u64, Rc<RefCell<ActiveValue>>)>,
+    pub inherited_asts: BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
     pub discovered_asts: HashMap<u64, Weak<RefCell<ActiveValue>>>,
     pub z3_context: Z3_context,
     pub z3_ast: Z3_ast,
@@ -32,15 +28,14 @@ pub struct BitVectorSymbol {
 #[derive(Debug)]
 pub struct RetiredBitvectorSymbol {
     pub id: u64,
-    pub expression_id: Option<u64>,
-    pub expression: Option<Weak<RefCell<ActiveValue>>>,
+    pub expression: Option<(u64, Weak<RefCell<ActiveValue>>)>,
     pub z3_context: Z3_context,
     pub z3_ast: Z3_ast,
 }
 
 impl BitVectorSymbol {
     pub fn new(
-        expression: Option<Rc<RefCell<ActiveValue>>>,
+        expression: Option<(u64, Rc<RefCell<ActiveValue>>)>,
         width: u32,
         stdlib: &mut ScfiaStdlib,
     ) -> Self {
@@ -50,7 +45,7 @@ impl BitVectorSymbol {
     pub fn new_with_id(
         id: u64,
         width: u32,
-        expression: Option<Rc<RefCell<ActiveValue>>>,
+        expression: Option<(u64, Rc<RefCell<ActiveValue>>)>,
         stdlib: &mut ScfiaStdlib,
     ) -> Self {
         unsafe {
@@ -67,7 +62,7 @@ impl BitVectorSymbol {
                 Z3_solver_assert(
                     stdlib.z3_context,
                     stdlib.z3_solver,
-                    expression.try_borrow().unwrap().get_z3_ast(),
+                    expression.1.try_borrow().unwrap().get_z3_ast(),
                 );
             }
 
@@ -75,7 +70,7 @@ impl BitVectorSymbol {
                 id,
                 width,
                 expression,
-                inherited_asts: vec![],
+                inherited_asts: BTreeMap::new(),
                 discovered_asts: HashMap::new(),
                 z3_context,
                 z3_ast,
@@ -96,7 +91,7 @@ impl BitVectorSymbol {
         }
 
         let cloned_expression = if let Some(expression) = &self.expression {
-            Some(expression.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib))
+            Some((expression.0, expression.1.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib)))
         } else {
             None
         };
@@ -111,9 +106,9 @@ impl BitVectorSymbol {
         let cloned_symbol: Rc<RefCell<ActiveValue>> = cloned_symbol.into();
         cloned_active_values.insert(self.id, cloned_symbol.clone());
 
-        for inherited_ast in self.inherited_asts.iter() {
+        for (inherited_ast_id, inherited_ast) in self.inherited_asts.iter() {
             let cloned_inherited_ast = inherited_ast.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
-            cloned_symbol.try_borrow_mut().unwrap().inherit(cloned_inherited_ast);
+            cloned_symbol.try_borrow_mut().unwrap().inherit(*inherited_ast_id, cloned_inherited_ast);
         }
 
         // TODO clone discovered values
@@ -128,38 +123,37 @@ impl Drop for BitVectorSymbol {
         // Retire expression, maintain z3 ast refcount
         let retired_expression = Rc::new(RefCell::new(RetiredValue::RetiredBitvectorSymbol(RetiredBitvectorSymbol {
             id: self.id,
-            expression_id: if let Some(expression) = &self.expression { Some(expression.try_borrow().unwrap().get_id()) } else { None },
-            expression: if let Some(expression) = &self.expression { Some(Rc::downgrade(expression)) } else { None },
+            expression: if let Some(expression) = &self.expression { Some((expression.0, Rc::downgrade(&expression.1))) } else { None },
             z3_context: self.z3_context,
             z3_ast: self.z3_ast,
         })));
 
         // Heirs are parents and discovered symbols
-        let mut heirs: Vec<Rc<RefCell<ActiveValue>>> = vec![];
+        let mut heirs: Vec<(u64, Rc<RefCell<ActiveValue>>)> = vec![];
         if let Some(expression) = &self.expression {
             heirs.push(expression.clone())
         }
-        for discovered_symbol in self.discovered_asts.values() {
+        for (discovered_symbol_id, discovered_symbol) in self.discovered_asts.iter() {
             let discovered_symbol = discovered_symbol.upgrade().unwrap();
             let mut discovered_symbol_ref = discovered_symbol.try_borrow_mut().unwrap();
             discovered_symbol_ref.forget(self.id);
-            heirs.push(discovered_symbol.clone())
+            heirs.push((*discovered_symbol_id, discovered_symbol.clone()))
         }
 
         // For each heir...
-        for heir in &heirs {
+        for (heir_id, heir) in &heirs {
             let mut heir_ref = heir.try_borrow_mut().unwrap();
 
             // Inherit
-            heir_ref.inherit(retired_expression.clone());
+            heir_ref.inherit(self.id, retired_expression.clone());
 
             // Pass on inherited symbols
-            for inherited in &self.inherited_asts {
-                heir_ref.inherit(inherited.clone())
+            for (inherited_id, inherited) in self.inherited_asts.iter() {
+                heir_ref.inherit(*inherited_id, inherited.clone())
             }
 
             // Acquaint all heirs
-            for other_heir in &heirs {
+            for (other_heir_id, other_heir) in &heirs {
                 if let Ok(mut other_heir_ref) = other_heir.try_borrow_mut() {
                     heir_ref.discover(other_heir_ref.get_id(), Rc::downgrade(other_heir));
                     other_heir_ref.discover(heir_ref.get_id(), Rc::downgrade(heir));

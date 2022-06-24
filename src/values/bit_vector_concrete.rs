@@ -10,8 +10,6 @@ use std::fmt;
 use std::rc::Rc;
 use std::rc::Weak;
 use crate::ScfiaStdlib;
-use crate::traits::ast::Ast;
-use crate::traits::bit_vector::BitVector;
 
 use super::ActiveValue;
 use super::RetiredValue;
@@ -21,7 +19,6 @@ pub struct BitVectorConcrete {
     pub id: u64,
     pub value: u64,
     pub width: u32,
-    pub inherited_asts: Vec<Rc<RefCell<RetiredValue>>>,
     pub discovered_asts: HashMap<u64, Weak<RefCell<ActiveValue>>>,
     pub z3_context: Z3_context,
     pub z3_ast: Z3_ast,
@@ -54,7 +51,6 @@ impl BitVectorConcrete {
                 id,
                 value: value,
                 width: width,
-                inherited_asts: vec![],
                 discovered_asts: HashMap::new(),
                 z3_context: stdlib.z3_context,
                 z3_ast: ast,
@@ -83,6 +79,10 @@ impl fmt::Debug for BitVectorConcrete {
 
 impl Drop for BitVectorConcrete {
     fn drop(&mut self) {
+        if self.id == 20875 {
+            println!("retiring bvc {:?}", self)
+        }
+
         // Retire expression, maintain z3 ast refcount
         let retired_expression = Rc::new(RefCell::new(RetiredValue::RetiredBitvectorConcrete(RetiredBitvectorConcrete {
             id: self.id,
@@ -93,29 +93,24 @@ impl Drop for BitVectorConcrete {
         })));
 
         // Heirs are parents and discovered symbols
-        let mut heirs: Vec<Rc<RefCell<ActiveValue>>> = vec![];
-        for discovered_symbol in self.discovered_asts.values() {
+        let mut heirs: Vec<(u64, Rc<RefCell<ActiveValue>>)> = vec![];
+        for (discovered_symbol_id, discovered_symbol) in &self.discovered_asts {
             let discovered_symbol = discovered_symbol.upgrade().unwrap();
             let mut discovered_symbol_ref = discovered_symbol.try_borrow_mut().unwrap();
             discovered_symbol_ref.forget(self.id);
-            heirs.push(discovered_symbol.clone())
+            heirs.push((*discovered_symbol_id, discovered_symbol.clone()))
         }
 
         // For each heir...
-        for heir in &heirs {
+        for (heir_id, heir) in &heirs {
             let mut heir_ref = heir.try_borrow_mut().unwrap();
             
             // Inherit
-            heir_ref.inherit(retired_expression.clone());
-
-            // Pass on inherited symbols
-            for inherited in &self.inherited_asts {
-                heir_ref.inherit(inherited.clone())
-            }
+            heir_ref.inherit(*heir_id, retired_expression.clone());
 
             // Acquaint all heirs
-            for other_heir in &heirs {
-                if let Ok(mut other_heir_ref) = other_heir.try_borrow_mut() {
+            for (other_heir_id, other_heir) in &heirs {
+                if let Ok(mut other_heir_ref) = other_heir.try_borrow_mut() { // TODO replace with id comparison
                     heir_ref.discover(other_heir_ref.get_id(), Rc::downgrade(other_heir));
                     other_heir_ref.discover(heir_ref.get_id(), Rc::downgrade(heir));
                 }                

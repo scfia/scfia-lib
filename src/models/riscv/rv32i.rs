@@ -1,13 +1,12 @@
 use z3_sys::Z3_solver_assert;
 
-use crate::{traits::bit_vector::BitVector, ScfiaStdlib};
+use crate::{ScfiaStdlib};
 use std::fmt;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use crate::Ast;
 use crate::values::ActiveValue;
 use crate::values::RetiredValue;
 use crate::expressions::bv_add_expression::BVAddExpression;

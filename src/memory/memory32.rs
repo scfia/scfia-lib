@@ -1,6 +1,6 @@
 use std::{rc::Rc, cell::RefCell, ops::Deref, collections::HashMap};
 
-use crate::{traits::{bit_vector::BitVector, ast::Ast}, ScfiaStdlib, values::{bit_vector_concrete::BitVectorConcrete, ActiveValue, RetiredValue}};
+use crate::{ScfiaStdlib, values::{bit_vector_concrete::BitVectorConcrete, ActiveValue, RetiredValue}};
 use crate::memory::MemoryRegion32;
 
 use super::{stable_memory_region32::StableMemoryRegion32, volatile_memory_region::VolatileMemoryRegion32};

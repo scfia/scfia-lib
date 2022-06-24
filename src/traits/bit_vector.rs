@@ -8,9 +8,8 @@ use z3_sys::{
 
 use crate::{values::bit_vector_concrete::BitVectorConcrete, ScfiaStdlib};
 
-use super::ast::Ast;
-
-pub trait BitVector: Ast {
+/*
+pub trait BitVector {
     // fn to_ast(&self, this: Rc<RefCell<dyn BitVector>>) -> Rc<RefCell<dyn ActiveAst>>;
 
     fn try_simplify_conrete(&self, stdlib: &mut ScfiaStdlib) -> Result<BitVectorConcrete, AstKind> {
@@ -33,3 +32,4 @@ pub trait BitVector: Ast {
         }
     }
 }
+*/
