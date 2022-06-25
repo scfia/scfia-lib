@@ -6,10 +6,11 @@ use crate::{ScfiaStdlib, expressions::{bool_less_than_uint_expression::{BoolLess
 
 use crate::{expressions::{bool_eq_expression::{BoolEqExpression, RetiredBoolEqExpression}, bool_neq_expression::{BoolNEqExpression, RetiredBoolNEqExpression}, bv_add_expression::{BVAddExpression, RetiredBVAddExpression}, bv_concat_expression::{BVConcatExpression, RetiredBVConcatExpression}, bv_or_expression::{BVOrExpression, RetiredBVOrExpression}, bv_sign_extend_expression::{BVSignExtendExpression, RetiredBVSignExtendExpression}, bv_slice_expression::{BVSliceExpression, RetiredBVSliceExpression}}};
 
-use self::{bit_vector_concrete::{BitVectorConcrete, RetiredBitvectorConcrete}, bit_vector_symbol::{BitVectorSymbol, RetiredBitvectorSymbol}};
+use self::{bit_vector_concrete::{BitVectorConcrete, RetiredBitvectorConcrete}, bit_vector_symbol::{BitVectorSymbol, RetiredBitvectorSymbol}, bool_concrete::{BoolConcrete, RetiredBoolConcrete}};
 
 pub mod bit_vector_concrete;
 pub mod bit_vector_symbol;
+pub mod bool_concrete;
 
 #[derive(Debug)]
 pub enum Value {
@@ -25,6 +26,7 @@ pub enum ActiveValue {
     BoolLessThanUIntExpression(BoolLessThanUIntExpression),
     BoolNEqExpression(BoolNEqExpression),
     BoolNotExpression(BoolNotExpression),
+    BoolConcrete(BoolConcrete),
     BitvectorAddExpression(BVAddExpression),
     BitvectorAndExpression(BVAndExpression),
     BitvectorConcatExpression(BVConcatExpression),
@@ -43,6 +45,7 @@ pub enum RetiredValue {
     RetiredBoolLessThanUIntExpression(RetiredBoolLessThanUIntExpression),
     RetiredBoolNEqExpression(RetiredBoolNEqExpression),
     RetiredBoolNotExpression(RetiredBoolNotExpression),
+    RetiredBoolConcrete(RetiredBoolConcrete),
     RetiredBitvectorAddExpression(RetiredBVAddExpression),
     RetiredBitvectorAndExpression(RetiredBVAndExpression),
     RetiredBitvectorConcatExpression(RetiredBVConcatExpression),
@@ -86,6 +89,7 @@ impl ActiveValue {
             ActiveValue::BitvectorAndExpression(_) => todo!(),
             ActiveValue::BitvectorShiftRightLogicalExpression(_) => todo!(),
             ActiveValue::BitvectorShiftLeftLogicalExpression(_) => todo!(),
+            ActiveValue::BoolConcrete(_) => todo!(),
         };
         clone
     }
@@ -133,6 +137,7 @@ impl RetiredValue {
             RetiredValue::RetiredBitvectorAndExpression(_) => todo!(),
             RetiredValue::RetiredBitvectorShiftRightLogicalExpression(_) => todo!(),
             RetiredValue::RetiredBitvectorShiftLeftLogicalExpression(_) => todo!(),
+            RetiredValue::RetiredBoolConcrete(_) => todo!(),
         }
     }
 
@@ -152,6 +157,7 @@ impl RetiredValue {
             RetiredValue::RetiredBitvectorAndExpression(e) => e.id,
             RetiredValue::RetiredBitvectorShiftRightLogicalExpression(_) => todo!(),
             RetiredValue::RetiredBitvectorShiftLeftLogicalExpression(_) => todo!(),
+            RetiredValue::RetiredBoolConcrete(_) => todo!(),
         }
     }
 
@@ -171,6 +177,7 @@ impl RetiredValue {
             RetiredValue::RetiredBitvectorAndExpression(e) => e.z3_ast,
             RetiredValue::RetiredBitvectorShiftRightLogicalExpression(_) => todo!(),
             RetiredValue::RetiredBitvectorShiftLeftLogicalExpression(_) => todo!(),
+            RetiredValue::RetiredBoolConcrete(_) => todo!(),
         }
     }
 }
@@ -192,6 +199,7 @@ impl ActiveValue {
             ActiveValue::BitvectorAndExpression(e) => e.id,
             ActiveValue::BitvectorShiftRightLogicalExpression(e) => e.id,
             ActiveValue::BitvectorShiftLeftLogicalExpression(e) => e.id,
+            ActiveValue::BoolConcrete(_) => todo!(),
         }
     }
 
@@ -211,6 +219,7 @@ impl ActiveValue {
             ActiveValue::BitvectorAndExpression(e) => e.z3_ast,
             ActiveValue::BitvectorShiftRightLogicalExpression(e) => e.z3_ast,
             ActiveValue::BitvectorShiftLeftLogicalExpression(e) => e.z3_ast,
+            ActiveValue::BoolConcrete(_) => todo!(),
         }
     }
 
@@ -230,6 +239,7 @@ impl ActiveValue {
             ActiveValue::BitvectorAndExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
             ActiveValue::BitvectorShiftRightLogicalExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
             ActiveValue::BitvectorShiftLeftLogicalExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
+            ActiveValue::BoolConcrete(_) => todo!(),
         }
     }
 
@@ -249,6 +259,7 @@ impl ActiveValue {
             ActiveValue::BitvectorAndExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
             ActiveValue::BitvectorShiftRightLogicalExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
             ActiveValue::BitvectorShiftLeftLogicalExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
+            ActiveValue::BoolConcrete(_) => todo!(),
         }
     }
 
@@ -268,6 +279,7 @@ impl ActiveValue {
             ActiveValue::BitvectorAndExpression(e) => { e.discovered_asts.insert(ast_id, ast); },
             ActiveValue::BitvectorShiftRightLogicalExpression(e) => { e.discovered_asts.insert(ast_id, ast); },
             ActiveValue::BitvectorShiftLeftLogicalExpression(e) => { e.discovered_asts.insert(ast_id, ast); },
+            ActiveValue::BoolConcrete(_) => todo!(),
         }
     }
 }
@@ -311,6 +323,12 @@ impl From<BoolNEqExpression> for Rc<RefCell<ActiveValue>> {
 impl From<BoolNotExpression> for Rc<RefCell<ActiveValue>> {
     fn from(s: BoolNotExpression) -> Self {
         Rc::new(RefCell::new(ActiveValue::BoolNotExpression(s)))
+    }
+}
+
+impl From<BoolConcrete> for Rc<RefCell<ActiveValue>> {
+    fn from(s: BoolConcrete) -> Self {
+        Rc::new(RefCell::new(ActiveValue::BoolConcrete(s)))
     }
 }
 
@@ -383,6 +401,12 @@ impl From<RetiredBoolNEqExpression> for Rc<RefCell<RetiredValue>> {
 impl From<RetiredBoolNotExpression> for Rc<RefCell<RetiredValue>> {
     fn from(s: RetiredBoolNotExpression) -> Self {
         Rc::new(RefCell::new(RetiredValue::RetiredBoolNotExpression(s)))
+    }
+}
+
+impl From<RetiredBoolConcrete> for Rc<RefCell<RetiredValue>> {
+    fn from(s: RetiredBoolConcrete) -> Self {
+        Rc::new(RefCell::new(RetiredValue::RetiredBoolConcrete(s)))
     }
 }
 

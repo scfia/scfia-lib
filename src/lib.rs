@@ -99,7 +99,15 @@ impl ScfiaStdlib {
 
     pub fn do_condition(&mut self, expression: Rc<RefCell<ActiveValue>>, fork_sink: Option<Rc<RefCell<ForkSink>>>) -> bool {
         unsafe {
-            assert_eq!(Z3_solver_check(self.z3_context, self.z3_solver), Z3_L_TRUE);
+            debug_assert_eq!(Z3_solver_check(self.z3_context, self.z3_solver), Z3_L_TRUE);
+
+            match expression.try_borrow().unwrap().deref() {
+                ActiveValue::BoolConcrete(e1) => {
+                    return e1.value
+                }
+                _ => {}
+            }
+
             let mut can_be_true = false;
             let mut can_be_false = false;
 
@@ -107,7 +115,7 @@ impl ScfiaStdlib {
                 let condition_symbol = expression.try_borrow_mut().unwrap();
                 condition_symbol.get_z3_ast()
             };
-            let neg_condition_symbol = ActiveValue::BoolNotExpression(BoolNotExpression::new(expression.clone(), self));
+            let neg_condition_symbol = BoolNotExpression::new(expression.clone(), self);
             let neg_condition_ast = neg_condition_symbol.get_z3_ast();
 
             if Z3_solver_check_assumptions(self.z3_context, self.z3_solver, 1, &condition_ast) != Z3_L_FALSE {

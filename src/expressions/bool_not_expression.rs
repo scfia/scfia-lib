@@ -2,10 +2,12 @@ use crate::ScfiaStdlib;
 use crate::values::ActiveValue;
 use crate::values::RetiredValue;
 use crate::values::Value;
+use crate::values::bool_concrete::BoolConcrete;
 use std::cell::Ref;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
+use std::ops::Deref;
 use std::rc::Rc;
 use std::rc::Weak;
 use z3_sys::Z3_ast;
@@ -45,8 +47,14 @@ impl BoolNotExpression {
     pub fn new(
         s1: Rc<RefCell<ActiveValue>>,
         stdlib: &mut ScfiaStdlib,
-    ) -> BoolNotExpression {
-        Self::new_with_id(stdlib.get_symbol_id(), s1, stdlib)
+    ) -> ActiveValue {
+        match s1.try_borrow().unwrap().deref() {
+            ActiveValue::BoolConcrete(e1) => {
+                return ActiveValue::BoolConcrete(BoolConcrete::new(!e1.value, stdlib))
+            }
+            _ => {}
+        }
+        ActiveValue::BoolNotExpression(Self::new_with_id(stdlib.get_symbol_id(), s1, stdlib))
     }
 
     pub fn new_with_id(

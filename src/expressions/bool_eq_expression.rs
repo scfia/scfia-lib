@@ -2,10 +2,12 @@ use crate::ScfiaStdlib;
 use crate::values::ActiveValue;
 use crate::values::RetiredValue;
 use crate::values::Value;
+use crate::values::bool_concrete::BoolConcrete;
 use std::cell::Ref;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
+use std::ops::Deref;
 use std::rc::Rc;
 use std::rc::Weak;
 use z3_sys::Z3_ast;
@@ -48,8 +50,19 @@ impl BoolEqExpression {
         s1: Rc<RefCell<ActiveValue>>,
         s2: Rc<RefCell<ActiveValue>>,
         stdlib: &mut ScfiaStdlib,
-    ) -> BoolEqExpression {
-        Self::new_with_id(stdlib.get_symbol_id(), s1, s2, stdlib)
+    ) -> ActiveValue {
+        match s1.try_borrow().unwrap().deref() {
+            ActiveValue::BitvectorConcrete(e1) => {
+                match s2.try_borrow().unwrap().deref() {
+                    ActiveValue::BitvectorConcrete(e2) => {
+                        return ActiveValue::BoolConcrete(BoolConcrete::new(e1.value == e2.value, stdlib))
+                    },
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+        ActiveValue::BoolEqExpression(Self::new_with_id(stdlib.get_symbol_id(), s1, s2, stdlib))
     }
 
     pub fn new_with_id(

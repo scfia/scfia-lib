@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, VecDeque}, cell::RefCell, rc::Rc};
+use std::{collections::{HashMap, VecDeque, BTreeMap}, cell::RefCell, rc::Rc};
 
 use crate::{values::{ActiveValue, bit_vector_concrete::BitVectorConcrete}, expressions::{bv_or_expression::BVOrExpression, bv_slice_expression::BVSliceExpression, bv_concat_expression::BVConcatExpression}};
 
@@ -6,7 +6,7 @@ use super::{memory32::Memory32, MemoryRegion32};
 
 #[derive(Debug)]
 pub struct StableMemoryRegion32 {
-    pub memory: HashMap<u32, Rc<RefCell<ActiveValue>>>,
+    pub memory: BTreeMap<u32, Rc<RefCell<ActiveValue>>>,
     pub start_address: u32,
     pub length: u32,
 }
@@ -14,7 +14,7 @@ pub struct StableMemoryRegion32 {
 impl StableMemoryRegion32 {
     pub fn new(start_address: u32, length: u32) -> Self {
         StableMemoryRegion32 {
-            memory: HashMap::new(),
+            memory: BTreeMap::new(),
             start_address,
             length
         }
