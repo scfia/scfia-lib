@@ -1,6 +1,6 @@
 use z3_sys::Z3_solver_assert;
 
-use crate::{ScfiaStdlib};
+use crate::ScfiaStdlib;
 use std::fmt;
 use std::ops::Deref;
 use std::rc::Rc;
@@ -264,7 +264,18 @@ pub unsafe fn step(state: *mut SystemState, _stdlib: *mut ScfiaStdlib, _fork_sin
             progress_pc_4(state, _stdlib, _fork_sink.clone(), _memory);
         }
         else if _stdlib.as_mut().unwrap().do_condition(BoolEqExpression::new(funct3.clone(), BitVectorConcrete::new(0b1, 3, _stdlib.as_mut().unwrap()).into(), _stdlib.as_mut().unwrap()).into(), _fork_sink.clone()) {
-            unimplemented!();
+            let rs1: Rc<RefCell<ActiveValue>> = extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink.clone(), _memory);
+            let rs2: Rc<RefCell<ActiveValue>> = extract_rs2_32(instruction_32.clone(), _stdlib, _fork_sink.clone(), _memory);
+            let offset_11_5: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 25, _stdlib.as_mut().unwrap()).into();
+            let offset_4_0: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 11, 7, _stdlib.as_mut().unwrap()).into();
+            let offset: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(offset_11_5.clone(), offset_4_0.clone(), _stdlib.as_mut().unwrap()).into();
+            let offset_32: Rc<RefCell<ActiveValue>> = BVSignExtendExpression::new(offset.clone(), 12, 32, _stdlib.as_mut().unwrap()).into();
+            let base_address: Rc<RefCell<ActiveValue>> = register_read_BV32(state, rs1.clone(), _stdlib, _fork_sink.clone(), _memory);
+            let address: Rc<RefCell<ActiveValue>> = BVAddExpression::new(base_address.clone(), offset_32.clone(), _stdlib.as_mut().unwrap()).into();
+            let value_32: Rc<RefCell<ActiveValue>> = register_read_BV32(state, rs2.clone(), _stdlib, _fork_sink.clone(), _memory);
+            let value: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(value_32.clone(), 15, 0, _stdlib.as_mut().unwrap()).into();
+            _memory.write(address.clone(), value.clone(), _stdlib.as_mut().unwrap());
+            progress_pc_4(state, _stdlib, _fork_sink.clone(), _memory);
         }
         else if _stdlib.as_mut().unwrap().do_condition(BoolEqExpression::new(funct3.clone(), BitVectorConcrete::new(0b10, 3, _stdlib.as_mut().unwrap()).into(), _stdlib.as_mut().unwrap()).into(), _fork_sink.clone()) {
             let rs1: Rc<RefCell<ActiveValue>> = extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink.clone(), _memory);
@@ -371,7 +382,12 @@ pub unsafe fn step(state: *mut SystemState, _stdlib: *mut ScfiaStdlib, _fork_sin
         }
         else if _stdlib.as_mut().unwrap().do_condition(BoolEqExpression::new(funct3.clone(), BitVectorConcrete::new(0b111, 3, _stdlib.as_mut().unwrap()).into(), _stdlib.as_mut().unwrap()).into(), _fork_sink.clone()) {
             if _stdlib.as_mut().unwrap().do_condition(BoolEqExpression::new(funct7.clone(), BitVectorConcrete::new(0b0, 7, _stdlib.as_mut().unwrap()).into(), _stdlib.as_mut().unwrap()).into(), _fork_sink.clone()) {
-                unimplemented!();
+                let rd: Rc<RefCell<ActiveValue>> = extract_rd_32(instruction_32.clone(), _stdlib, _fork_sink.clone(), _memory);
+                let rs1: Rc<RefCell<ActiveValue>> = extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink.clone(), _memory);
+                let rs2: Rc<RefCell<ActiveValue>> = extract_rs2_32(instruction_32.clone(), _stdlib, _fork_sink.clone(), _memory);
+                let result: Rc<RefCell<ActiveValue>> = BVAndExpression::new(register_read_BV32(state, rs1.clone(), _stdlib, _fork_sink.clone(), _memory), register_read_BV32(state, rs2.clone(), _stdlib, _fork_sink.clone(), _memory), _stdlib.as_mut().unwrap()).into();
+                register_write_BV32(state, rd.clone(), result.clone(), _stdlib, _fork_sink.clone(), _memory);
+                progress_pc_4(state, _stdlib, _fork_sink.clone(), _memory);
             }
             else {
                 unimplemented!();
@@ -737,7 +753,7 @@ pub unsafe fn execute_add32(state: *mut SystemState, destination_id: Rc<RefCell<
 impl RV32iSystemState {
     pub fn step(&mut self) {
         unsafe {
-            println!("stepping {:?}", self.system_state.pc);
+            // println!("stepping {:?}", self.system_state.pc);
             step(&mut self.system_state, &mut self.stdlib, None, &mut self.memory);
         }
     }

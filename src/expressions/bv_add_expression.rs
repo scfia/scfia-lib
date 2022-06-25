@@ -47,6 +47,7 @@ impl BVAddExpression {
             ActiveValue::BitvectorConcrete(e1) => {
                 match s2.try_borrow().unwrap().deref() {
                     ActiveValue::BitvectorConcrete(e2) => {
+                        // TODO check
                         let one: u64 = 1;
                         let mask = one.rotate_left(e2.width).overflowing_sub(1).0;
                         let sum = e1.value.overflowing_add(e2.value).0; 

@@ -35,7 +35,7 @@ impl Memory32 {
             ActiveValue::BitvectorConcrete(e) => {
                 self.write_concrete(e.value as u32, value, stdlib)
             },
-            _ => panic!(),
+            _ => unimplemented!("{:?}", address),
         }
     }
 

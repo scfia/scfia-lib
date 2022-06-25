@@ -7,6 +7,7 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::ops::Deref;
+use std::ops::ShlAssign;
 use std::rc::Rc;
 use std::rc::Weak;
 use z3_sys::Z3_ast;
@@ -49,6 +50,18 @@ impl BVShiftLeftLogicalExpression {
         shamt_width: u32,
         stdlib: &mut ScfiaStdlib,
     ) -> ActiveValue {
+        match s1.try_borrow().unwrap().deref() {
+            ActiveValue::BitvectorConcrete(e1) => {
+                match s2.try_borrow().unwrap().deref() {
+                    ActiveValue::BitvectorConcrete(e2) => {
+                        let value = e1.value << e2.value;
+                        return ActiveValue::BitvectorConcrete(BitVectorConcrete::new(value, e1.width, stdlib));
+                    },
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
         ActiveValue::BitvectorShiftLeftLogicalExpression(Self::new_with_id(stdlib.get_symbol_id(), s1, s2, input_width, shamt_width, stdlib))
     }
 

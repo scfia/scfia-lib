@@ -69,7 +69,7 @@ impl MemoryRegion32 for StableMemoryRegion32 {
                     self.memory.insert(address + byte, v.into());
                 }
             },
-            _ => unimplemented!(),
+            _ => unimplemented!("{:?}", value),
         }
     }
 }
