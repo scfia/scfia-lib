@@ -1,6 +1,6 @@
 use std::{rc::{Rc, Weak}, cell::RefCell, collections::{HashMap, BTreeMap}};
 
-use crate::values::{ActiveValue, RetiredValue};
+use crate::{values::{ActiveValue, RetiredValue}, ScfiaStdlib};
 
 pub mod bool_eq_expression;
 pub mod bool_less_than_uint_expression;
@@ -27,6 +27,7 @@ pub(crate) fn inherit(
     for (discovered_symbol_id, discovered_symbol) in discovered_asts {
         let discovered_symbol = discovered_symbol.upgrade().unwrap();
         let mut discovered_symbol_ref = discovered_symbol.try_borrow_mut().unwrap();
+        
         discovered_symbol_ref.forget(id);
         heirs.push((*discovered_symbol_id, discovered_symbol.clone()))
     }
@@ -52,4 +53,41 @@ pub(crate) fn inherit(
             }
         }
     }
+}
+
+pub(crate) fn finish_clone(
+    id: u64,
+    inherited_asts: &BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
+    discovered_asts: &HashMap<u64, Weak<RefCell<ActiveValue>>>,
+    clone: Rc<RefCell<ActiveValue>>,
+    cloned_active_values: &mut HashMap<u64, Rc<RefCell<ActiveValue>>>,
+    cloned_retired_values: &mut HashMap<u64, Rc<RefCell<RetiredValue>>>,
+    cloned_stdlib: &mut ScfiaStdlib
+) -> Rc<RefCell<ActiveValue>> {
+    cloned_active_values.insert(id, clone.clone()); // TODO ensure is none
+
+    // Clone inherited values
+    let mut cloned_inherited = vec![];
+    for (inherited_ast_id, inherited_ast) in inherited_asts {
+        cloned_inherited.push((inherited_ast_id, inherited_ast.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib)));
+    }
+
+    // Clone discovered values
+    let mut cloned_discovered = vec![];
+    for discovered_ast in discovered_asts.values() {
+        cloned_discovered.push(discovered_ast.upgrade().unwrap().try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib));
+    }
+
+    // Update clone with retirees and discoveries
+    {
+        let mut cloned_expression_ref = clone.try_borrow_mut().unwrap();
+        for (cloned_inherited_ast_id, cloned_inherited_ast) in cloned_inherited {
+            cloned_expression_ref.inherit(*cloned_inherited_ast_id, cloned_inherited_ast)
+        }
+        for cloned_discovered_value in cloned_discovered {
+            cloned_expression_ref.discover(cloned_discovered_value.try_borrow().unwrap().get_id(), Rc::downgrade(&cloned_discovered_value))
+        }
+    }
+
+    clone
 }

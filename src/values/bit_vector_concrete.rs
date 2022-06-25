@@ -5,11 +5,14 @@ use z3_sys::Z3_mk_bv_sort;
 use z3_sys::Z3_mk_unsigned_int64;
 use z3_sys::Z3_ast;
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
 use std::rc::Weak;
 use crate::ScfiaStdlib;
+use crate::expressions::finish_clone;
+use crate::expressions::inherit;
 
 use super::ActiveValue;
 use super::RetiredValue;
@@ -65,9 +68,16 @@ impl BitVectorConcrete {
         cloned_retired_values: &mut HashMap<u64, Rc<RefCell<RetiredValue>>>,
         cloned_stdlib: &mut ScfiaStdlib,
     ) -> Rc<RefCell<ActiveValue>> {
-        let clone: Rc<RefCell<ActiveValue>> = Self::new_with_id(self.id, self.value, self.width, cloned_stdlib).into();
-        cloned_active_values.insert(self.id, clone.clone());
-        clone
+        let clone = Self::new_with_id(self.id, self.value, self.width, cloned_stdlib);
+        finish_clone(
+            self.id,
+            &BTreeMap::new(),
+            &self.discovered_asts,
+            clone.into(),
+            cloned_active_values,
+            cloned_retired_values,
+            cloned_stdlib
+        )
     }
 }
 
@@ -79,10 +89,6 @@ impl fmt::Debug for BitVectorConcrete {
 
 impl Drop for BitVectorConcrete {
     fn drop(&mut self) {
-        if self.id == 20875 {
-            println!("retiring bvc {:?}", self)
-        }
-
         // Retire expression, maintain z3 ast refcount
         let retired_expression = Rc::new(RefCell::new(RetiredValue::RetiredBitvectorConcrete(RetiredBitvectorConcrete {
             id: self.id,
@@ -92,30 +98,13 @@ impl Drop for BitVectorConcrete {
             z3_ast: self.z3_ast,
         })));
 
-        // Heirs are parents and discovered symbols
-        let mut heirs: Vec<(u64, Rc<RefCell<ActiveValue>>)> = vec![];
-        for (discovered_symbol_id, discovered_symbol) in &self.discovered_asts {
-            let discovered_symbol = discovered_symbol.upgrade().unwrap();
-            let mut discovered_symbol_ref = discovered_symbol.try_borrow_mut().unwrap();
-            discovered_symbol_ref.forget(self.id);
-            heirs.push((*discovered_symbol_id, discovered_symbol.clone()))
-        }
-
-        // For each heir...
-        for (heir_id, heir) in &heirs {
-            let mut heir_ref = heir.try_borrow_mut().unwrap();
-            
-            // Inherit
-            heir_ref.inherit(*heir_id, retired_expression.clone());
-
-            // Acquaint all heirs
-            for (other_heir_id, other_heir) in &heirs {
-                if let Ok(mut other_heir_ref) = other_heir.try_borrow_mut() { // TODO replace with id comparison
-                    heir_ref.discover(other_heir_ref.get_id(), Rc::downgrade(other_heir));
-                    other_heir_ref.discover(heir_ref.get_id(), Rc::downgrade(heir));
-                }                
-            }
-        }
+        inherit(
+            self.id,
+            retired_expression,
+            vec![],
+            &BTreeMap::new(),
+            &self.discovered_asts
+        );
     }
 }
 

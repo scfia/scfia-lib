@@ -10,6 +10,7 @@ use z3_sys::{
     Z3_mk_string, Z3_solver_assert, _Z3_symbol, Z3_mk_bv_sort, Z3_string,
 };
 
+use crate::expressions::{finish_clone, inherit};
 use crate::{ScfiaStdlib};
 
 use super::{ActiveValue, RetiredValue};
@@ -86,34 +87,28 @@ impl BitVectorSymbol {
         cloned_retired_values: &mut HashMap<u64, Rc<RefCell<RetiredValue>>>,
         cloned_stdlib: &mut ScfiaStdlib,
     ) -> Rc<RefCell<ActiveValue>> {
-        if let Some(value) = cloned_active_values.get(&self.id) {
-            return value.clone();
-        }
-
         let cloned_expression = if let Some(expression) = &self.expression {
             Some((expression.0, expression.1.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib)))
         } else {
             None
         };
 
-        let mut cloned_symbol = Self::new_with_id(
+        let cloned_symbol = Self::new_with_id(
             self.id,
             self.width,
             cloned_expression,
             cloned_stdlib
         );
 
-        let cloned_symbol: Rc<RefCell<ActiveValue>> = cloned_symbol.into();
-        cloned_active_values.insert(self.id, cloned_symbol.clone());
-
-        for (inherited_ast_id, inherited_ast) in self.inherited_asts.iter() {
-            let cloned_inherited_ast = inherited_ast.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
-            cloned_symbol.try_borrow_mut().unwrap().inherit(*inherited_ast_id, cloned_inherited_ast);
-        }
-
-        // TODO clone discovered values
-
-        cloned_symbol
+        finish_clone(
+            self.id,
+            &self.inherited_asts,
+            &self.discovered_asts,
+            cloned_symbol.into(),
+            cloned_active_values,
+            cloned_retired_values,
+            cloned_stdlib
+        )
     }
 
 }
@@ -129,37 +124,18 @@ impl Drop for BitVectorSymbol {
         })));
 
         // Heirs are parents and discovered symbols
-        let mut heirs: Vec<(u64, Rc<RefCell<ActiveValue>>)> = vec![];
+        let mut parents: Vec<(u64, Rc<RefCell<ActiveValue>>)> = vec![];
         if let Some(expression) = &self.expression {
-            heirs.push(expression.clone())
-        }
-        for (discovered_symbol_id, discovered_symbol) in self.discovered_asts.iter() {
-            let discovered_symbol = discovered_symbol.upgrade().unwrap();
-            let mut discovered_symbol_ref = discovered_symbol.try_borrow_mut().unwrap();
-            discovered_symbol_ref.forget(self.id);
-            heirs.push((*discovered_symbol_id, discovered_symbol.clone()))
+            parents.push(expression.clone())
         }
 
-        // For each heir...
-        for (heir_id, heir) in &heirs {
-            let mut heir_ref = heir.try_borrow_mut().unwrap();
-
-            // Inherit
-            heir_ref.inherit(self.id, retired_expression.clone());
-
-            // Pass on inherited symbols
-            for (inherited_id, inherited) in self.inherited_asts.iter() {
-                heir_ref.inherit(*inherited_id, inherited.clone())
-            }
-
-            // Acquaint all heirs
-            for (other_heir_id, other_heir) in &heirs {
-                if let Ok(mut other_heir_ref) = other_heir.try_borrow_mut() {
-                    heir_ref.discover(other_heir_ref.get_id(), Rc::downgrade(other_heir));
-                    other_heir_ref.discover(heir_ref.get_id(), Rc::downgrade(heir));
-                }                
-            }
-        }
+        inherit(
+            self.id,
+            retired_expression,
+            parents,
+            &self.inherited_asts,
+            &self.discovered_asts
+        );
     }
 }
 

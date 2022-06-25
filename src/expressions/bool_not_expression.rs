@@ -17,6 +17,7 @@ use z3_sys::Z3_mk_eq;
 use z3_sys::Z3_mk_not;
 use z3_sys::Z3_solver_assert;
 
+use super::finish_clone;
 use super::inherit;
 
 #[derive(Debug)]
@@ -78,11 +79,6 @@ impl BoolNotExpression {
         cloned_retired_values: &mut HashMap<u64, Rc<RefCell<RetiredValue>>>,
         cloned_stdlib: &mut ScfiaStdlib
     ) -> Rc<RefCell<ActiveValue>> {
-        // Check translated values map
-        if let Some(eq_expression) = cloned_active_values.get(&self.id) {
-            return eq_expression.clone()
-        }
-
         // Clone s1, s2
         let s1 = self.s1.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
 
@@ -93,31 +89,16 @@ impl BoolNotExpression {
                 Z3_solver_assert(cloned_stdlib.z3_context, cloned_stdlib.z3_solver, cloned_expression.z3_ast);
             }
         }
-        let cloned_expression: Rc<RefCell<ActiveValue>> = cloned_expression.into();
-        cloned_active_values.insert(self.id, cloned_expression.clone());
 
-        // Clone inherited values
-        let mut cloned_inherited = vec![];
-        for (inherited_ast_id, inherited_ast) in self.inherited_asts.iter().rev() {
-            cloned_inherited.push((inherited_ast_id, inherited_ast.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib)));
-        }
-
-        // Clone discovered values
-        let mut cloned_discovered = vec![];
-        for discovered_ast in self.discovered_asts.values() {
-            cloned_discovered.push(discovered_ast.upgrade().unwrap().try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib));
-        }
-
-        // Update clone with retirees and discoveries
-        let mut cloned_expression_ref = cloned_expression.try_borrow_mut().unwrap();
-        for (cloned_inherited_ast_id, cloned_inherited_ast) in cloned_inherited {
-            cloned_expression_ref.inherit(*cloned_inherited_ast_id, cloned_inherited_ast)
-        }
-        for cloned_discovered_value in cloned_discovered {
-            cloned_expression_ref.discover(cloned_discovered_value.try_borrow().unwrap().get_id(), Rc::downgrade(&cloned_discovered_value))
-        }
-
-        cloned_expression.clone()
+        finish_clone(
+            self.id,
+            &self.inherited_asts,
+            &self.discovered_asts,
+            cloned_expression.into(),
+            cloned_active_values,
+            cloned_retired_values,
+            cloned_stdlib
+        )
     }
 
     pub fn assert(&mut self, stdlib: &mut ScfiaStdlib) {

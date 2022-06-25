@@ -101,6 +101,7 @@ impl Drop for BVShiftLeftLogicalExpression {
             (s1_id, self.s1.clone()),
             (s2_id, self.s2.clone()),
         ];
+
         inherit(
             self.id,
             retired_expression,

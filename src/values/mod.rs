@@ -71,15 +71,6 @@ impl ActiveValue {
             return cloned_active_value.clone();
         }
 
-        let id = self.get_id();
-        match self {
-            ActiveValue::BitvectorConcrete(_) => {},
-            x => println!("clone_to_stdlib ActiveValue {:?}", x),
-        }
-        if let Some(translated_value) = cloned_active_values.get(&id) {
-            return translated_value.clone();
-        }
-
         let clone = match self {
             ActiveValue::BitvectorConcrete(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
             ActiveValue::BitvectorSymbol(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
@@ -224,7 +215,6 @@ impl ActiveValue {
     }
 
     pub fn inherit(&mut self, ast_id: u64, ast: Rc<RefCell<RetiredValue>>) {
-        // println!("{} inheriting {:?}", self.get_id(), ast);
         match self {
             ActiveValue::BitvectorConcrete(e) => {},
             ActiveValue::BitvectorSymbol(e) => { e.inherited_asts.insert(ast_id, ast); },
@@ -245,20 +235,20 @@ impl ActiveValue {
 
     pub fn forget(&mut self, id: u64) {
         match self {
-            ActiveValue::BitvectorConcrete(e) => { e.discovered_asts.remove(&id); },
-            ActiveValue::BitvectorSymbol(e) => { e.discovered_asts.remove(&id); },
-            ActiveValue::BoolEqExpression(e) => { e.discovered_asts.remove(&id); },
-            ActiveValue::BoolNEqExpression(e) => { e.discovered_asts.remove(&id); },
-            ActiveValue::BitvectorAddExpression(e) => { e.discovered_asts.remove(&id); },
-            ActiveValue::BitvectorConcatExpression(e) => { e.discovered_asts.remove(&id); },
-            ActiveValue::BitvectorOrExpression(e) => { e.discovered_asts.remove(&id); },
-            ActiveValue::BitvectorSignExtendExpression(e) => { e.discovered_asts.remove(&id); },
-            ActiveValue::BitvectorSliceExpression(e) => { e.discovered_asts.remove(&id); },
-            ActiveValue::BoolLessThanUIntExpression(e) => { e.discovered_asts.remove(&id); },
-            ActiveValue::BoolNotExpression(e) => { e.discovered_asts.remove(&id); },
-            ActiveValue::BitvectorAndExpression(e) => { e.discovered_asts.remove(&id); },
-            ActiveValue::BitvectorShiftRightLogicalExpression(e) => { e.discovered_asts.remove(&id); },
-            ActiveValue::BitvectorShiftLeftLogicalExpression(e) => { e.discovered_asts.remove(&id); },
+            ActiveValue::BitvectorConcrete(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
+            ActiveValue::BitvectorSymbol(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
+            ActiveValue::BoolEqExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
+            ActiveValue::BoolNEqExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
+            ActiveValue::BitvectorAddExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
+            ActiveValue::BitvectorConcatExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
+            ActiveValue::BitvectorOrExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
+            ActiveValue::BitvectorSignExtendExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
+            ActiveValue::BitvectorSliceExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
+            ActiveValue::BoolLessThanUIntExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
+            ActiveValue::BoolNotExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
+            ActiveValue::BitvectorAndExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
+            ActiveValue::BitvectorShiftRightLogicalExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
+            ActiveValue::BitvectorShiftLeftLogicalExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
         }
     }
 
