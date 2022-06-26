@@ -182,6 +182,39 @@ pub unsafe fn step(state: *mut SystemState, _stdlib: *mut ScfiaStdlib, _fork_sin
             register_write_BV32(state, rd.clone(), value.clone(), _stdlib, _fork_sink.clone(), _memory);
             progress_pc_4(state, _stdlib, _fork_sink.clone(), _memory);
         }
+        else if _stdlib.as_mut().unwrap().do_condition(BoolEqExpression::new(funct3.clone(), BitVectorConcrete::new(0b101, 3, _stdlib.as_mut().unwrap()).into(), _stdlib.as_mut().unwrap()).into(), _fork_sink.clone()) {
+            let rd: Rc<RefCell<ActiveValue>> = extract_rd_32(instruction_32.clone(), _stdlib, _fork_sink.clone(), _memory);
+            let rs1: Rc<RefCell<ActiveValue>> = extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink.clone(), _memory);
+            let imm: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 20, _stdlib.as_mut().unwrap()).into();
+            let imm32: Rc<RefCell<ActiveValue>> = BVSignExtendExpression::new(imm.clone(), 12, 32, _stdlib.as_mut().unwrap()).into();
+            let base_address: Rc<RefCell<ActiveValue>> = register_read_BV32(state, rs1.clone(), _stdlib, _fork_sink.clone(), _memory);
+            let address: Rc<RefCell<ActiveValue>> = BVAddExpression::new(base_address.clone(), imm32.clone(), _stdlib.as_mut().unwrap()).into();
+            let value16: Rc<RefCell<ActiveValue>> = _memory.read(address.clone(), 16, _stdlib.as_mut().unwrap()).into();
+            let value: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(BitVectorConcrete::new(0b0, 16, _stdlib.as_mut().unwrap()).into(), value16.clone(), _stdlib.as_mut().unwrap()).into();
+            register_write_BV32(state, rd.clone(), value.clone(), _stdlib, _fork_sink.clone(), _memory);
+            progress_pc_4(state, _stdlib, _fork_sink.clone(), _memory);
+        }
+        else {
+            unimplemented!();
+        }
+    }
+    else if _stdlib.as_mut().unwrap().do_condition(BoolEqExpression::new(opcode.clone(), BitVectorConcrete::new(0b1111, 7, _stdlib.as_mut().unwrap()).into(), _stdlib.as_mut().unwrap()).into(), _fork_sink.clone()) {
+        let rd_zeroes: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 11, 7, _stdlib.as_mut().unwrap()).into();
+        if _stdlib.as_mut().unwrap().do_condition(BoolEqExpression::new(rd_zeroes.clone(), BitVectorConcrete::new(0b0, 5, _stdlib.as_mut().unwrap()).into(), _stdlib.as_mut().unwrap()).into(), _fork_sink.clone()) {
+            let funct3: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 14, 12, _stdlib.as_mut().unwrap()).into();
+            let rs1_zeroes: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 19, 15, _stdlib.as_mut().unwrap()).into();
+            if _stdlib.as_mut().unwrap().do_condition(BoolEqExpression::new(rs1_zeroes.clone(), BitVectorConcrete::new(0b0, 5, _stdlib.as_mut().unwrap()).into(), _stdlib.as_mut().unwrap()).into(), _fork_sink.clone()) {
+                if _stdlib.as_mut().unwrap().do_condition(BoolEqExpression::new(funct3.clone(), BitVectorConcrete::new(0b0, 3, _stdlib.as_mut().unwrap()).into(), _stdlib.as_mut().unwrap()).into(), _fork_sink.clone()) {
+                    progress_pc_4(state, _stdlib, _fork_sink.clone(), _memory);
+                }
+                else if _stdlib.as_mut().unwrap().do_condition(BoolEqExpression::new(funct3.clone(), BitVectorConcrete::new(0b1, 3, _stdlib.as_mut().unwrap()).into(), _stdlib.as_mut().unwrap()).into(), _fork_sink.clone()) {
+                    progress_pc_4(state, _stdlib, _fork_sink.clone(), _memory);
+                }
+            }
+            else {
+                unimplemented!();
+            }
+        }
         else {
             unimplemented!();
         }
@@ -541,7 +574,6 @@ pub unsafe fn progress_pc_4(state: *mut SystemState, _stdlib: *mut ScfiaStdlib, 
 
 pub unsafe fn register_write_BV32(state: *mut SystemState, register_id: Rc<RefCell<ActiveValue>>, value: Rc<RefCell<ActiveValue>>, _stdlib: *mut ScfiaStdlib, _fork_sink: Option<Rc<RefCell<ForkSink>>>, _memory: &mut Memory32) {
     if _stdlib.as_mut().unwrap().do_condition(BoolEqExpression::new(register_id.clone(), BitVectorConcrete::new(0b0, 5, _stdlib.as_mut().unwrap()).into(), _stdlib.as_mut().unwrap()).into(), _fork_sink.clone()) {
-        (*state).x0 = value.clone();
     }
     else if _stdlib.as_mut().unwrap().do_condition(BoolEqExpression::new(register_id.clone(), BitVectorConcrete::new(0b1, 5, _stdlib.as_mut().unwrap()).into(), _stdlib.as_mut().unwrap()).into(), _fork_sink.clone()) {
         (*state).x1 = value.clone();
@@ -753,7 +785,7 @@ pub unsafe fn execute_add32(state: *mut SystemState, destination_id: Rc<RefCell<
 impl RV32iSystemState {
     pub fn step(&mut self) {
         unsafe {
-            // println!("stepping {:?}", self.system_state.pc);
+            println!("stepping {:?}", self.system_state.pc);
             step(&mut self.system_state, &mut self.stdlib, None, &mut self.memory);
         }
     }

@@ -1,6 +1,6 @@
 use std::{collections::{HashMap, VecDeque, BTreeMap}, cell::RefCell, rc::Rc};
 
-use crate::{values::{ActiveValue, bit_vector_concrete::BitVectorConcrete}, expressions::{bv_or_expression::BVOrExpression, bv_slice_expression::BVSliceExpression, bv_concat_expression::BVConcatExpression}};
+use crate::{values::{ActiveValue, bit_vector_concrete::BitVectorConcrete, bit_vector_symbol::BitVectorSymbol}, expressions::{bv_or_expression::BVOrExpression, bv_slice_expression::BVSliceExpression, bv_concat_expression::BVConcatExpression}};
 
 use super::{memory32::Memory32, MemoryRegion32};
 
@@ -40,10 +40,16 @@ impl StableMemoryRegion32 {
 impl MemoryRegion32 for StableMemoryRegion32 {
     fn read(&mut self, address: u32, width: u32, stdlib: &mut crate::ScfiaStdlib) -> Rc<RefCell<ActiveValue>> {
         assert_eq!(width % 8, 0);
+        // println!("<= 0x{:x} ({} bytes)", address, width/8);
         let bytes = width / 8;
         let mut byte_values = VecDeque::new();
         for i in 0..bytes {
-            byte_values.push_back(self.memory.get(&(address + i)).unwrap().clone());
+            if let Some(byte) = self.memory.get(&(address + i)) {
+                byte_values.push_back(byte.clone());
+            } else {
+                println!("Warning: Reading from uninitialized 0x{:x}", address + i);
+                byte_values.push_back(BitVectorSymbol::new(None, 8, stdlib).into())
+            }
         }
 
         let mut value = byte_values.pop_front().unwrap();
@@ -62,6 +68,7 @@ impl MemoryRegion32 for StableMemoryRegion32 {
         match &*value_ref {
             ActiveValue::BitvectorConcrete(e) => {
                 // Split concrete value into bytes
+                // println!("0x{:x} => 0x{} ({} bytes)", address, e.value, e.width/8);
                 assert_eq!(e.width % 8, 0);
                 let bytes = e.width / 8;
                 for byte in 0..bytes {

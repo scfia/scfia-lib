@@ -292,7 +292,7 @@ Disassembly of section .text:
      444:	00a60533          	add	a0,a2,a0
      448:	00d50533          	add	a0,a0,a3
      44c:	01650bb3          	add	s7,a0,s6
-     450:	0174a423          	sw	s7,8(s1)
+     450:	0174a423          	sw	s7,8(s1)                      # update_descriptor loop
      454:	00158c13          	addi	s8,a1,1
      458:	000a0513          	mv	a0,s4
      45c:	000a8613          	mv	a2,s5
@@ -305,7 +305,7 @@ Disassembly of section .text:
      478:	000c0593          	mv	a1,s8
      47c:	fd891ae3          	bne	s2,s8,450 <_ZN20simple_router_risc_v9virtqueue15VirtQueueHandle3new17h4ff811c4c3258a17E+0xf0>
      480:	00000593          	li	a1,0
-     484:	40000493          	li	s1,1024
+     484:	40000493          	li	s1,1024                       # offer loop
      488:	00158913          	addi	s2,a1,1
      48c:	00040513          	mv	a0,s0
      490:	00000097          	auipc	ra,0x0

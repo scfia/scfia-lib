@@ -134,11 +134,24 @@ fn test_system_state() {
         continuing.step()
     }
 
-    println!("----------------------------------------------------------------------------------------------------------------------------------------");
     let mut successors = continuing.step_forking();
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
 
+    println!("Stepping panic until loop");
+    while panicking.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x18 {
+        panicking.step()
+    }
+
+    println!("Stepping until ???");
+    while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x1460 {
+        continuing.step();
+    }
+
+    let mut successors = continuing.step_forking();
+    panic!("{}", successors.len());
+
+    /*
     println!("Stepping until X...");
     let mut steps_total = 0;
     let mut steps = 0;
@@ -154,5 +167,6 @@ fn test_system_state() {
             steps = 0;
         }
     }
+    */
 
 }
