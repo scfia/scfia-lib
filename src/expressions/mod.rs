@@ -14,6 +14,7 @@ pub mod bv_sign_extend_expression;
 pub mod bv_slice_expression;
 pub mod bv_shift_right_logical_expression;
 pub mod bv_shift_left_logical_expression;
+pub mod bv_xor_expression;
 
 
 pub(crate) fn inherit(
@@ -25,6 +26,7 @@ pub(crate) fn inherit(
 ) {
     // Heirs are parents and discovered symbols
     for (discovered_symbol_id, discovered_symbol) in discovered_asts {
+        println!("inheriting {} to {:?} ({})", id, discovered_symbol, discovered_symbol_id);
         let discovered_symbol = discovered_symbol.upgrade().unwrap();
         let mut discovered_symbol_ref = discovered_symbol.try_borrow_mut().unwrap();
         
@@ -38,6 +40,9 @@ pub(crate) fn inherit(
 
         // Inherit
         heir_ref.inherit(id, retired_expression.clone());
+        if id == 1983033 {
+            println!("#### inherited 1983033 to {:?}", &heir_ref)
+        }
 
         // Pass on inherited symbols
         for (inherited_id, inherited) in inherited_asts {
@@ -64,7 +69,9 @@ pub(crate) fn finish_clone(
     cloned_retired_values: &mut HashMap<u64, Rc<RefCell<RetiredValue>>>,
     cloned_stdlib: &mut ScfiaStdlib
 ) -> Rc<RefCell<ActiveValue>> {
-    cloned_active_values.insert(id, clone.clone()); // TODO ensure is none
+    if let Some(undesirable) = cloned_active_values.insert(id, clone.clone()) {
+        panic!("{:?}", undesirable)
+    }
 
     // Clone inherited values
     let mut cloned_inherited = vec![];

@@ -103,6 +103,7 @@ impl Drop for BVSliceExpression {
     fn drop(&mut self) {
         // Retire expression, maintain z3 ast refcount
         let s1_id = self.s1.try_borrow().unwrap().get_id();
+        debug_assert!(s1_id < self.id);
         let retired_expression = Rc::new(RefCell::new(RetiredValue::RetiredBitvectorSliceExpression(RetiredBVSliceExpression {
             id: self.id,
             s1: s1_id,

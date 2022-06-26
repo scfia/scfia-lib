@@ -102,6 +102,8 @@ impl Drop for BVShiftLeftLogicalExpression {
         // Retire expression, maintain z3 ast refcount
         let s1_id = self.s1.try_borrow().unwrap().get_id();
         let s2_id = self.s2.try_borrow().unwrap().get_id();
+        debug_assert!(s1_id < self.id);
+        debug_assert!(s2_id < self.id);
         let retired_expression = Rc::new(RefCell::new(RetiredValue::RetiredBitvectorShiftLeftLogicalExpression(RetiredBVShiftLeftLogicalExpression {
             id: self.id,
             s1: s1_id,

@@ -89,6 +89,9 @@ impl BoolNotExpression {
     ) -> Rc<RefCell<ActiveValue>> {
         // Clone s1, s2
         let s1 = self.s1.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+        if let Some(e) = cloned_active_values.get(&self.id) {
+            return e.clone()
+        }
 
         // Build clone
         let cloned_expression = Self::new_with_id(self.id, s1, cloned_stdlib);
@@ -121,6 +124,7 @@ impl Drop for BoolNotExpression {
     fn drop(&mut self) {
         // Retire expression, maintain z3 ast refcount
         let s1_id = self.s1.try_borrow().unwrap().get_id();
+        debug_assert!(s1_id < self.id);
         let retired_expression = Rc::new(RefCell::new(RetiredValue::RetiredBoolNotExpression(RetiredBoolNotExpression {
             id: self.id,
             s1_id: s1_id,

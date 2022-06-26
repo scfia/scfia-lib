@@ -25,6 +25,7 @@ use super::RetiredValue;
 pub struct BoolConcrete {
     pub id: u64,
     pub value: bool,
+    pub inherited_asts: BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
     pub discovered_asts: HashMap<u64, Weak<RefCell<ActiveValue>>>,
     pub z3_context: Z3_context,
     pub z3_ast: Z3_ast,
@@ -57,6 +58,7 @@ impl BoolConcrete {
             let bvc = BoolConcrete {
                 id,
                 value: value,
+                inherited_asts: BTreeMap::new(),
                 discovered_asts: HashMap::new(),
                 z3_context: stdlib.z3_context,
                 z3_ast: ast,
@@ -74,7 +76,7 @@ impl BoolConcrete {
         let clone = Self::new_with_id(self.id, self.value, cloned_stdlib);
         finish_clone(
             self.id,
-            &BTreeMap::new(),
+            &self.inherited_asts,
             &self.discovered_asts,
             clone.into(),
             cloned_active_values,
@@ -104,7 +106,7 @@ impl Drop for BoolConcrete {
             self.id,
             retired_expression,
             vec![],
-            &BTreeMap::new(),
+            &self.inherited_asts,
             &self.discovered_asts
         );
     }

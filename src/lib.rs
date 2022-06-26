@@ -99,7 +99,7 @@ impl ScfiaStdlib {
 
     pub fn do_condition(&mut self, expression: Rc<RefCell<ActiveValue>>, fork_sink: Option<Rc<RefCell<ForkSink>>>) -> bool {
         unsafe {
-            debug_assert_eq!(Z3_solver_check(self.z3_context, self.z3_solver), Z3_L_TRUE);
+            // debug_assert_eq!(Z3_solver_check(self.z3_context, self.z3_solver), Z3_L_TRUE);
 
             match expression.try_borrow().unwrap().deref() {
                 ActiveValue::BoolConcrete(e1) => {

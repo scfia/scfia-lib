@@ -79,6 +79,16 @@ impl BoolLessThanUIntExpression {
                 s1.try_borrow().unwrap().get_z3_ast(),
                 s2.try_borrow().unwrap().get_z3_ast(),
             );
+            if id == 1983037 {
+                println!("##### {} (s1={}, s2={})",
+                    id,
+                    s1.try_borrow().unwrap().get_id(),
+                    s2.try_borrow().unwrap().get_id(),
+                );
+            }
+            
+            debug_assert!(s1.try_borrow().unwrap().get_id() < id);
+            debug_assert!(s2.try_borrow().unwrap().get_id() < id);
             Z3_inc_ref(z3_context, ast);
             BoolLessThanUIntExpression {
                 id,
@@ -102,6 +112,9 @@ impl BoolLessThanUIntExpression {
         // Clone s1, s2
         let s1 = self.s1.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
         let s2 = self.s2.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+        if let Some(e) = cloned_active_values.get(&self.id) {
+            return e.clone()
+        }
 
         // Build clone
         let cloned_expression = Self::new_with_id(self.id, s1, s2, cloned_stdlib);
@@ -135,6 +148,8 @@ impl Drop for BoolLessThanUIntExpression {
         // Retire expression, maintain z3 ast refcount
         let s1_id = self.s1.try_borrow().unwrap().get_id();
         let s2_id = self.s2.try_borrow().unwrap().get_id();
+        debug_assert!(s1_id < self.id);
+        debug_assert!(s2_id < self.id);
         let retired_expression = Rc::new(RefCell::new(RetiredValue::RetiredBoolLessThanUIntExpression(RetiredBoolLessThanUIntExpression {
             id: self.id,
             s1_id,
@@ -151,6 +166,9 @@ impl Drop for BoolLessThanUIntExpression {
             (s2_id, self.s2.clone()),
         ];
 
+        if self.id == 1983033 {
+            println!("### passing on 1983033 to parent {:?}", self.s1)
+        }
         inherit(
             self.id,
             retired_expression,
@@ -168,20 +186,26 @@ impl RetiredBoolLessThanUIntExpression {
         cloned_retired_values: &mut HashMap<u64, Rc<RefCell<RetiredValue>>>,
         cloned_stdlib: &mut ScfiaStdlib
     ) -> Rc<RefCell<RetiredValue>> {
+        debug_assert!(self.s1_id < self.id);
+        debug_assert!(self.s2_id < self.id);
         let s1_ast = if let Some(s1) = cloned_active_values.get(&self.s1_id) {
             s1.try_borrow().unwrap().get_z3_ast()
         } else if let Some(s1) = self.s1.upgrade() {
             s1.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib).try_borrow().unwrap().get_z3_ast()
+        } else if let Some(s1) = cloned_retired_values.get(&self.s1_id) {
+            s1.try_borrow().unwrap().get_z3_ast()
         } else {
-            cloned_retired_values.get(&self.s1_id).unwrap().try_borrow().unwrap().get_z3_ast()
+            panic!("Retired parent {} not found in cloned_retired_values\n{:?}", self.s1_id, self);
         };
 
         let s2_ast = if let Some(s2) = cloned_active_values.get(&self.s2_id) {
             s2.try_borrow().unwrap().get_z3_ast()
         } else if let Some(s2) = self.s2.upgrade() {
             s2.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib).try_borrow().unwrap().get_z3_ast()
+        } else if let Some(s2) = cloned_retired_values.get(&self.s2_id) {
+            s2.try_borrow().unwrap().get_z3_ast()
         } else {
-            cloned_retired_values.get(&self.s2_id).unwrap().try_borrow().unwrap().get_z3_ast()
+            panic!("Retired parent {} not found in cloned_retired_values\n{:?}", self.s2_id, self);
         };
 
         let cloned: Rc<RefCell<RetiredValue>> = unsafe {
@@ -203,6 +227,7 @@ impl RetiredBoolLessThanUIntExpression {
             }
         }.into();
 
+        println!("inserting {} into cloned_retired_values", self.id);
         cloned_retired_values.insert(self.id, cloned.clone());
         cloned
     }

@@ -22,6 +22,7 @@ pub struct BitVectorConcrete {
     pub id: u64,
     pub value: u64,
     pub width: u32,
+    pub inherited_asts: BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
     pub discovered_asts: HashMap<u64, Weak<RefCell<ActiveValue>>>,
     pub z3_context: Z3_context,
     pub z3_ast: Z3_ast,
@@ -44,16 +45,14 @@ impl BitVectorConcrete {
     pub fn new_with_id(id: u64, value: u64, width: u32, stdlib: &mut ScfiaStdlib) -> BitVectorConcrete {
         unsafe {
             let sort = Z3_mk_bv_sort(stdlib.z3_context, width);
-            // Z3_inc_ref(stdlib.z3_context, sort);
-
             let ast = Z3_mk_unsigned_int64(stdlib.z3_context, value, sort);
             Z3_inc_ref(stdlib.z3_context, ast);
 
-            // let z3_ast = stdlib.z3_context
             let bvc = BitVectorConcrete {
                 id,
                 value: value,
                 width: width,
+                inherited_asts: BTreeMap::new(),
                 discovered_asts: HashMap::new(),
                 z3_context: stdlib.z3_context,
                 z3_ast: ast,
@@ -71,13 +70,39 @@ impl BitVectorConcrete {
         let clone = Self::new_with_id(self.id, self.value, self.width, cloned_stdlib);
         finish_clone(
             self.id,
-            &BTreeMap::new(),
+            &self.inherited_asts,
             &self.discovered_asts,
             clone.into(),
             cloned_active_values,
             cloned_retired_values,
             cloned_stdlib
         )
+    }
+}
+
+impl RetiredBitvectorConcrete {
+    pub fn clone_to_stdlib(
+        &self,
+        _cloned_active_values: &mut HashMap<u64, Rc<RefCell<ActiveValue>>>,
+        cloned_retired_values: &mut HashMap<u64, Rc<RefCell<RetiredValue>>>,
+        cloned_stdlib: &mut ScfiaStdlib
+    ) -> Rc<RefCell<RetiredValue>> {
+        unsafe {
+            let sort = Z3_mk_bv_sort(cloned_stdlib.z3_context, self.width);
+            let ast = Z3_mk_unsigned_int64(cloned_stdlib.z3_context, self.value, sort);
+            Z3_inc_ref(cloned_stdlib.z3_context, ast);
+
+            let cloned: Rc<RefCell<RetiredValue>> = RetiredBitvectorConcrete {
+                id: self.id,
+                value: self.value,
+                width: self.width,
+                z3_context: cloned_stdlib.z3_context,
+                z3_ast: ast,
+            }.into();
+
+            cloned_retired_values.insert(self.id, cloned.clone());
+            cloned
+        }
     }
 }
 
@@ -98,11 +123,15 @@ impl Drop for BitVectorConcrete {
             z3_ast: self.z3_ast,
         })));
 
+        if self.id == 1982653 {
+            println!("### Drop BitVectorConcrete {} with inheritance {:?}", self.id, &self.inherited_asts)
+        }
+
         inherit(
             self.id,
             retired_expression,
             vec![],
-            &BTreeMap::new(),
+            &self.inherited_asts,
             &self.discovered_asts
         );
     }

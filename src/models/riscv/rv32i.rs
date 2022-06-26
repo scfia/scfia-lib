@@ -11,6 +11,7 @@ use crate::values::ActiveValue;
 use crate::values::RetiredValue;
 use crate::expressions::bv_add_expression::BVAddExpression;
 use crate::expressions::bv_and_expression::BVAndExpression;
+use crate::expressions::bv_xor_expression::BVXorExpression;
 use crate::expressions::bv_shift_right_logical_expression::BVShiftRightLogicalExpression;
 use crate::expressions::bv_shift_left_logical_expression::BVShiftLeftLogicalExpression;
 use crate::expressions::bool_less_than_uint_expression::BoolLessThanUIntExpression;
@@ -244,6 +245,15 @@ pub unsafe fn step(state: *mut SystemState, _stdlib: *mut ScfiaStdlib, _fork_sin
                 unimplemented!();
             }
         }
+        else if _stdlib.as_mut().unwrap().do_condition(BoolEqExpression::new(funct3.clone(), BitVectorConcrete::new(0b100, 3, _stdlib.as_mut().unwrap()).into(), _stdlib.as_mut().unwrap()).into(), _fork_sink.clone()) {
+            let rd: Rc<RefCell<ActiveValue>> = extract_rd_32(instruction_32.clone(), _stdlib, _fork_sink.clone(), _memory);
+            let rs1: Rc<RefCell<ActiveValue>> = extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink.clone(), _memory);
+            let imm: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 20, _stdlib.as_mut().unwrap()).into();
+            let imm_32: Rc<RefCell<ActiveValue>> = BVSignExtendExpression::new(imm.clone(), 12, 32, _stdlib.as_mut().unwrap()).into();
+            let result: Rc<RefCell<ActiveValue>> = BVXorExpression::new(register_read_BV32(state, rs1.clone(), _stdlib, _fork_sink.clone(), _memory), imm_32.clone(), _stdlib.as_mut().unwrap()).into();
+            register_write_BV32(state, rd.clone(), result.clone(), _stdlib, _fork_sink.clone(), _memory);
+            progress_pc_4(state, _stdlib, _fork_sink.clone(), _memory);
+        }
         else if _stdlib.as_mut().unwrap().do_condition(BoolEqExpression::new(funct3.clone(), BitVectorConcrete::new(0b101, 3, _stdlib.as_mut().unwrap()).into(), _stdlib.as_mut().unwrap()).into(), _fork_sink.clone()) {
             let funct7: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 25, _stdlib.as_mut().unwrap()).into();
             if _stdlib.as_mut().unwrap().do_condition(BoolEqExpression::new(funct7.clone(), BitVectorConcrete::new(0b0, 7, _stdlib.as_mut().unwrap()).into(), _stdlib.as_mut().unwrap()).into(), _fork_sink.clone()) {
@@ -380,7 +390,13 @@ pub unsafe fn step(state: *mut SystemState, _stdlib: *mut ScfiaStdlib, _fork_sin
         }
         else if _stdlib.as_mut().unwrap().do_condition(BoolEqExpression::new(funct3.clone(), BitVectorConcrete::new(0b11, 3, _stdlib.as_mut().unwrap()).into(), _stdlib.as_mut().unwrap()).into(), _fork_sink.clone()) {
             if _stdlib.as_mut().unwrap().do_condition(BoolEqExpression::new(funct7.clone(), BitVectorConcrete::new(0b0, 7, _stdlib.as_mut().unwrap()).into(), _stdlib.as_mut().unwrap()).into(), _fork_sink.clone()) {
-                unimplemented!();
+                if _stdlib.as_mut().unwrap().do_condition(BoolLessThanUIntExpression::new(register_read_BV32(state, rs1.clone(), _stdlib, _fork_sink.clone(), _memory), register_read_BV32(state, rs2.clone(), _stdlib, _fork_sink.clone(), _memory), _stdlib.as_mut().unwrap()).into(), _fork_sink.clone()) {
+                    register_write_BV32(state, rd.clone(), BitVectorConcrete::new(0b1, 32, _stdlib.as_mut().unwrap()).into(), _stdlib, _fork_sink.clone(), _memory);
+                }
+                else {
+                    register_write_BV32(state, rd.clone(), BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap()).into(), _stdlib, _fork_sink.clone(), _memory);
+                }
+                progress_pc_4(state, _stdlib, _fork_sink.clone(), _memory);
             }
             else {
                 unimplemented!();

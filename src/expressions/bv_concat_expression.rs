@@ -16,6 +16,7 @@ use z3_sys::Z3_inc_ref;
 use z3_sys::Z3_mk_bvadd;
 use z3_sys::Z3_mk_concat;
 
+use super::finish_clone;
 use super::inherit;
 
 #[derive(Debug)]
@@ -75,7 +76,7 @@ impl BVConcatExpression {
             );
             Z3_inc_ref(z3_context, ast);
             BVConcatExpression {
-                id: stdlib.get_symbol_id(),
+                id: id,
                 s1: s1,
                 s2: s2,
                 inherited_asts: BTreeMap::new(),
@@ -85,6 +86,33 @@ impl BVConcatExpression {
             }
         }
     }
+
+    pub fn clone_to_stdlib(
+        &self,
+        cloned_active_values: &mut HashMap<u64, Rc<RefCell<ActiveValue>>>,
+        cloned_retired_values: &mut HashMap<u64, Rc<RefCell<RetiredValue>>>,
+        cloned_stdlib: &mut ScfiaStdlib
+    ) -> Rc<RefCell<ActiveValue>> {
+        // Clone s1, s2
+        let s1 = self.s1.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+        let s2 = self.s2.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+        if let Some(e) = cloned_active_values.get(&self.id) {
+            return e.clone()
+        }
+
+        // Build clone
+        let cloned_expression = Self::new_with_id(self.id, s1, s2, cloned_stdlib);
+
+        finish_clone(
+            self.id,
+            &self.inherited_asts,
+            &self.discovered_asts,
+            cloned_expression.into(),
+            cloned_active_values,
+            cloned_retired_values,
+            cloned_stdlib
+        )
+    }
 }
 
 impl Drop for BVConcatExpression {
@@ -92,6 +120,8 @@ impl Drop for BVConcatExpression {
         // Retire expression, maintain z3 ast refcount
         let s1_id = self.s1.try_borrow().unwrap().get_id();
         let s2_id = self.s2.try_borrow().unwrap().get_id();
+        debug_assert!(s1_id < self.id);
+        debug_assert!(s2_id < self.id);
         let retired_expression = Rc::new(RefCell::new(RetiredValue::RetiredBitvectorConcatExpression(RetiredBVConcatExpression {
             id: self.id,
             s1: s1_id,

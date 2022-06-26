@@ -103,6 +103,9 @@ impl BoolNEqExpression {
         // Clone s1, s2
         let s1 = self.s1.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
         let s2 = self.s2.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+        if let Some(e) = cloned_active_values.get(&self.id) {
+            return e.clone()
+        }
 
         // Build clone
         let cloned_expression = Self::new_with_id(self.id, s1, s2, cloned_stdlib);
@@ -136,6 +139,8 @@ impl Drop for BoolNEqExpression {
         // Retire expression, maintain z3 ast refcount
         let s1_id = self.s1.try_borrow().unwrap().get_id();
         let s2_id = self.s2.try_borrow().unwrap().get_id();
+        debug_assert!(s1_id < self.id);
+        debug_assert!(s2_id < self.id);
         let retired_expression = Rc::new(RefCell::new(RetiredValue::RetiredBoolNEqExpression(RetiredBoolNEqExpression {
             id: self.id,
             s1_id,
@@ -172,16 +177,20 @@ impl RetiredBoolNEqExpression {
             s1.try_borrow().unwrap().get_z3_ast()
         } else if let Some(s1) = self.s1.upgrade() {
             s1.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib).try_borrow().unwrap().get_z3_ast()
+        } else if let Some(s1) = cloned_retired_values.get(&self.s1_id) {
+            s1.try_borrow().unwrap().get_z3_ast()
         } else {
-            cloned_retired_values.get(&self.s1_id).unwrap().try_borrow().unwrap().get_z3_ast()
+            panic!("Retired parent {} not found in cloned_retired_values\n{:?}", self.s1_id, self);
         };
 
         let s2_ast = if let Some(s2) = cloned_active_values.get(&self.s2_id) {
             s2.try_borrow().unwrap().get_z3_ast()
         } else if let Some(s2) = self.s2.upgrade() {
             s2.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib).try_borrow().unwrap().get_z3_ast()
+        } else if let Some(s2) = cloned_retired_values.get(&self.s2_id) {
+            s2.try_borrow().unwrap().get_z3_ast()
         } else {
-            cloned_retired_values.get(&self.s2_id).unwrap().try_borrow().unwrap().get_z3_ast()
+            panic!("Retired parent {} not found in cloned_retired_values\n{:?}", self.s2_id, self);
         };
 
         let neg_expression: Rc<RefCell<RetiredValue>> = unsafe {
