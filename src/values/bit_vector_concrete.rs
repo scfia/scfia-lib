@@ -68,6 +68,9 @@ impl BitVectorConcrete {
         cloned_stdlib: &mut ScfiaStdlib,
     ) -> Rc<RefCell<ActiveValue>> {
         let clone = Self::new_with_id(self.id, self.value, self.width, cloned_stdlib);
+        if self.id == 12920 {
+            println!("#### {:?}", self.inherited_asts)
+        }
         finish_clone(
             self.id,
             &self.inherited_asts,

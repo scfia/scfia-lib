@@ -143,13 +143,17 @@ fn test_system_state() {
         panicking.step()
     }
 
-    println!("Stepping until ???");
-    while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x1460 {
-        continuing.step();
-    }
-
-    let mut successors = continuing.step_forking();
-    panic!("{}", successors.len());
+    println!("Stepping until offer");
+    let mut past_mult = step_all_until(
+        vec![continuing],
+        vec![
+            0x1464,
+            0x14bc,
+            0x1460,
+            0x14d4,
+        ],
+        0x5c8);
+    panic!("finished with {} states", past_mult.len());
 
     /*
     println!("Stepping until X...");
@@ -169,4 +173,23 @@ fn test_system_state() {
     }
     */
 
+}
+
+fn step_all_until(mut states: Vec<RV32iSystemState>, branch_points: Vec<u64>, until: u64) -> Vec<RV32iSystemState> {
+    let mut done = vec![];
+    while let Some(mut state) = states.pop() {
+        if state.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != until {
+            if branch_points.contains(&state.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value) {
+                let mut forks = state.step_forking();
+                states.append(&mut forks);
+            } else {
+                state.step();
+                states.push(state);
+            }
+        } else {
+            done.push(state);
+        }
+    }
+    
+    done
 }

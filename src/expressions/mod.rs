@@ -74,6 +74,10 @@ pub(crate) fn finish_clone(
     }
 
     // Clone inherited values
+    if inherited_asts.len() > 0 {
+        println!("{} cloning inherited values {:?}", id, inherited_asts);
+    }
+    
     let mut cloned_inherited = vec![];
     for (inherited_ast_id, inherited_ast) in inherited_asts {
         cloned_inherited.push((inherited_ast_id, inherited_ast.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib)));

@@ -78,10 +78,7 @@ impl ActiveValue {
             return clone
         }
 
-        match self {
-            ActiveValue::BitvectorConcrete(_) => {},
-            x => println!("clone_to_stdlib RetiredValue {:?}", &x),
-        }
+        println!("clone_to_stdlib ActiveValue {:?}", &self);
 
         let clone = match self {
             ActiveValue::BitvectorConcrete(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
