@@ -10,6 +10,8 @@ use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
 use std::rc::Weak;
+use std::time::SystemTime;
+use std::time::UNIX_EPOCH;
 use crate::ScfiaStdlib;
 use crate::expressions::finish_clone;
 use crate::expressions::inherit;
@@ -20,6 +22,7 @@ use super::RetiredValue;
 
 pub struct BitVectorConcrete {
     pub id: u64,
+    pub uuid: String,
     pub value: u64,
     pub width: u32,
     pub inherited_asts: BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
@@ -44,12 +47,17 @@ impl BitVectorConcrete {
 
     pub fn new_with_id(id: u64, value: u64, width: u32, stdlib: &mut ScfiaStdlib) -> BitVectorConcrete {
         unsafe {
+            let uuid = format!("{}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis());
+            if id == 12920 {
+                println!("### creating bvc 12920 ({}) in {}", uuid, stdlib.id)
+            }
             let sort = Z3_mk_bv_sort(stdlib.z3_context, width);
             let ast = Z3_mk_unsigned_int64(stdlib.z3_context, value, sort);
             Z3_inc_ref(stdlib.z3_context, ast);
 
             let bvc = BitVectorConcrete {
                 id,
+                uuid,
                 value: value,
                 width: width,
                 inherited_asts: BTreeMap::new(),
@@ -61,6 +69,14 @@ impl BitVectorConcrete {
         }
     }
 
+    pub fn inherit(&mut self, ast_id: u64, ast: Rc<RefCell<RetiredValue>>) {
+        let ast2 = ast.clone();
+        self.inherited_asts.insert(ast_id, ast);
+        if self.id == 12920 {
+            println!("## 12920 inherited {:?} and now has {:?}", ast_id, self.inherited_asts)
+        }
+    }
+
     pub fn clone_to_stdlib(
         &self,
         cloned_active_values: &mut HashMap<u64, Rc<RefCell<ActiveValue>>>,
@@ -69,7 +85,7 @@ impl BitVectorConcrete {
     ) -> Rc<RefCell<ActiveValue>> {
         let clone = Self::new_with_id(self.id, self.value, self.width, cloned_stdlib);
         if self.id == 12920 {
-            println!("#### {:?}", self.inherited_asts)
+            println!("## cloning 12920 ({}) with {:?} into {}", self.uuid, self.inherited_asts, cloned_stdlib.id)
         }
         finish_clone(
             self.id,
@@ -111,7 +127,7 @@ impl RetiredBitvectorConcrete {
 
 impl fmt::Debug for BitVectorConcrete {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&format!("BitVectorConcrete {{ value=0x{:x}, width={}, id={} }}", self.value, self.width, self.id))
+        f.write_str(&format!("BitVectorConcrete {{ value=0x{:x}, width={}, id={}, uuid={} }}", self.value, self.width, self.id, self.uuid))
     }
 }
 
@@ -125,10 +141,6 @@ impl Drop for BitVectorConcrete {
             z3_context: self.z3_context,
             z3_ast: self.z3_ast,
         })));
-
-        if self.id == 1982653 {
-            println!("### Drop BitVectorConcrete {} with inheritance {:?}", self.id, &self.inherited_asts)
-        }
 
         inherit(
             self.id,

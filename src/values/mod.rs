@@ -78,7 +78,7 @@ impl ActiveValue {
             return clone
         }
 
-        println!("clone_to_stdlib ActiveValue {:?}", &self);
+        println!("clone_to_stdlib {} ActiveValue {:?}", cloned_stdlib.id, &self);
 
         let clone = match self {
             ActiveValue::BitvectorConcrete(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
@@ -128,7 +128,7 @@ impl RetiredValue {
 
         match self {
             RetiredValue::RetiredBitvectorConcrete(_) => {},
-            x => println!("clone_to_stdlib RetiredValue {:?}", &x),
+            x => println!("clone_to_stdlib {} RetiredValue {:?}", cloned_stdlib.id, &x),
         }
 
         match self {
@@ -238,8 +238,12 @@ impl ActiveValue {
     }
 
     pub fn inherit(&mut self, ast_id: u64, ast: Rc<RefCell<RetiredValue>>) {
+        if self.get_id() == 12920 {
+            println!("## ActiveValue {:?} inheriting {}", self, ast_id);
+        }
+        
         match self {
-            ActiveValue::BitvectorConcrete(e) => { e.inherited_asts.insert(ast_id, ast); },
+            ActiveValue::BitvectorConcrete(e) => e.inherit(ast_id, ast),
             ActiveValue::BitvectorSymbol(e) => { e.inherited_asts.insert(ast_id, ast); },
             ActiveValue::BoolEqExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
             ActiveValue::BoolNEqExpression(e) => { e.inherited_asts.insert(ast_id, ast); },

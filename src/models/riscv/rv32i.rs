@@ -44,9 +44,11 @@ pub struct RV32iSystemStateFork {
 }
 
 impl RV32iSystemStateFork {
-    pub fn new(next_symbol_id: u64) -> Self {
+    pub fn new(next_symbol_id: u64, old_stdlib: &ScfiaStdlib) -> Self {
+        let stdlib = ScfiaStdlib::new_with_next_id(next_symbol_id);
+        println!("{} forked stdlib {}", old_stdlib.id, stdlib.id);
         RV32iSystemStateFork {
-            cloned_stdlib: ScfiaStdlib::new_with_next_id(next_symbol_id),
+            cloned_stdlib: stdlib,
             cloned_active_values: HashMap::new(),
             cloned_retired_values: HashMap::new()
         }
@@ -66,8 +68,8 @@ impl ForkSink {
         }
     }
 
-    pub fn fork(&mut self, fork_condition: Rc<RefCell<ActiveValue>>) {
-        let mut fork = RV32iSystemStateFork::new(fork_condition.try_borrow().unwrap().get_id());
+    pub fn fork(&mut self, fork_condition: Rc<RefCell<ActiveValue>>, old_stdlib: &ScfiaStdlib) {
+        let mut fork = RV32iSystemStateFork::new(fork_condition.try_borrow().unwrap().get_id(), old_stdlib);
 
         let cloned_condition = fork_condition.try_borrow().unwrap().clone_to_stdlib(
             &mut fork.cloned_active_values,
@@ -801,22 +803,22 @@ pub unsafe fn execute_add32(state: *mut SystemState, destination_id: Rc<RefCell<
 impl RV32iSystemState {
     pub fn step(&mut self) {
         unsafe {
-            println!("stepping {:?}", self.system_state.pc);
+            println!("{} stepping {:?}", self.stdlib.id, self.system_state.pc);
             step(&mut self.system_state, &mut self.stdlib, None, &mut self.memory);
         }
     }
 
     pub fn step_forking(self) -> Vec<RV32iSystemState> {
         unsafe {
-            println!("RV32iSystemState stepping {:?} (forking)", self.system_state.pc);
+            println!("{} stepping {:?} (forking)", self.stdlib.id, self.system_state.pc);
             let mut successors = vec![];
-            let mut candidates = vec![self.clone_to_stdlib(RV32iSystemStateFork::new(self.stdlib.next_symbol_id))];
-            println!("RV32iSystemState stepping candidate");
+            let mut candidates = vec![self.clone_to_stdlib(RV32iSystemStateFork::new(self.stdlib.next_symbol_id, &self.stdlib))];
+            println!("RV32iSystemState stepping candidates");
             
             while let Some(mut current) = candidates.pop() {
                 // Step current candidate
                 let fork_sink = Rc::new(RefCell::new(ForkSink::new()));
-                println!("RV32iSystemState stepping candidate");
+                println!("{}'s fork {} stepping candidate", self.stdlib.id, current.stdlib.id);
                 step(&mut current.system_state, &mut current.stdlib, Some(fork_sink.clone()), &mut current.memory);
 
                 // Convert forks to candidates

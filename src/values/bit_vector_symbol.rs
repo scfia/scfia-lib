@@ -141,6 +141,7 @@ impl Drop for BitVectorSymbol {
 
 impl Drop for RetiredBitvectorSymbol {
     fn drop(&mut self) {
+        println!("Dropping RetiredBitvectorSymbol {}", self.id);
         unsafe { Z3_dec_ref(self.z3_context, self.z3_ast) }
     }
 }

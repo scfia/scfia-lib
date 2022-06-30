@@ -9,9 +9,12 @@ pub mod models;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::fmt;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::rc::Weak;
+use std::time::SystemTime;
+use std::time::UNIX_EPOCH;
 use std::vec;
 
 use expressions::bool_eq_expression::BoolEqExpression;
@@ -58,6 +61,7 @@ use crate::values::bit_vector_concrete::BitVectorConcrete;
 
 #[derive(Debug)]
 pub struct ScfiaStdlib {
+    pub id: String,
     next_symbol_id: u64,
     pub retired_symbols_map: HashMap<u64, Rc<RefCell<RetiredValue>>>,
     pub z3_context: Z3_context,
@@ -74,11 +78,13 @@ impl ScfiaStdlib {
             let z3_config = Z3_mk_config();
             let z3_context = Z3_mk_context_rc(z3_config);
             let stdlib = ScfiaStdlib {
+                id: format!("{}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()),
                 z3_context,
                 z3_solver: Z3_mk_solver(z3_context),
                 next_symbol_id,
                 retired_symbols_map: HashMap::new(),
             };
+            println!("created stdlib {}", stdlib.id);
             Z3_solver_inc_ref(stdlib.z3_context, stdlib.z3_solver);
             Z3_del_config(z3_config);
             stdlib
@@ -131,7 +137,7 @@ impl ScfiaStdlib {
                 println!("FORK!");
                 println!("negcondition={:?}", &neg_condition_symbol);
                 println!("condition={:?}", &expression);
-                fork_sink.unwrap().try_borrow_mut().unwrap().fork(neg_condition_symbol.into());
+                fork_sink.unwrap().try_borrow_mut().unwrap().fork(neg_condition_symbol.into(), self);
 
                 // continue with positive condition
                 expression.try_borrow_mut().unwrap().assert(self);

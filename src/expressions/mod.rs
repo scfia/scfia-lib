@@ -25,11 +25,14 @@ pub(crate) fn inherit(
     discovered_asts: &HashMap<u64, Weak<RefCell<ActiveValue>>>,
 ) {
     // Heirs are parents and discovered symbols
+    println!("inheriting {}", id);
+    if id == 16012 {
+        println!("16012 has {} inheriteds", inherited_asts.len())
+    }
     for (discovered_symbol_id, discovered_symbol) in discovered_asts {
-        println!("inheriting {} to {:?} ({})", id, discovered_symbol, discovered_symbol_id);
         let discovered_symbol = discovered_symbol.upgrade().unwrap();
         let mut discovered_symbol_ref = discovered_symbol.try_borrow_mut().unwrap();
-        
+        println!("adding acquaintance {} ({:?}) to heir list of {}", discovered_symbol_id, discovered_symbol_ref, id);
         discovered_symbol_ref.forget(id);
         heirs.push((*discovered_symbol_id, discovered_symbol.clone()))
     }
@@ -40,13 +43,14 @@ pub(crate) fn inherit(
 
         // Inherit
         heir_ref.inherit(id, retired_expression.clone());
-        if id == 1983033 {
-            println!("#### inherited 1983033 to {:?}", &heir_ref)
-        }
 
         // Pass on inherited symbols
         for (inherited_id, inherited) in inherited_asts {
-            heir_ref.inherit(*inherited_id, inherited.clone())
+            println!("passing on {} to {}", inherited_id, &heir_ref.get_id());
+            heir_ref.inherit(*inherited_id, inherited.clone());
+            if id == 16092 && heir_ref.get_id() == 12920 {
+                println!("## {:?}", heir_ref);
+            }
         }
 
         // Acquaint all heirs
@@ -72,15 +76,23 @@ pub(crate) fn finish_clone(
     if let Some(undesirable) = cloned_active_values.insert(id, clone.clone()) {
         panic!("{:?}", undesirable)
     }
+    assert_eq!(id, clone.try_borrow().unwrap().get_id());
 
     // Clone inherited values
     if inherited_asts.len() > 0 {
-        println!("{} cloning inherited values {:?}", id, inherited_asts);
+        println!("finish_clone: {} cloning inherited values {:?}", id, inherited_asts.keys());
     }
     
     let mut cloned_inherited = vec![];
     for (inherited_ast_id, inherited_ast) in inherited_asts {
         cloned_inherited.push((inherited_ast_id, inherited_ast.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib)));
+    }
+    {
+        assert_eq!(inherited_asts.len(), cloned_inherited.len());
+        let mut cloned_expression_ref = clone.try_borrow_mut().unwrap();
+        for (cloned_inherited_ast_id, cloned_inherited_ast) in cloned_inherited {
+            cloned_expression_ref.inherit(*cloned_inherited_ast_id, cloned_inherited_ast)
+        }
     }
 
     // Clone discovered values
@@ -91,13 +103,11 @@ pub(crate) fn finish_clone(
 
     // Update clone with retirees and discoveries
     {
+        assert_eq!(discovered_asts.len(), cloned_discovered.len());
         let mut cloned_expression_ref = clone.try_borrow_mut().unwrap();
-        for (cloned_inherited_ast_id, cloned_inherited_ast) in cloned_inherited {
-            cloned_expression_ref.inherit(*cloned_inherited_ast_id, cloned_inherited_ast)
-        }
         for cloned_discovered_value in cloned_discovered {
             cloned_expression_ref.discover(cloned_discovered_value.try_borrow().unwrap().get_id(), Rc::downgrade(&cloned_discovered_value))
-        }
+        }        
     }
 
     clone
