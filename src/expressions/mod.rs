@@ -1,4 +1,4 @@
-use std::{rc::{Rc, Weak}, cell::RefCell, collections::{HashMap, BTreeMap}};
+use std::{rc::{Rc, Weak}, cell::RefCell, collections::{BTreeMap}};
 
 use crate::{values::{ActiveValue, RetiredValue}, ScfiaStdlib};
 
@@ -22,7 +22,7 @@ pub(crate) fn inherit(
     retired_expression: Rc<RefCell<RetiredValue>>,
     mut heirs: Vec<(u64, Rc<RefCell<ActiveValue>>)>,
     inherited_asts: &BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
-    discovered_asts: &HashMap<u64, Weak<RefCell<ActiveValue>>>,
+    discovered_asts: &BTreeMap<u64, Weak<RefCell<ActiveValue>>>,
 ) {
     // Heirs are parents and discovered symbols
     println!("inheriting {}", id);
@@ -67,10 +67,10 @@ pub(crate) fn inherit(
 pub(crate) fn finish_clone(
     id: u64,
     inherited_asts: &BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
-    discovered_asts: &HashMap<u64, Weak<RefCell<ActiveValue>>>,
+    discovered_asts: &BTreeMap<u64, Weak<RefCell<ActiveValue>>>,
     clone: Rc<RefCell<ActiveValue>>,
-    cloned_active_values: &mut HashMap<u64, Rc<RefCell<ActiveValue>>>,
-    cloned_retired_values: &mut HashMap<u64, Rc<RefCell<RetiredValue>>>,
+    cloned_active_values: &mut BTreeMap<u64, Rc<RefCell<ActiveValue>>>,
+    cloned_retired_values: &mut BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
     cloned_stdlib: &mut ScfiaStdlib
 ) -> Rc<RefCell<ActiveValue>> {
     if let Some(undesirable) = cloned_active_values.insert(id, clone.clone()) {

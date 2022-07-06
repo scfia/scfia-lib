@@ -28,7 +28,7 @@ pub struct BVShiftLeftLogicalExpression {
     pub s1: Rc<RefCell<ActiveValue>>,
     pub s2: Rc<RefCell<ActiveValue>>,
     pub inherited_asts: BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
-    pub discovered_asts: HashMap<u64, Weak<RefCell<ActiveValue>>>,
+    pub discovered_asts: BTreeMap<u64, Weak<RefCell<ActiveValue>>>,
     pub z3_context: Z3_context,
     pub z3_ast: Z3_ast,
 }
@@ -89,7 +89,7 @@ impl BVShiftLeftLogicalExpression {
                 s1: s1,
                 s2: s2,
                 inherited_asts: BTreeMap::new(),
-                discovered_asts: HashMap::new(),
+                discovered_asts: BTreeMap::new(),
                 z3_context: z3_context,
                 z3_ast: ast,
             }

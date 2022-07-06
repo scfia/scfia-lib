@@ -26,7 +26,7 @@ pub struct BoolConcrete {
     pub id: u64,
     pub value: bool,
     pub inherited_asts: BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
-    pub discovered_asts: HashMap<u64, Weak<RefCell<ActiveValue>>>,
+    pub discovered_asts: BTreeMap<u64, Weak<RefCell<ActiveValue>>>,
     pub z3_context: Z3_context,
     pub z3_ast: Z3_ast,
 }
@@ -59,7 +59,7 @@ impl BoolConcrete {
                 id,
                 value: value,
                 inherited_asts: BTreeMap::new(),
-                discovered_asts: HashMap::new(),
+                discovered_asts: BTreeMap::new(),
                 z3_context: stdlib.z3_context,
                 z3_ast: ast,
             };
@@ -69,8 +69,8 @@ impl BoolConcrete {
 
     pub fn clone_to_stdlib(
         &self,
-        cloned_active_values: &mut HashMap<u64, Rc<RefCell<ActiveValue>>>,
-        cloned_retired_values: &mut HashMap<u64, Rc<RefCell<RetiredValue>>>,
+        cloned_active_values: &mut BTreeMap<u64, Rc<RefCell<ActiveValue>>>,
+        cloned_retired_values: &mut BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
         cloned_stdlib: &mut ScfiaStdlib,
     ) -> Rc<RefCell<ActiveValue>> {
         let clone = Self::new_with_id(self.id, self.value, cloned_stdlib);

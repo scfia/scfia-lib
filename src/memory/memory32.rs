@@ -1,4 +1,4 @@
-use std::{rc::Rc, cell::RefCell, ops::Deref, collections::HashMap};
+use std::{rc::Rc, cell::RefCell, ops::Deref, collections::{HashMap, BTreeMap}};
 
 use crate::{ScfiaStdlib, values::{bit_vector_concrete::BitVectorConcrete, ActiveValue, RetiredValue}};
 use crate::memory::MemoryRegion32;
@@ -72,8 +72,8 @@ impl Memory32 {
 
     pub fn clone_to_stdlib(
         &self,
-        cloned_active_values: &mut HashMap<u64, Rc<RefCell<ActiveValue>>>,
-        cloned_retired_values: &mut HashMap<u64, Rc<RefCell<RetiredValue>>>,
+        cloned_active_values: &mut BTreeMap<u64, Rc<RefCell<ActiveValue>>>,
+        cloned_retired_values: &mut BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
         cloned_stdlib: &mut ScfiaStdlib
     ) -> Self {
         let mut cloned_memory = Self::new();

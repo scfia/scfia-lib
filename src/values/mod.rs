@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::{Rc, Weak}};
+use std::{cell::RefCell, rc::{Rc, Weak}, collections::BTreeMap};
 use std::collections::HashMap;
 use z3_sys::Z3_solver_assert;
 
@@ -68,8 +68,8 @@ impl ActiveValue {
 
     pub fn clone_to_stdlib(
         &self,
-        cloned_active_values: &mut HashMap<u64, Rc<RefCell<ActiveValue>>>,
-        cloned_retired_values: &mut HashMap<u64, Rc<RefCell<RetiredValue>>>,
+        cloned_active_values: &mut BTreeMap<u64, Rc<RefCell<ActiveValue>>>,
+        cloned_retired_values: &mut BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
         cloned_stdlib: &mut ScfiaStdlib
     ) -> Rc<RefCell<ActiveValue>> {
         if let Some(cloned_active_value) = cloned_active_values.get(&self.get_id()) {
@@ -116,8 +116,8 @@ impl ActiveValue {
 impl RetiredValue {
     pub fn clone_to_stdlib(
         &self,
-        cloned_active_values: &mut HashMap<u64, Rc<RefCell<ActiveValue>>>,
-        cloned_retired_values: &mut HashMap<u64, Rc<RefCell<RetiredValue>>>,
+        cloned_active_values: &mut BTreeMap<u64, Rc<RefCell<ActiveValue>>>,
+        cloned_retired_values: &mut BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
         cloned_stdlib: &mut ScfiaStdlib
     ) -> Rc<RefCell<RetiredValue>> {
         if let Some(cloned_retired_value) = cloned_retired_values.get(&self.get_id()) {

@@ -24,7 +24,7 @@ pub struct BVAddExpression {
     pub s1: Rc<RefCell<ActiveValue>>,
     pub s2: Rc<RefCell<ActiveValue>>,
     pub inherited_asts: BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
-    pub discovered_asts: HashMap<u64, Weak<RefCell<ActiveValue>>>,
+    pub discovered_asts: BTreeMap<u64, Weak<RefCell<ActiveValue>>>,
     pub z3_context: Z3_context,
     pub z3_ast: Z3_ast,
 }
@@ -84,7 +84,7 @@ impl BVAddExpression {
                 s1: s1,
                 s2: s2,
                 inherited_asts: BTreeMap::new(),
-                discovered_asts: HashMap::new(),
+                discovered_asts: BTreeMap::new(),
                 z3_context: z3_context,
                 z3_ast: ast,
             }
@@ -93,8 +93,8 @@ impl BVAddExpression {
 
     pub fn clone_to_stdlib(
         &self,
-        cloned_active_values: &mut HashMap<u64, Rc<RefCell<ActiveValue>>>,
-        cloned_retired_values: &mut HashMap<u64, Rc<RefCell<RetiredValue>>>,
+        cloned_active_values: &mut BTreeMap<u64, Rc<RefCell<ActiveValue>>>,
+        cloned_retired_values: &mut BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
         cloned_stdlib: &mut ScfiaStdlib
     ) -> Rc<RefCell<ActiveValue>> {
         // Clone s1, s2
@@ -155,8 +155,8 @@ impl Drop for BVAddExpression {
 impl RetiredBVAddExpression {
     pub fn clone_to_stdlib(
         &self,
-        cloned_active_values: &mut HashMap<u64, Rc<RefCell<ActiveValue>>>,
-        cloned_retired_values: &mut HashMap<u64, Rc<RefCell<RetiredValue>>>,
+        cloned_active_values: &mut BTreeMap<u64, Rc<RefCell<ActiveValue>>>,
+        cloned_retired_values: &mut BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
         cloned_stdlib: &mut ScfiaStdlib
     ) -> Rc<RefCell<RetiredValue>> {
         let s1_ast = if let Some(s1) = cloned_active_values.get(&self.s1_id) {

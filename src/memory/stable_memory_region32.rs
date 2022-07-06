@@ -22,8 +22,8 @@ impl StableMemoryRegion32 {
 
     pub fn clone_to_stdlib(
         &self,
-        cloned_active_values: &mut HashMap<u64, Rc<RefCell<ActiveValue>>>,
-        cloned_retired_values: &mut HashMap<u64, Rc<RefCell<crate::values::RetiredValue>>>,
+        cloned_active_values: &mut BTreeMap<u64, Rc<RefCell<ActiveValue>>>,
+        cloned_retired_values: &mut BTreeMap<u64, Rc<RefCell<crate::values::RetiredValue>>>,
         cloned_stdlib: &mut crate::ScfiaStdlib
     ) -> Self {
         let mut cloned_region = StableMemoryRegion32::new(self.start_address, self.length);

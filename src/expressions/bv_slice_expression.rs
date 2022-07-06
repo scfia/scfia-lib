@@ -26,7 +26,7 @@ pub struct BVSliceExpression {
     pub high: u32,
     pub low: u32,
     pub inherited_asts: BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
-    pub discovered_asts: HashMap<u64, Weak<RefCell<ActiveValue>>>,
+    pub discovered_asts: BTreeMap<u64, Weak<RefCell<ActiveValue>>>,
     pub z3_context: Z3_context,
     pub z3_ast: Z3_ast,
 }
@@ -91,7 +91,7 @@ impl BVSliceExpression {
                 high,
                 low,
                 inherited_asts: BTreeMap::new(),
-                discovered_asts: HashMap::new(),
+                discovered_asts: BTreeMap::new(),
                 z3_context: z3_context,
                 z3_ast: ast,
             }

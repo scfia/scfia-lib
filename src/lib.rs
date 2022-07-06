@@ -7,10 +7,12 @@ pub mod values;
 pub mod memory;
 pub mod models;
 
+use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
 use std::ops::Deref;
+use std::ops::DerefMut;
 use std::rc::Rc;
 use std::rc::Weak;
 use std::time::SystemTime;
@@ -103,7 +105,11 @@ impl ScfiaStdlib {
         }
     }
 
-    pub fn do_condition(&mut self, expression: Rc<RefCell<ActiveValue>>, fork_sink: Option<Rc<RefCell<ForkSink>>>) -> bool {
+    pub fn do_condition(
+        &mut self,
+        expression: Rc<RefCell<ActiveValue>>,
+        fork_sink: &mut Option<&mut ForkSink>,
+    ) -> bool {
         unsafe {
             // debug_assert_eq!(Z3_solver_check(self.z3_context, self.z3_solver), Z3_L_TRUE);
 
@@ -137,12 +143,13 @@ impl ScfiaStdlib {
                 println!("FORK!");
                 println!("negcondition={:?}", &neg_condition_symbol);
                 println!("condition={:?}", &expression);
-                fork_sink.unwrap().try_borrow_mut().unwrap().fork(neg_condition_symbol.into(), self);
-
-                // continue with positive condition
-                expression.try_borrow_mut().unwrap().assert(self);
-
-                true
+                if let Some(fork_sink) = fork_sink {
+                    fork_sink.fork(neg_condition_symbol.into());
+                    expression.try_borrow_mut().unwrap().assert(self);
+                    true
+                } else {
+                    panic!()
+                }
             } else if can_be_true {
                 true
             } else if can_be_false {

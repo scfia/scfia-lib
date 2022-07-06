@@ -21,7 +21,7 @@ pub struct BitVectorSymbol {
     pub width: u32,
     pub expression: Option<(u64, Rc<RefCell<ActiveValue>>)>,
     pub inherited_asts: BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
-    pub discovered_asts: HashMap<u64, Weak<RefCell<ActiveValue>>>,
+    pub discovered_asts: BTreeMap<u64, Weak<RefCell<ActiveValue>>>,
     pub z3_context: Z3_context,
     pub z3_ast: Z3_ast,
 }
@@ -72,7 +72,7 @@ impl BitVectorSymbol {
                 width,
                 expression,
                 inherited_asts: BTreeMap::new(),
-                discovered_asts: HashMap::new(),
+                discovered_asts: BTreeMap::new(),
                 z3_context,
                 z3_ast,
             };
@@ -83,8 +83,8 @@ impl BitVectorSymbol {
 
     pub fn clone_to_stdlib(
         &self,
-        cloned_active_values: &mut HashMap<u64, Rc<RefCell<ActiveValue>>>,
-        cloned_retired_values: &mut HashMap<u64, Rc<RefCell<RetiredValue>>>,
+        cloned_active_values: &mut BTreeMap<u64, Rc<RefCell<ActiveValue>>>,
+        cloned_retired_values: &mut BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
         cloned_stdlib: &mut ScfiaStdlib,
     ) -> Rc<RefCell<ActiveValue>> {
         let cloned_expression = if let Some(expression) = &self.expression {
