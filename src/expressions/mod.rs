@@ -25,14 +25,10 @@ pub(crate) fn inherit(
     discovered_asts: &BTreeMap<u64, Weak<RefCell<ActiveValue>>>,
 ) {
     // Heirs are parents and discovered symbols
-    println!("inheriting {}", id);
-    if id == 16012 {
-        println!("16012 has {} inheriteds", inherited_asts.len())
-    }
     for (discovered_symbol_id, discovered_symbol) in discovered_asts {
         let discovered_symbol = discovered_symbol.upgrade().unwrap();
         let mut discovered_symbol_ref = discovered_symbol.try_borrow_mut().unwrap();
-        println!("adding acquaintance {} ({:?}) to heir list of {}", discovered_symbol_id, discovered_symbol_ref, id);
+        // println!("adding acquaintance {} ({:?}) to heir list of {}", discovered_symbol_id, discovered_symbol_ref, id);
         discovered_symbol_ref.forget(id);
         heirs.push((*discovered_symbol_id, discovered_symbol.clone()))
     }
@@ -40,23 +36,22 @@ pub(crate) fn inherit(
     // For each heir...
     for (heir_id, heir) in &heirs {
         let mut heir_ref = heir.try_borrow_mut().unwrap();
+        debug_assert_eq!(*heir_id, heir_ref.get_id());
 
         // Inherit
         heir_ref.inherit(id, retired_expression.clone());
 
         // Pass on inherited symbols
         for (inherited_id, inherited) in inherited_asts {
-            println!("passing on {} to {}", inherited_id, &heir_ref.get_id());
+            // println!("passing on {} to {}", inherited_id, &heir_ref.get_id());
             heir_ref.inherit(*inherited_id, inherited.clone());
-            if id == 16092 && heir_ref.get_id() == 12920 {
-                println!("## {:?}", heir_ref);
-            }
         }
 
         // Acquaint all heirs
         for (other_heir_id, other_heir) in &heirs {
             if other_heir_id != heir_id {
                 let mut other_heir_ref = other_heir.try_borrow_mut().unwrap();
+                debug_assert_eq!(*other_heir_id, other_heir_ref.get_id());
                 heir_ref.discover(other_heir_ref.get_id(), Rc::downgrade(other_heir));
                 other_heir_ref.discover(heir_ref.get_id(), Rc::downgrade(heir));
             }
@@ -88,7 +83,7 @@ pub(crate) fn finish_clone(
         cloned_inherited.push((inherited_ast_id, inherited_ast.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib)));
     }
     {
-        assert_eq!(inherited_asts.len(), cloned_inherited.len());
+        debug_assert_eq!(inherited_asts.len(), cloned_inherited.len());
         let mut cloned_expression_ref = clone.try_borrow_mut().unwrap();
         for (cloned_inherited_ast_id, cloned_inherited_ast) in cloned_inherited {
             cloned_expression_ref.inherit(*cloned_inherited_ast_id, cloned_inherited_ast)

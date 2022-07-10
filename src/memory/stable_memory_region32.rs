@@ -1,6 +1,6 @@
 use std::{collections::{HashMap, VecDeque, BTreeMap}, cell::RefCell, rc::Rc};
 
-use crate::{values::{ActiveValue, bit_vector_concrete::BitVectorConcrete, bit_vector_symbol::BitVectorSymbol}, expressions::{bv_or_expression::BVOrExpression, bv_slice_expression::BVSliceExpression, bv_concat_expression::BVConcatExpression}};
+use crate::{values::{ActiveValue, bit_vector_concrete::BitVectorConcrete, bit_vector_symbol::BitVectorSymbol}, expressions::{bv_or_expression::BVOrExpression, bv_slice_expression::BVSliceExpression, bv_concat_expression::BVConcatExpression}, models::riscv::rv32i::ForkSink};
 
 use super::{memory32::Memory32, MemoryRegion32};
 
@@ -38,7 +38,7 @@ impl StableMemoryRegion32 {
 }
 
 impl MemoryRegion32 for StableMemoryRegion32 {
-    fn read(&mut self, address: u32, width: u32, stdlib: &mut crate::ScfiaStdlib) -> Rc<RefCell<ActiveValue>> {
+    fn read(&mut self, address: u32, width: u32, stdlib: &mut crate::ScfiaStdlib, fork_sink: &mut Option<&mut ForkSink>,) -> Rc<RefCell<ActiveValue>> {
         assert_eq!(width % 8, 0);
         // println!("<= 0x{:x} ({} bytes)", address, width/8);
         let bytes = width / 8;
@@ -48,7 +48,7 @@ impl MemoryRegion32 for StableMemoryRegion32 {
                 byte_values.push_back(byte.clone());
             } else {
                 println!("Warning: Reading from uninitialized 0x{:x}", address + i);
-                byte_values.push_back(BitVectorSymbol::new(None, 8, stdlib).into())
+                byte_values.push_back(BitVectorSymbol::new(None, 8, stdlib, fork_sink))
             }
         }
 
@@ -57,13 +57,13 @@ impl MemoryRegion32 for StableMemoryRegion32 {
         // Little endian
         while byte_values.len() > 0 {
             let rhs = byte_values.pop_front().unwrap();
-            value = BVConcatExpression::new(rhs, value, stdlib).into();
+            value = BVConcatExpression::new(rhs, value, stdlib, fork_sink).into();
         }
 
         value
     }
 
-    fn write(&mut self, address: u32, value: Rc<RefCell<ActiveValue>>, stdlib: &mut crate::ScfiaStdlib) {
+    fn write(&mut self, address: u32, value: Rc<RefCell<ActiveValue>>, stdlib: &mut crate::ScfiaStdlib, fork_sink: &mut Option<&mut ForkSink>) {
         let value_ref = value.try_borrow().unwrap();
         match &*value_ref {
             ActiveValue::BitvectorConcrete(e) => {
@@ -72,7 +72,7 @@ impl MemoryRegion32 for StableMemoryRegion32 {
                 assert_eq!(e.width % 8, 0);
                 let bytes = e.width / 8;
                 for byte in 0..bytes {
-                    let v = BVSliceExpression::new(value.clone(), (byte * 8) + 7, byte * 8, stdlib);
+                    let v = BVSliceExpression::new(value.clone(), (byte * 8) + 7, byte * 8, stdlib, fork_sink);
                     self.memory.insert(address + byte, v.into());
                 }
             },

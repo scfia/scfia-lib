@@ -1,4 +1,5 @@
 use crate::ScfiaStdlib;
+use crate::models::riscv::rv32i::ForkSink;
 use crate::values::ActiveValue;
 use crate::values::RetiredValue;
 use crate::values::bit_vector_concrete::BitVectorConcrete;
@@ -54,20 +55,36 @@ impl BVShiftRightLogicalExpression {
         input_width: u32,
         shamt_width: u32,
         stdlib: &mut ScfiaStdlib,
-    ) -> ActiveValue {
+        fork_sink: &mut Option<&mut ForkSink>,
+    ) -> Rc<RefCell<ActiveValue>> {
+        let value: Rc<RefCell<ActiveValue>> = Self::new_try_concretize(s1, s2, input_width, shamt_width, stdlib, fork_sink).into();
+        if let Some(fork_sink) = fork_sink {
+            fork_sink.new_values.push(value.clone());
+        }
+        value
+    }
+
+    pub fn new_try_concretize(
+        s1: Rc<RefCell<ActiveValue>>,
+        s2: Rc<RefCell<ActiveValue>>,
+        input_width: u32,
+        shamt_width: u32,
+        stdlib: &mut ScfiaStdlib,
+        fork_sink: &mut Option<&mut ForkSink>,
+    ) -> Rc<RefCell<ActiveValue>> {
         match s1.try_borrow().unwrap().deref() {
             ActiveValue::BitvectorConcrete(e1) => {
                 match s2.try_borrow().unwrap().deref() {
                     ActiveValue::BitvectorConcrete(e2) => {
                         let value = e1.value >> e2.value;
-                        return ActiveValue::BitvectorConcrete(BitVectorConcrete::new(value, e1.width, stdlib));
+                        return BitVectorConcrete::new(value, e1.width, stdlib, fork_sink);
                     },
                     _ => {}
                 }
             }
             _ => {}
         }
-        ActiveValue::BitvectorShiftRightLogicalExpression(Self::new_with_id(stdlib.get_symbol_id(), s1, s2, input_width, shamt_width, stdlib))
+        ActiveValue::BitvectorShiftRightLogicalExpression(Self::new_with_id(stdlib.get_symbol_id(), s1, s2, input_width, shamt_width, stdlib)).into()
     }
 
     pub fn new_with_id(
@@ -138,43 +155,54 @@ impl RetiredBVShiftRightLogicalExpression {
         cloned_retired_values: &mut BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
         cloned_stdlib: &mut ScfiaStdlib
     ) -> Rc<RefCell<RetiredValue>> {
-        // println!("RetiredBoolNotExpression getting parent ast {}", self.s1_id);
-        let s1_ast = if let Some(s1) = cloned_active_values.get(&self.s1_id) {
-            s1.try_borrow().unwrap().get_z3_ast()
-        } else if let Some(s1) = self.s1.upgrade() {
-            s1.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib).try_borrow().unwrap().get_z3_ast()
-        } else if let Some(s1) = cloned_retired_values.get(&self.s1_id) {
-            s1.try_borrow().unwrap().get_z3_ast()
+        let cloned_s1_ast;
+        let cloned_s1;
+        if let Some(s1_rc) = cloned_active_values.get(&self.s1_id) {
+            let s1 = s1_rc.try_borrow().unwrap();
+            cloned_s1_ast = s1.get_z3_ast();
+            cloned_s1 = Rc::downgrade(s1_rc);
+        } else if let Some(s1_rc) = self.s1.upgrade() {
+            let cloned_s1_rc = s1_rc.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+            cloned_s1_ast = cloned_s1_rc.try_borrow().unwrap().get_z3_ast();
+            cloned_s1 = Rc::downgrade(&cloned_s1_rc);
         } else {
-            panic!("Retired parent {} not found in cloned_retired_values\n{:?}", self.s1_id, self);
+            let cloned_s1_rc = cloned_retired_values.get(&self.s1_id).unwrap();
+            cloned_s1_ast = cloned_s1_rc.try_borrow().unwrap().get_z3_ast();
+            cloned_s1 = Weak::new();
         };
 
-        let s2_ast = if let Some(s2) = cloned_active_values.get(&self.s2_id) {
-            s2.try_borrow().unwrap().get_z3_ast()
-        } else if let Some(s2) = self.s2.upgrade() {
-            s2.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib).try_borrow().unwrap().get_z3_ast()
-        } else if let Some(s2) = cloned_retired_values.get(&self.s2_id) {
-            s2.try_borrow().unwrap().get_z3_ast()
+        let cloned_s2_ast;
+        let cloned_s2;
+        if let Some(s2_rc) = cloned_active_values.get(&self.s2_id) {
+            let s2 = s2_rc.try_borrow().unwrap();
+            cloned_s2_ast = s2.get_z3_ast();
+            cloned_s2 = Rc::downgrade(s2_rc);
+        } else if let Some(s2_rc) = self.s2.upgrade() {
+            let cloned_s2_rc = s2_rc.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+            cloned_s2_ast = cloned_s2_rc.try_borrow().unwrap().get_z3_ast();
+            cloned_s2 = Rc::downgrade(&cloned_s2_rc);
         } else {
-            panic!("Retired parent {} not found in cloned_retired_values\n{:?}", self.s2_id, self);
+            let cloned_s2_rc = cloned_retired_values.get(&self.s2_id).unwrap();
+            cloned_s2_ast = cloned_s2_rc.try_borrow().unwrap().get_z3_ast();
+            cloned_s2 = Weak::new();
         };
 
         let cloned: Rc<RefCell<RetiredValue>> = unsafe {
             let z3_ast = Z3_mk_bvlshr(
                 cloned_stdlib.z3_context,
-                s1_ast,
+                cloned_s1_ast,
                 Z3_mk_zero_ext(
                     cloned_stdlib.z3_context,
                     self.input_width - self.shamt_width,
-                    s2_ast),
+                    cloned_s2_ast),
             );
             Z3_inc_ref(cloned_stdlib.z3_context, z3_ast);
             RetiredBVShiftRightLogicalExpression {
                 id: self.id,
                 s1_id: self.s1_id,
-                s1: self.s1.clone(),
+                s1: cloned_s1,
                 s2_id: self.s2_id,
-                s2: self.s2.clone(),
+                s2: cloned_s2,
                 input_width: self.input_width,
                 shamt_width: self.shamt_width,
                 z3_context: cloned_stdlib.z3_context,
@@ -224,6 +252,6 @@ impl Drop for BVShiftRightLogicalExpression {
 
 impl Drop for RetiredBVShiftRightLogicalExpression {
     fn drop(&mut self) {
-        unsafe { Z3_dec_ref(self.z3_context, self.z3_ast) }
+        // unsafe { Z3_dec_ref(self.z3_context, self.z3_ast) }
     }
 }

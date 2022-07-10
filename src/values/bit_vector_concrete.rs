@@ -14,6 +14,7 @@ use std::time::UNIX_EPOCH;
 use crate::ScfiaStdlib;
 use crate::expressions::finish_clone;
 use crate::expressions::inherit;
+use crate::models::riscv::rv32i::ForkSink;
 
 use super::ActiveValue;
 use super::RetiredValue;
@@ -21,7 +22,7 @@ use super::RetiredValue;
 
 pub struct BitVectorConcrete {
     pub id: u64,
-    pub uuid: String,
+    pub stdlib_id: String,
     pub value: u64,
     pub width: u32,
     pub inherited_asts: BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
@@ -40,23 +41,34 @@ pub struct RetiredBitvectorConcrete {
 }
 
 impl BitVectorConcrete {
-    pub fn new(value: u64, width: u32, stdlib: &mut ScfiaStdlib) -> BitVectorConcrete {
-        Self::new_with_id(stdlib.get_symbol_id(), value, width, stdlib)
+    pub fn new(
+        value: u64,
+        width: u32,
+        stdlib: &mut ScfiaStdlib,
+        fork_sink: &mut Option<&mut ForkSink>
+    ) -> Rc<RefCell<ActiveValue>> {
+        let value: Rc<RefCell<ActiveValue>> = Self::new_with_id(stdlib.get_symbol_id(), stdlib.id.clone(), value, width, stdlib).into();
+        if let Some(fork_sink) = fork_sink {
+            fork_sink.new_values.push(value.clone());
+        }
+        value
     }
 
-    pub fn new_with_id(id: u64, value: u64, width: u32, stdlib: &mut ScfiaStdlib) -> BitVectorConcrete {
+    pub fn new_with_id(
+        id: u64,
+        stdlib_id: String,
+        value: u64,
+        width: u32,
+        stdlib: &mut ScfiaStdlib
+    ) -> BitVectorConcrete {
         unsafe {
-            let uuid = format!("{}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis());
-            if id == 12920 {
-                println!("### creating bvc 12920 ({}) in {}", uuid, stdlib.id)
-            }
             let sort = Z3_mk_bv_sort(stdlib.z3_context, width);
             let ast = Z3_mk_unsigned_int64(stdlib.z3_context, value, sort);
             Z3_inc_ref(stdlib.z3_context, ast);
 
             let bvc = BitVectorConcrete {
                 id,
-                uuid,
+                stdlib_id,
                 value: value,
                 width: width,
                 inherited_asts: BTreeMap::new(),
@@ -69,11 +81,7 @@ impl BitVectorConcrete {
     }
 
     pub fn inherit(&mut self, ast_id: u64, ast: Rc<RefCell<RetiredValue>>) {
-        let ast2 = ast.clone();
         self.inherited_asts.insert(ast_id, ast);
-        if self.id == 12920 {
-            println!("## 12920 inherited {:?} and now has {:?}", ast_id, self.inherited_asts)
-        }
     }
 
     pub fn clone_to_stdlib(
@@ -82,10 +90,7 @@ impl BitVectorConcrete {
         cloned_retired_values: &mut BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
         cloned_stdlib: &mut ScfiaStdlib,
     ) -> Rc<RefCell<ActiveValue>> {
-        let clone = Self::new_with_id(self.id, self.value, self.width, cloned_stdlib);
-        if self.id == 12920 {
-            println!("## cloning 12920 ({}) with {:?} into {}", self.uuid, self.inherited_asts, cloned_stdlib.id)
-        }
+        let clone = Self::new_with_id(self.id, cloned_stdlib.id.clone(), self.value, self.width, cloned_stdlib);
         finish_clone(
             self.id,
             &self.inherited_asts,
@@ -126,7 +131,7 @@ impl RetiredBitvectorConcrete {
 
 impl fmt::Debug for BitVectorConcrete {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&format!("BitVectorConcrete {{ value=0x{:x}, width={}, id={}, uuid={} }}", self.value, self.width, self.id, self.uuid))
+        f.write_str(&format!("BitVectorConcrete {{ value=0x{:x}, width={}, id={} }}", self.value, self.width, self.id))
     }
 }
 
@@ -141,6 +146,9 @@ impl Drop for BitVectorConcrete {
             z3_ast: self.z3_ast,
         })));
 
+        if self.id == 12920 {
+            println!("dropping active BVC 12920 from {}", self.stdlib_id);
+        }
         inherit(
             self.id,
             retired_expression,
@@ -153,6 +161,6 @@ impl Drop for BitVectorConcrete {
 
 impl Drop for RetiredBitvectorConcrete {
     fn drop(&mut self) {
-        unsafe { Z3_dec_ref(self.z3_context, self.z3_ast) }
+        // unsafe { Z3_dec_ref(self.z3_context, self.z3_ast) }
     }
 }

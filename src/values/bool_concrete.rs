@@ -17,6 +17,7 @@ use std::rc::Weak;
 use crate::ScfiaStdlib;
 use crate::expressions::finish_clone;
 use crate::expressions::inherit;
+use crate::models::riscv::rv32i::ForkSink;
 
 use super::ActiveValue;
 use super::RetiredValue;
@@ -40,8 +41,12 @@ pub struct RetiredBoolConcrete {
 }
 
 impl BoolConcrete {
-    pub fn new(value: bool, stdlib: &mut ScfiaStdlib) -> BoolConcrete {
-        Self::new_with_id(stdlib.get_symbol_id(), value, stdlib)
+    pub fn new(value: bool, stdlib: &mut ScfiaStdlib, fork_sink: &mut Option<&mut ForkSink>) -> Rc<RefCell<ActiveValue>> {
+        let value: Rc<RefCell<ActiveValue>> = Self::new_with_id(stdlib.get_symbol_id(), value, stdlib).into();
+        if let Some(fork_sink) = fork_sink {
+            fork_sink.new_values.push(value.clone());
+        }
+        value
     }
 
     pub fn new_with_id(id: u64, value: bool, stdlib: &mut ScfiaStdlib) -> BoolConcrete {
@@ -114,6 +119,6 @@ impl Drop for BoolConcrete {
 
 impl Drop for RetiredBoolConcrete {
     fn drop(&mut self) {
-        unsafe { Z3_dec_ref(self.z3_context, self.z3_ast) }
+        // unsafe { Z3_dec_ref(self.z3_context, self.z3_ast) }
     }
 }

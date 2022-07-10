@@ -64,6 +64,7 @@ use crate::values::bit_vector_concrete::BitVectorConcrete;
 #[derive(Debug)]
 pub struct ScfiaStdlib {
     pub id: String,
+    next_clone_id: u64,
     next_symbol_id: u64,
     pub retired_symbols_map: HashMap<u64, Rc<RefCell<RetiredValue>>>,
     pub z3_context: Z3_context,
@@ -71,26 +72,32 @@ pub struct ScfiaStdlib {
 }
 
 impl ScfiaStdlib {
-    pub fn new() -> ScfiaStdlib {
-        Self::new_with_next_id(0)
+    pub fn new(id: String) -> ScfiaStdlib {
+        Self::new_with_next_id(id, 0)
     }
 
-    pub fn new_with_next_id(next_symbol_id: u64) -> ScfiaStdlib {
+    pub fn new_with_next_id(id: String, next_symbol_id: u64) -> ScfiaStdlib {
         unsafe {
             let z3_config = Z3_mk_config();
             let z3_context = Z3_mk_context_rc(z3_config);
             let stdlib = ScfiaStdlib {
-                id: format!("{}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()),
+                id: id,
+                next_clone_id: 1,
                 z3_context,
                 z3_solver: Z3_mk_solver(z3_context),
                 next_symbol_id,
                 retired_symbols_map: HashMap::new(),
             };
-            println!("created stdlib {}", stdlib.id);
             Z3_solver_inc_ref(stdlib.z3_context, stdlib.z3_solver);
             Z3_del_config(z3_config);
             stdlib
         }
+    }
+
+    pub fn get_clone_id(&mut self) -> u64 {
+        let clone_id = self.next_clone_id;
+        self.next_clone_id += 1;
+        clone_id
     }
 
     pub fn get_symbol_id(&mut self) -> u64 {
@@ -127,8 +134,8 @@ impl ScfiaStdlib {
                 let condition_symbol = expression.try_borrow_mut().unwrap();
                 condition_symbol.get_z3_ast()
             };
-            let neg_condition_symbol = BoolNotExpression::new(expression.clone(), self);
-            let neg_condition_ast = neg_condition_symbol.get_z3_ast();
+            let neg_condition_symbol = BoolNotExpression::new(expression.clone(), self, fork_sink);
+            let neg_condition_ast = neg_condition_symbol.try_borrow().unwrap().get_z3_ast();
 
             if Z3_solver_check_assumptions(self.z3_context, self.z3_solver, 1, &condition_ast) != Z3_L_FALSE {
                 can_be_true = true

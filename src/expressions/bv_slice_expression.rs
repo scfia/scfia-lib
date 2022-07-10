@@ -1,4 +1,5 @@
 use crate::ScfiaStdlib;
+use crate::models::riscv::rv32i::ForkSink;
 use crate::values::ActiveValue;
 use crate::values::RetiredValue;
 use crate::values::bit_vector_concrete::BitVectorConcrete;
@@ -47,18 +48,33 @@ impl BVSliceExpression {
         high: u32,
         low: u32,
         stdlib: &mut ScfiaStdlib,
-    ) -> ActiveValue {
+        fork_sink: &mut Option<&mut ForkSink>,
+    ) -> Rc<RefCell<ActiveValue>> {
+        let value: Rc<RefCell<ActiveValue>> = Self::new_try_concretize(s1, high, low, stdlib, fork_sink).into();
+        if let Some(fork_sink) = fork_sink {
+            fork_sink.new_values.push(value.clone());
+        }
+        value
+    }
+
+    pub fn new_try_concretize(
+        s1: Rc<RefCell<ActiveValue>>,
+        high: u32,
+        low: u32,
+        stdlib: &mut ScfiaStdlib,
+        fork_sink: &mut Option<&mut ForkSink>,
+    ) -> Rc<RefCell<ActiveValue>> {
         match s1.try_borrow().unwrap().deref() {
             ActiveValue::BitvectorConcrete(e) => {
                 let shifted = e.value >> low;
                 let width = high - low + 1;
                 let mask = (1 << width) - 1;
                 let value = shifted & mask;
-                return ActiveValue::BitvectorConcrete(BitVectorConcrete::new(value, width, stdlib));
+                return BitVectorConcrete::new(value, width, stdlib, fork_sink);
             }
             _ => {}
         }
-        ActiveValue::BitvectorSliceExpression(Self::new_with_id(stdlib.get_symbol_id(), s1, high, low, stdlib))
+        ActiveValue::BitvectorSliceExpression(Self::new_with_id(stdlib.get_symbol_id(), s1, high, low, stdlib)).into()
     }
 
     pub fn new_with_id(
@@ -129,6 +145,6 @@ impl Drop for BVSliceExpression {
 
 impl Drop for RetiredBVSliceExpression {
     fn drop(&mut self) {
-        unsafe { Z3_dec_ref(self.z3_context, self.z3_ast) }
+        // unsafe { Z3_dec_ref(self.z3_context, self.z3_ast) }
     }
 }

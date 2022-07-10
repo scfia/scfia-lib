@@ -1,4 +1,5 @@
 use crate::ScfiaStdlib;
+use crate::models::riscv::rv32i::ForkSink;
 use crate::values::ActiveValue;
 use crate::values::RetiredValue;
 use std::cell::Ref;
@@ -43,8 +44,13 @@ impl BVOrExpression {
         s1: Rc<RefCell<ActiveValue>>,
         s2: Rc<RefCell<ActiveValue>>,
         stdlib: &mut ScfiaStdlib,
-    ) -> ActiveValue {
-        ActiveValue::BitvectorOrExpression(Self::new_with_id(stdlib.get_symbol_id(), s1, s2, stdlib))
+        fork_sink: &mut Option<&mut ForkSink>,
+    ) -> Rc<RefCell<ActiveValue>> {
+        let value: Rc<RefCell<ActiveValue>> = ActiveValue::BitvectorOrExpression(Self::new_with_id(stdlib.get_symbol_id(), s1, s2, stdlib)).into();
+        if let Some(fork_sink) = fork_sink {
+            fork_sink.new_values.push(value.clone());
+        }
+        value
     }
 
     pub fn new_with_id(
@@ -133,6 +139,6 @@ impl Drop for BVOrExpression {
 
 impl Drop for RetiredBVOrExpression {
     fn drop(&mut self) {
-        unsafe { Z3_dec_ref(self.z3_context, self.z3_ast) }
+        // unsafe { Z3_dec_ref(self.z3_context, self.z3_ast) }
     }
 }

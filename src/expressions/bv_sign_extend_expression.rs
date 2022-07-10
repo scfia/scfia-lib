@@ -1,4 +1,5 @@
 use crate::ScfiaStdlib;
+use crate::models::riscv::rv32i::ForkSink;
 use crate::values::ActiveValue;
 use crate::values::RetiredValue;
 use crate::values::bit_vector_concrete::BitVectorConcrete;
@@ -47,18 +48,33 @@ impl BVSignExtendExpression {
         input_width: u32,
         output_width: u32,
         stdlib: &mut ScfiaStdlib,
-    ) -> ActiveValue {
+        fork_sink: &mut Option<&mut ForkSink>,
+    ) -> Rc<RefCell<ActiveValue>> {
+        let value: Rc<RefCell<ActiveValue>> = Self::new_try_concretize(s1, input_width, output_width, stdlib, fork_sink).into();
+        if let Some(fork_sink) = fork_sink {
+            fork_sink.new_values.push(value.clone());
+        }
+        value
+    }
+
+    pub fn new_try_concretize(
+        s1: Rc<RefCell<ActiveValue>>,
+        input_width: u32,
+        output_width: u32,
+        stdlib: &mut ScfiaStdlib,
+        fork_sink: &mut Option<&mut ForkSink>,
+    ) -> Rc<RefCell<ActiveValue>> {
         match s1.try_borrow().unwrap().deref() {
             ActiveValue::BitvectorConcrete(e) => {
                 // https://graphics.stanford.edu/~seander/bithacks.html#VariableSignExtend
                 let m: u64 = 1 << (e.width - 1);
                 let x = e.value & ((1 << e.width) - 1);
                 let value = (x ^ m).overflowing_sub(m).0;
-                return ActiveValue::BitvectorConcrete(BitVectorConcrete::new(value, output_width, stdlib));
+                return BitVectorConcrete::new(value, output_width, stdlib, fork_sink);
             }
             _ => {}
         }
-        ActiveValue::BitvectorSignExtendExpression(Self::new_with_id(stdlib.get_symbol_id(), s1, input_width, output_width, stdlib))
+        ActiveValue::BitvectorSignExtendExpression(Self::new_with_id(stdlib.get_symbol_id(), s1, input_width, output_width, stdlib)).into()
     }
 
     pub fn new_with_id(
@@ -128,7 +144,7 @@ impl Drop for BVSignExtendExpression {
 
 impl Drop for RetiredBVSignExtendExpression {
     fn drop(&mut self) {
-        unsafe { Z3_dec_ref(self.z3_context, self.z3_ast) }
+        // unsafe { Z3_dec_ref(self.z3_context, self.z3_ast) }
     }
 }
 

@@ -1,4 +1,5 @@
 use crate::ScfiaStdlib;
+use crate::models::riscv::rv32i::ForkSink;
 use crate::values::ActiveValue;
 use crate::values::RetiredValue;
 use crate::values::bit_vector_concrete::BitVectorConcrete;
@@ -49,20 +50,36 @@ impl BVShiftLeftLogicalExpression {
         input_width: u32,
         shamt_width: u32,
         stdlib: &mut ScfiaStdlib,
-    ) -> ActiveValue {
+        fork_sink: &mut Option<&mut ForkSink>,
+    ) -> Rc<RefCell<ActiveValue>> {
+        let value: Rc<RefCell<ActiveValue>> = Self::new_try_concretize(s1, s2, input_width, shamt_width, stdlib, fork_sink).into();
+        if let Some(fork_sink) = fork_sink {
+            fork_sink.new_values.push(value.clone());
+        }
+        value
+    }
+
+    pub fn new_try_concretize(
+        s1: Rc<RefCell<ActiveValue>>,
+        s2: Rc<RefCell<ActiveValue>>,
+        input_width: u32,
+        shamt_width: u32,
+        stdlib: &mut ScfiaStdlib,
+        fork_sink: &mut Option<&mut ForkSink>,
+    ) -> Rc<RefCell<ActiveValue>> {
         match s1.try_borrow().unwrap().deref() {
             ActiveValue::BitvectorConcrete(e1) => {
                 match s2.try_borrow().unwrap().deref() {
                     ActiveValue::BitvectorConcrete(e2) => {
                         let value = e1.value << e2.value;
-                        return ActiveValue::BitvectorConcrete(BitVectorConcrete::new(value, e1.width, stdlib));
+                        return BitVectorConcrete::new(value, e1.width, stdlib, fork_sink);
                     },
                     _ => {}
                 }
             }
             _ => {}
         }
-        ActiveValue::BitvectorShiftLeftLogicalExpression(Self::new_with_id(stdlib.get_symbol_id(), s1, s2, input_width, shamt_width, stdlib))
+        ActiveValue::BitvectorShiftLeftLogicalExpression(Self::new_with_id(stdlib.get_symbol_id(), s1, s2, input_width, shamt_width, stdlib)).into()
     }
 
     pub fn new_with_id(
@@ -129,6 +146,6 @@ impl Drop for BVShiftLeftLogicalExpression {
 
 impl Drop for RetiredBVShiftLeftLogicalExpression {
     fn drop(&mut self) {
-        unsafe { Z3_dec_ref(self.z3_context, self.z3_ast) }
+        // unsafe { Z3_dec_ref(self.z3_context, self.z3_ast) }
     }
 }

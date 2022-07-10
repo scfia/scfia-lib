@@ -1,6 +1,6 @@
 use std::{collections::{HashMap, VecDeque}, cell::RefCell, rc::Rc, fmt};
 
-use crate::{values::{ActiveValue, bit_vector_concrete::BitVectorConcrete, bit_vector_symbol::BitVectorSymbol}, expressions::{bv_or_expression::BVOrExpression, bv_slice_expression::BVSliceExpression, bv_concat_expression::BVConcatExpression}};
+use crate::{values::{ActiveValue, bit_vector_concrete::BitVectorConcrete, bit_vector_symbol::BitVectorSymbol}, expressions::{bv_or_expression::BVOrExpression, bv_slice_expression::BVSliceExpression, bv_concat_expression::BVConcatExpression}, models::riscv::rv32i::ForkSink};
 
 use super::{memory32::Memory32, MemoryRegion32};
 
@@ -25,11 +25,12 @@ impl fmt::Debug for VolatileMemoryRegion32 {
 }
 
 impl MemoryRegion32 for VolatileMemoryRegion32 {
-    fn read(&mut self, address: u32, width: u32, stdlib: &mut crate::ScfiaStdlib) -> Rc<RefCell<ActiveValue>> {
-        println!("<= 0x{:x} (volatile)", address);
-        ActiveValue::BitvectorSymbol(BitVectorSymbol::new(None, width, stdlib)).into()
+    fn read(&mut self, address: u32, width: u32, stdlib: &mut crate::ScfiaStdlib, fork_sink: &mut Option<&mut ForkSink>,) -> Rc<RefCell<ActiveValue>> {
+        let s = BitVectorSymbol::new(None, width, stdlib, fork_sink);
+        println!("<= 0x{:x} (volatile) yielding {}", address, s.try_borrow().unwrap().get_id());
+        s
     }
 
-    fn write(&mut self, _address: u32, _value: Rc<RefCell<ActiveValue>>, _stdlib: &mut crate::ScfiaStdlib) {
+    fn write(&mut self, _address: u32, _value: Rc<RefCell<ActiveValue>>, _stdlib: &mut crate::ScfiaStdlib, fork_sink: &mut Option<&mut ForkSink>) {
     }
 }

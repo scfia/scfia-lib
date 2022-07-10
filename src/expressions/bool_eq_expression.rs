@@ -1,4 +1,5 @@
 use crate::ScfiaStdlib;
+use crate::models::riscv::rv32i::ForkSink;
 use crate::values::ActiveValue;
 use crate::values::RetiredValue;
 use crate::values::Value;
@@ -50,19 +51,33 @@ impl BoolEqExpression {
         s1: Rc<RefCell<ActiveValue>>,
         s2: Rc<RefCell<ActiveValue>>,
         stdlib: &mut ScfiaStdlib,
-    ) -> ActiveValue {
+        fork_sink: &mut Option<&mut ForkSink>,
+    ) -> Rc<RefCell<ActiveValue>> {
+        let value: Rc<RefCell<ActiveValue>> = Self::new_try_concretize(s1, s2, stdlib, fork_sink).into();
+        if let Some(fork_sink) = fork_sink {
+            fork_sink.new_values.push(value.clone());
+        }
+        value
+    }
+
+    fn new_try_concretize(
+        s1: Rc<RefCell<ActiveValue>>,
+        s2: Rc<RefCell<ActiveValue>>,
+        stdlib: &mut ScfiaStdlib,
+        fork_sink: &mut Option<&mut ForkSink>,
+    ) -> Rc<RefCell<ActiveValue>> {
         match s1.try_borrow().unwrap().deref() {
             ActiveValue::BitvectorConcrete(e1) => {
                 match s2.try_borrow().unwrap().deref() {
                     ActiveValue::BitvectorConcrete(e2) => {
-                        return ActiveValue::BoolConcrete(BoolConcrete::new(e1.value == e2.value, stdlib))
+                        return BoolConcrete::new(e1.value == e2.value, stdlib, fork_sink);
                     },
                     _ => {}
                 }
             }
             _ => {}
         }
-        ActiveValue::BoolEqExpression(Self::new_with_id(stdlib.get_symbol_id(), s1, s2, stdlib))
+        ActiveValue::BoolEqExpression(Self::new_with_id(stdlib.get_symbol_id(), s1, s2, stdlib)).into()
     }
 
     pub fn new_with_id(
@@ -166,36 +181,52 @@ impl RetiredBoolEqExpression {
         cloned_retired_values: &mut BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
         cloned_stdlib: &mut ScfiaStdlib
     ) -> Rc<RefCell<RetiredValue>> {
-        let s1_ast = if let Some(s1) = cloned_active_values.get(&self.s1_id) {
-            s1.try_borrow().unwrap().get_z3_ast()
-        } else if let Some(s1) = self.s1.upgrade() {
-            s1.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib).try_borrow().unwrap().get_z3_ast()
+        let cloned_s1_ast;
+        let cloned_s1;
+        if let Some(s1_rc) = cloned_active_values.get(&self.s1_id) {
+            let s1 = s1_rc.try_borrow().unwrap();
+            cloned_s1_ast = s1.get_z3_ast();
+            cloned_s1 = Rc::downgrade(s1_rc);
+        } else if let Some(s1_rc) = self.s1.upgrade() {
+            let cloned_s1_rc = s1_rc.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+            cloned_s1_ast = cloned_s1_rc.try_borrow().unwrap().get_z3_ast();
+            cloned_s1 = Rc::downgrade(&cloned_s1_rc);
         } else {
-            cloned_retired_values.get(&self.s1_id).unwrap().try_borrow().unwrap().get_z3_ast()
+            let cloned_s1_rc = cloned_retired_values.get(&self.s1_id).unwrap();
+            cloned_s1_ast = cloned_s1_rc.try_borrow().unwrap().get_z3_ast();
+            cloned_s1 = Weak::new();
         };
 
-        let s2_ast = if let Some(s2) = cloned_active_values.get(&self.s2_id) {
-            s2.try_borrow().unwrap().get_z3_ast()
-        } else if let Some(s2) = self.s2.upgrade() {
-            s2.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib).try_borrow().unwrap().get_z3_ast()
+        let cloned_s2_ast;
+        let cloned_s2;
+        if let Some(s2_rc) = cloned_active_values.get(&self.s2_id) {
+            let s2 = s2_rc.try_borrow().unwrap();
+            cloned_s2_ast = s2.get_z3_ast();
+            cloned_s2 = Rc::downgrade(s2_rc);
+        } else if let Some(s2_rc) = self.s2.upgrade() {
+            let cloned_s2_rc = s2_rc.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+            cloned_s2_ast = cloned_s2_rc.try_borrow().unwrap().get_z3_ast();
+            cloned_s2 = Rc::downgrade(&cloned_s2_rc);
         } else {
-            cloned_retired_values.get(&self.s2_id).unwrap().try_borrow().unwrap().get_z3_ast()
+            let cloned_s2_rc = cloned_retired_values.get(&self.s2_id).unwrap();
+            cloned_s2_ast = cloned_s2_rc.try_borrow().unwrap().get_z3_ast();
+            cloned_s2 = Weak::new();
         };
 
         let cloned: Rc<RefCell<RetiredValue>> = unsafe {
             let z3_ast = Z3_mk_eq(
                 cloned_stdlib.z3_context,
-                s1_ast,
-                s2_ast,
+                cloned_s1_ast,
+                cloned_s2_ast,
             );
             Z3_inc_ref(cloned_stdlib.z3_context, z3_ast);
             RetiredBoolEqExpression {
                 id: self.id,
                 is_assert: self.is_assert,
                 s1_id: self.s1_id,
-                s1: self.s1.clone(),
+                s1: cloned_s1,
                 s2_id: self.s2_id,
-                s2: self.s2.clone(),
+                s2: cloned_s2,
                 z3_context: cloned_stdlib.z3_context,
                 z3_ast
             }
@@ -208,6 +239,6 @@ impl RetiredBoolEqExpression {
 
 impl Drop for RetiredBoolEqExpression {
     fn drop(&mut self) {
-        unsafe { Z3_dec_ref(self.z3_context, self.z3_ast) }
+        // unsafe { Z3_dec_ref(self.z3_context, self.z3_ast) }
     }
 }

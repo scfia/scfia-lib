@@ -78,8 +78,6 @@ impl ActiveValue {
             return clone
         }
 
-        println!("clone_to_stdlib {} ActiveValue {:?}", cloned_stdlib.id, &self);
-
         let clone = match self {
             ActiveValue::BitvectorConcrete(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
             ActiveValue::BitvectorSymbol(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
@@ -95,7 +93,7 @@ impl ActiveValue {
             ActiveValue::BitvectorAndExpression(_) => todo!(),
             ActiveValue::BitvectorShiftRightLogicalExpression(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
             ActiveValue::BitvectorShiftLeftLogicalExpression(_) => todo!(),
-            ActiveValue::BoolConcrete(_) => todo!(),
+            ActiveValue::BoolConcrete(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
             ActiveValue::BitvectorXorExpression(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
         };
         clone
@@ -133,7 +131,7 @@ impl RetiredValue {
 
         match self {
             RetiredValue::RetiredBitvectorConcrete(x) => x.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
-            RetiredValue::RetiredBitvectorSymbol(_) => todo!(),
+            RetiredValue::RetiredBitvectorSymbol(x) => x.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
             RetiredValue::RetiredBoolEqExpression(x) => x.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
             RetiredValue::RetiredBoolNEqExpression(x) => x.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
             RetiredValue::RetiredBitvectorAddExpression(x) => x.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
@@ -238,10 +236,7 @@ impl ActiveValue {
     }
 
     pub fn inherit(&mut self, ast_id: u64, ast: Rc<RefCell<RetiredValue>>) {
-        if self.get_id() == 12920 {
-            println!("## ActiveValue {:?} inheriting {}", self, ast_id);
-        }
-        
+        debug_assert_ne!(self.get_id(), ast_id);
         match self {
             ActiveValue::BitvectorConcrete(e) => e.inherit(ast_id, ast),
             ActiveValue::BitvectorSymbol(e) => { e.inherited_asts.insert(ast_id, ast); },
@@ -284,6 +279,9 @@ impl ActiveValue {
     }
 
     pub fn discover(&mut self, ast_id: u64, ast: Weak<RefCell<ActiveValue>>) {
+        if self.get_id() == 16012 {
+            println!("{} discovering {}", self.get_id(), ast_id);
+        }
         match self {
             ActiveValue::BitvectorConcrete(e) => { e.discovered_asts.insert(ast_id, ast); },
             ActiveValue::BitvectorSymbol(e) => { e.discovered_asts.insert(ast_id, ast); },
