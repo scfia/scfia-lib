@@ -146,9 +146,6 @@ impl Drop for BitVectorConcrete {
             z3_ast: self.z3_ast,
         })));
 
-        if self.id == 12920 {
-            println!("dropping active BVC 12920 from {}", self.stdlib_id);
-        }
         inherit(
             self.id,
             retired_expression,

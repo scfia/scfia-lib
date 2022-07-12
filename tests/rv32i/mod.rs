@@ -122,9 +122,6 @@ fn test_system_state() {
     }
     
     let mut successors = continuing.step_forking();
-    for succ in &successors {
-        println!("0 check succ {:?}", succ.system_state.x10)
-    }
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
     

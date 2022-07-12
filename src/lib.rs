@@ -147,9 +147,9 @@ impl ScfiaStdlib {
 
             if can_be_true && can_be_false {
                 // Create fork with negative condition
-                println!("FORK!");
-                println!("negcondition={:?}", &neg_condition_symbol);
-                println!("condition={:?}", &expression);
+                // println!("FORK!");
+                // println!("negcondition={:?}", &neg_condition_symbol);
+                // println!("condition={:?}", &expression);
                 if let Some(fork_sink) = fork_sink {
                     fork_sink.fork(neg_condition_symbol.into());
                     expression.try_borrow_mut().unwrap().assert(self);
@@ -170,6 +170,7 @@ impl ScfiaStdlib {
 
 impl Drop for ScfiaStdlib {
     fn drop(&mut self) {
+        println!("dropping context {:x}", self.z3_context as u64);
         unsafe { Z3_del_context(self.z3_context) }
     }
 }

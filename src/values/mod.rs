@@ -100,7 +100,6 @@ impl ActiveValue {
     }
 
     pub fn assert(&mut self, stdlib: &mut ScfiaStdlib) {
-        println!("+++++++++ asserting {:?}", self.get_id());
         match self {
             ActiveValue::BoolEqExpression(x) => x.assert(stdlib),
             ActiveValue::BoolNEqExpression(x) => x.assert(stdlib),
@@ -126,7 +125,7 @@ impl RetiredValue {
 
         match self {
             RetiredValue::RetiredBitvectorConcrete(_) => {},
-            x => println!("clone_to_stdlib {} RetiredValue {:?}", cloned_stdlib.id, &x),
+            x => {}, //println!("clone_to_stdlib {} RetiredValue {:?}", cloned_stdlib.id, &x),
         }
 
         match self {

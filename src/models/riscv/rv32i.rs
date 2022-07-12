@@ -798,14 +798,14 @@ pub unsafe fn execute_add32(state: *mut SystemState, destination_id: Rc<RefCell<
 impl RV32iSystemState {
     pub fn step(&mut self) {
         unsafe {
-            println!("{} stepping {:?}", self.stdlib.id, self.system_state.pc);
+            // println!("{} stepping {:?}", self.stdlib.id, self.system_state.pc);
             step(&mut self.system_state, &mut self.stdlib, &mut None, &mut self.memory);
         }
     }
 
     pub fn step_forking(self) -> Vec<RV32iSystemState> {
         unsafe {
-            println!("{} stepping {:?} (forking)", self.stdlib.id, self.system_state.pc);
+            // println!("{} stepping {:?} (forking)", self.stdlib.id, self.system_state.pc);
             let mut successors: Vec<RV32iSystemState> = vec![];
             let mut candidates: Vec<RV32iSystemState> = vec![];
 
@@ -815,16 +815,13 @@ impl RV32iSystemState {
             while let Some(mut current) = candidates.pop() {
                 // Clone candidate as base
                 let cloned_stdlib_id = format!("{}_{}", current.stdlib.id.clone(), current.stdlib.get_clone_id());
-                println!("{} cloning {} as base", current.stdlib.id, cloned_stdlib_id);
-                if cloned_stdlib_id == "0_1_1_2_1_2" {
-                    println!("here we go");
-                }
+                // println!("{} cloning {} as base", current.stdlib.id, cloned_stdlib_id);
                 let cloned_stdlib = ScfiaStdlib::new_with_next_id(cloned_stdlib_id, current.stdlib.next_symbol_id);
                 let mut cloned_active_values = BTreeMap::new();
                 let mut cloned_retired_values = BTreeMap::new();
                 let cloned_current = current.clone_to_stdlib(cloned_stdlib, &mut cloned_active_values, &mut cloned_retired_values);
                 
-                println!("{} forkstepping with a0={:?} ", current.stdlib.id, current.system_state.x10);
+                // println!("{} forkstepping with a0={:?} ", current.stdlib.id, current.system_state.x10);
                 let mut fork_sink = ForkSink::new(cloned_current);
                 step(&mut current.system_state, &mut current.stdlib, &mut Some(&mut fork_sink), &mut current.memory);
 
@@ -833,7 +830,6 @@ impl RV32iSystemState {
                     candidates.push(fork);
                 }
 
-                println!("current {} has a0 {:?}", current.stdlib.id, (current).system_state.x10);
                 successors.push(current)
             }
 

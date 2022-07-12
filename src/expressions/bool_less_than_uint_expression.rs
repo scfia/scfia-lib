@@ -242,7 +242,6 @@ impl RetiredBoolLessThanUIntExpression {
             }
         }.into();
 
-        println!("inserting {} into cloned_retired_values", self.id);
         cloned_retired_values.insert(self.id, cloned.clone());
         cloned
     }
