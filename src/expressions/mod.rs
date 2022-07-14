@@ -14,6 +14,7 @@ pub mod bv_sign_extend_expression;
 pub mod bv_slice_expression;
 pub mod bv_shift_right_logical_expression;
 pub mod bv_shift_left_logical_expression;
+pub mod bv_sub_expression;
 pub mod bv_xor_expression;
 
 

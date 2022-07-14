@@ -153,6 +153,7 @@ fn test_system_state() {
             0x14bc,
             0x1460,
             0x14d4,
+            0x14f0,
         ],
         0x5c8);
     panic!("finished with {} states", past_mult.len());
