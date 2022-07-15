@@ -3,6 +3,7 @@ use std::{rc::{Rc, Weak}, cell::RefCell, collections::{BTreeMap}};
 use crate::{values::{ActiveValue, RetiredValue}, ScfiaStdlib};
 
 pub mod bool_eq_expression;
+pub mod bool_less_than_signed_expression;
 pub mod bool_less_than_uint_expression;
 pub mod bool_neq_expression;
 pub mod bool_not_expression;

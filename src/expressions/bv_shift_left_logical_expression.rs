@@ -21,6 +21,7 @@ use z3_sys::Z3_mk_bvlshr;
 use z3_sys::Z3_mk_bvshl;
 use z3_sys::Z3_mk_zero_ext;
 
+use super::finish_clone;
 use super::inherit;
 
 #[derive(Debug)]
@@ -28,6 +29,8 @@ pub struct BVShiftLeftLogicalExpression {
     pub id: u64,
     pub s1: Rc<RefCell<ActiveValue>>,
     pub s2: Rc<RefCell<ActiveValue>>,
+    input_width: u32,
+    shamt_width: u32,
     pub inherited_asts: BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
     pub discovered_asts: BTreeMap<u64, Weak<RefCell<ActiveValue>>>,
     pub z3_context: Z3_context,
@@ -105,12 +108,41 @@ impl BVShiftLeftLogicalExpression {
                 id: id,
                 s1: s1,
                 s2: s2,
+                input_width: input_width,
+                shamt_width: shamt_width,
                 inherited_asts: BTreeMap::new(),
                 discovered_asts: BTreeMap::new(),
                 z3_context: z3_context,
                 z3_ast: ast,
             }
         }
+    }
+
+    pub fn clone_to_stdlib(
+        &self,
+        cloned_active_values: &mut BTreeMap<u64, Rc<RefCell<ActiveValue>>>,
+        cloned_retired_values: &mut BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
+        cloned_stdlib: &mut ScfiaStdlib
+    ) -> Rc<RefCell<ActiveValue>> {
+        // Clone s1, s2
+        let s1 = self.s1.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+        let s2 = self.s2.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+        if let Some(e) = cloned_active_values.get(&self.id) {
+            return e.clone()
+        }
+
+        // Build clone
+        let cloned_expression = Self::new_with_id(self.id, s1, s2, self.input_width, self.shamt_width, cloned_stdlib);
+
+        finish_clone(
+            self.id,
+            &self.inherited_asts,
+            &self.discovered_asts,
+            cloned_expression.into(),
+            cloned_active_values,
+            cloned_retired_values,
+            cloned_stdlib
+        )
     }
 }
 

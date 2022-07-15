@@ -190,6 +190,11 @@ impl RetiredBoolNotExpression {
                 cloned_s1_ast,
             );
             Z3_inc_ref(cloned_stdlib.z3_context, z3_ast);
+
+            if self.is_assert {
+                Z3_solver_assert(cloned_stdlib.z3_context, cloned_stdlib.z3_solver, z3_ast);
+            }
+
             RetiredBoolNotExpression {
                 id: self.id,
                 is_assert: self.is_assert,

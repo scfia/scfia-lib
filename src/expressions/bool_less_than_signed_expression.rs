@@ -2,59 +2,53 @@ use crate::ScfiaStdlib;
 use crate::models::riscv::rv32i::ForkSink;
 use crate::values::ActiveValue;
 use crate::values::RetiredValue;
-use crate::values::bit_vector_concrete::BitVectorConcrete;
-use crate::values::bit_vector_symbol::BitVectorSymbol;
+use crate::values::Value;
+use crate::values::bool_concrete::BoolConcrete;
 use std::cell::Ref;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::ops::Deref;
-use std::ptr;
 use std::rc::Rc;
 use std::rc::Weak;
-use z3_sys::AstKind;
-use z3_sys::Z3_L_TRUE;
 use z3_sys::Z3_ast;
 use z3_sys::Z3_context;
 use z3_sys::Z3_dec_ref;
-use z3_sys::Z3_get_ast_kind;
-use z3_sys::Z3_get_bv_sort_size;
-use z3_sys::Z3_get_numeral_uint64;
-use z3_sys::Z3_get_sort;
 use z3_sys::Z3_inc_ref;
 use z3_sys::Z3_mk_bvadd;
-use z3_sys::Z3_mk_bvsub;
-use z3_sys::Z3_model_eval;
-use z3_sys::Z3_solver_check;
-use z3_sys::Z3_solver_get_model;
+use z3_sys::Z3_mk_bvslt;
+use z3_sys::Z3_mk_bvult;
+use z3_sys::Z3_mk_lt;
+use z3_sys::Z3_solver_assert;
 
-use super::bool_eq_expression::BoolEqExpression;
 use super::finish_clone;
 use super::inherit;
 
 #[derive(Debug)]
-pub struct BVSubExpression {
+pub struct BoolLessThanSignedExpression {
     pub id: u64,
     pub s1: Rc<RefCell<ActiveValue>>,
     pub s2: Rc<RefCell<ActiveValue>>,
     pub inherited_asts: BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
     pub discovered_asts: BTreeMap<u64, Weak<RefCell<ActiveValue>>>,
+    pub is_assert: bool,
     pub z3_context: Z3_context,
     pub z3_ast: Z3_ast,
 }
 
 #[derive(Debug)]
-pub struct RetiredBVSubExpression {
+pub struct RetiredBoolLessThanSignedExpression {
     pub id: u64,
     s1_id: u64,
     s1: Weak<RefCell<ActiveValue>>,
     s2_id: u64,
     s2: Weak<RefCell<ActiveValue>>,
+    pub is_assert: bool,
     pub z3_context: Z3_context,
     pub z3_ast: Z3_ast,
 }
 
-impl BVSubExpression {
+impl BoolLessThanSignedExpression {
     pub fn new(
         s1: Rc<RefCell<ActiveValue>>,
         s2: Rc<RefCell<ActiveValue>>,
@@ -78,19 +72,14 @@ impl BVSubExpression {
             ActiveValue::BitvectorConcrete(e1) => {
                 match s2.try_borrow().unwrap().deref() {
                     ActiveValue::BitvectorConcrete(e2) => {
-                        // TODO check
-                        let one: u64 = 1;
-                        let mask = one.rotate_left(e2.width).overflowing_sub(1).0;
-                        let sum = e1.value.overflowing_sub(e2.value).0; 
-                        let value = mask & sum;
-                        return BitVectorConcrete::new(value, e2.width, stdlib, fork_sink);
+                        return BoolConcrete::new((e1.value as i64) < (e2.value as i64), stdlib, fork_sink).into()
                     },
                     _ => {}
                 }
             }
             _ => {}
         }
-        ActiveValue::BitvectorSubExpression(Self::new_with_id(stdlib.get_symbol_id(), s1,  s2, stdlib)).into()
+        ActiveValue::BoolLessThanSignedExpression(Self::new_with_id(stdlib.get_symbol_id(), s1, s2, stdlib)).into()
     }
 
     pub fn new_with_id(
@@ -98,21 +87,25 @@ impl BVSubExpression {
         s1: Rc<RefCell<ActiveValue>>,
         s2: Rc<RefCell<ActiveValue>>,
         stdlib: &mut ScfiaStdlib,
-    ) -> BVSubExpression {
+    ) -> BoolLessThanSignedExpression {
         unsafe {
             let z3_context = stdlib.z3_context;
-            let ast = Z3_mk_bvsub(
+            let ast = Z3_mk_bvslt(
                 stdlib.z3_context,
                 s1.try_borrow().unwrap().get_z3_ast(),
                 s2.try_borrow().unwrap().get_z3_ast(),
             );
+            
+            debug_assert!(s1.try_borrow().unwrap().get_id() < id);
+            debug_assert!(s2.try_borrow().unwrap().get_id() < id);
             Z3_inc_ref(z3_context, ast);
-            BVSubExpression {
-                id: id,
+            BoolLessThanSignedExpression {
+                id,
                 s1: s1,
                 s2: s2,
                 inherited_asts: BTreeMap::new(),
                 discovered_asts: BTreeMap::new(),
+                is_assert: false,
                 z3_context: z3_context,
                 z3_ast: ast,
             }
@@ -134,6 +127,11 @@ impl BVSubExpression {
 
         // Build clone
         let cloned_expression = Self::new_with_id(self.id, s1, s2, cloned_stdlib);
+        if self.is_assert {
+            unsafe {
+                Z3_solver_assert(cloned_stdlib.z3_context, cloned_stdlib.z3_solver, cloned_expression.z3_ast);
+            }
+        }
 
         finish_clone(
             self.id,
@@ -145,22 +143,29 @@ impl BVSubExpression {
             cloned_stdlib
         )
     }
+
+    pub fn assert(&mut self, stdlib: &mut ScfiaStdlib) {
+        self.is_assert = true;
+        unsafe {
+            Z3_solver_assert(stdlib.z3_context, stdlib.z3_solver, self.z3_ast);
+        }
+    }
 }
 
-impl Drop for BVSubExpression {
+impl Drop for BoolLessThanSignedExpression {
     fn drop(&mut self) {
         // Retire expression, maintain z3 ast refcount
         let s1_id = self.s1.try_borrow().unwrap().get_id();
         let s2_id = self.s2.try_borrow().unwrap().get_id();
         debug_assert!(s1_id < self.id);
         debug_assert!(s2_id < self.id);
-
-        let retired_expression = Rc::new(RefCell::new(RetiredValue::RetiredBitvectorSubExpression(RetiredBVSubExpression {
+        let retired_expression = Rc::new(RefCell::new(RetiredValue::RetiredBoolLessThanSignedExpression(RetiredBoolLessThanSignedExpression {
             id: self.id,
             s1_id,
             s1: Rc::downgrade(&self.s1),
             s2_id,
             s2: Rc::downgrade(&self.s2),
+            is_assert: self.is_assert,
             z3_context: self.z3_context,
             z3_ast: self.z3_ast,
         })));
@@ -180,7 +185,7 @@ impl Drop for BVSubExpression {
     }
 }
 
-impl RetiredBVSubExpression {
+impl RetiredBoolLessThanSignedExpression {
     pub fn clone_to_stdlib(
         &self,
         cloned_active_values: &mut BTreeMap<u64, Rc<RefCell<ActiveValue>>>,
@@ -220,14 +225,19 @@ impl RetiredBVSubExpression {
         };
 
         let cloned: Rc<RefCell<RetiredValue>> = unsafe {
-            let z3_ast = Z3_mk_bvsub(
+            let z3_ast = Z3_mk_bvslt(
                 cloned_stdlib.z3_context,
                 cloned_s1_ast,
                 cloned_s2_ast,
             );
             Z3_inc_ref(cloned_stdlib.z3_context, z3_ast);
-            RetiredBVSubExpression {
+            if self.is_assert {
+                Z3_solver_assert(cloned_stdlib.z3_context, cloned_stdlib.z3_solver, z3_ast);
+            }
+
+            RetiredBoolLessThanSignedExpression {
                 id: self.id,
+                is_assert: self.is_assert,
                 s1_id: self.s1_id,
                 s1: cloned_s1,
                 s2_id: self.s2_id,
@@ -242,108 +252,8 @@ impl RetiredBVSubExpression {
     }
 }
 
-impl Drop for RetiredBVSubExpression {
+impl Drop for RetiredBoolLessThanSignedExpression {
     fn drop(&mut self) {
         // unsafe { Z3_dec_ref(self.z3_context, self.z3_ast) }
     }
-}
-
-#[test]
-fn test_sub_symbolic1() {
-    let mut stdlib = ScfiaStdlib::new("0".to_string());
-    let s1 = BitVectorSymbol::new(None, 32, &mut stdlib, &mut None);
-    let sub = BVSubExpression::new(s1.clone(), BitVectorConcrete::new(1, 32, &mut stdlib, &mut None), &mut stdlib, &mut None);
-    let eq = BoolEqExpression::new(sub, BitVectorConcrete::new(i32::MAX as u64, 32, &mut stdlib, &mut None), &mut stdlib, &mut None);
-    // x - 1 = i32::MAX
-    eq.try_borrow_mut().unwrap().assert(&mut stdlib);
-
-    unsafe {
-        assert_eq!(Z3_solver_check(
-            stdlib.z3_context,
-            stdlib.z3_solver), Z3_L_TRUE);
-
-        let model = Z3_solver_get_model(
-            stdlib.z3_context,
-            stdlib.z3_solver);
-
-        let mut z3_ast: Z3_ast = ptr::null_mut();
-        assert!(Z3_model_eval(
-            stdlib.z3_context,
-            model, s1.try_borrow().unwrap().get_z3_ast(), false, &mut z3_ast));
-
-        let ast_kind = Z3_get_ast_kind(stdlib.z3_context, z3_ast);
-        assert_eq!(ast_kind, AstKind::Numeral);
-        assert_eq!(32, Z3_get_bv_sort_size(
-            stdlib.z3_context,
-            Z3_get_sort(stdlib.z3_context, z3_ast)));
-
-        let mut v: u64 = 0;
-        assert!(Z3_get_numeral_uint64(
-            stdlib.z3_context,
-            z3_ast,
-            &mut v
-        ));
-
-        assert_eq!(v as i32, i32::MIN);
-        println!("{}", v as i32);
-    }
-}
-
-#[test]
-fn test_sub_symbolic2() {
-    let mut stdlib = ScfiaStdlib::new("0".to_string());
-    let s1 = BitVectorSymbol::new(None, 32, &mut stdlib, &mut None);
-    let sub = BVSubExpression::new(s1.clone(), BitVectorConcrete::new(1, 32, &mut stdlib, &mut None), &mut stdlib, &mut None);
-    let eq = BoolEqExpression::new(sub, BitVectorConcrete::new(5 as u64, 32, &mut stdlib, &mut None), &mut stdlib, &mut None);
-    // x - 1 = 5
-    eq.try_borrow_mut().unwrap().assert(&mut stdlib);
-
-    unsafe {
-        assert_eq!(Z3_solver_check(
-            stdlib.z3_context,
-            stdlib.z3_solver), Z3_L_TRUE);
-
-        let model = Z3_solver_get_model(
-            stdlib.z3_context,
-            stdlib.z3_solver);
-
-        let mut z3_ast: Z3_ast = ptr::null_mut();
-        assert!(Z3_model_eval(
-            stdlib.z3_context,
-            model, s1.try_borrow().unwrap().get_z3_ast(), false, &mut z3_ast));
-
-        let ast_kind = Z3_get_ast_kind(stdlib.z3_context, z3_ast);
-        assert_eq!(ast_kind, AstKind::Numeral);
-        assert_eq!(32, Z3_get_bv_sort_size(
-            stdlib.z3_context,
-            Z3_get_sort(stdlib.z3_context, z3_ast)));
-
-        let mut v: u64 = 0;
-        assert!(Z3_get_numeral_uint64(
-            stdlib.z3_context,
-            z3_ast,
-            &mut v
-        ));
-
-        assert_eq!(v as i32, 6);
-        println!("{}", v as i32);
-    }
-}
-
-#[test]
-fn test_sub_concrete_i32() {
-    let mut stdlib = ScfiaStdlib::new("0".to_string());
-    let s1 = BitVectorConcrete::new(0, 32, &mut stdlib, &mut None);
-    let sub = BVSubExpression::new(s1.clone(), BitVectorConcrete::new(1, 32, &mut stdlib, &mut None), &mut stdlib, &mut None);
-    assert_eq!(sub.try_borrow().unwrap().as_concrete_bitvector().value as i32, -1);
-    println!("{:?}", sub);
-}
-
-#[test]
-fn test_sub_concrete_u32() {
-    let mut stdlib = ScfiaStdlib::new("0".to_string());
-    let s1 = BitVectorConcrete::new(0, 32, &mut stdlib, &mut None);
-    let sub = BVSubExpression::new(s1.clone(), BitVectorConcrete::new(1, 32, &mut stdlib, &mut None), &mut stdlib, &mut None);
-    assert_eq!(sub.try_borrow().unwrap().as_concrete_bitvector().value as u32, u32::MAX);
-    println!("{:?}", sub);
 }

@@ -17,6 +17,7 @@ use z3_sys::Z3_inc_ref;
 use z3_sys::Z3_mk_bvadd;
 use z3_sys::Z3_mk_extract;
 
+use super::finish_clone;
 use super::inherit;
 
 #[derive(Debug)]
@@ -112,6 +113,32 @@ impl BVSliceExpression {
                 z3_ast: ast,
             }
         }
+    }
+
+    pub fn clone_to_stdlib(
+        &self,
+        cloned_active_values: &mut BTreeMap<u64, Rc<RefCell<ActiveValue>>>,
+        cloned_retired_values: &mut BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
+        cloned_stdlib: &mut ScfiaStdlib
+    ) -> Rc<RefCell<ActiveValue>> {
+        // Clone s1, s2
+        let s1 = self.s1.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+        if let Some(e) = cloned_active_values.get(&self.id) {
+            return e.clone()
+        }
+
+        // Build clone
+        let cloned_expression = Self::new_with_id(self.id, s1, self.high, self.low, cloned_stdlib);
+
+        finish_clone(
+            self.id,
+            &self.inherited_asts,
+            &self.discovered_asts,
+            cloned_expression.into(),
+            cloned_active_values,
+            cloned_retired_values,
+            cloned_stdlib
+        )
     }
 }
 
