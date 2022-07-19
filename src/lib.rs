@@ -9,10 +9,12 @@ pub mod models;
 
 use std::borrow::Borrow;
 use std::cell::RefCell;
+use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::fmt;
 use std::ops::Deref;
 use std::ops::DerefMut;
+use std::ptr;
 use std::rc::Rc;
 use std::rc::Weak;
 use std::time::SystemTime;
@@ -26,8 +28,11 @@ use models::riscv::rv32i::ForkSink;
 use values::ActiveValue;
 use values::RetiredValue;
 use values::bit_vector_symbol::BitVectorSymbol;
+use z3_sys::AstKind;
+use z3_sys::SortKind;
 use z3_sys::Z3_L_FALSE;
 use z3_sys::Z3_L_TRUE;
+use z3_sys::Z3_ast;
 use z3_sys::Z3_ast_vector_dec_ref;
 use z3_sys::Z3_ast_vector_inc_ref;
 use z3_sys::Z3_ast_vector_size;
@@ -35,6 +40,12 @@ use z3_sys::Z3_dec_ref;
 use z3_sys::Z3_del_context;
 use z3_sys::Z3_context;
 use z3_sys::Z3_finalize_memory;
+use z3_sys::Z3_get_app_decl;
+use z3_sys::Z3_get_ast_kind;
+use z3_sys::Z3_get_bv_sort_size;
+use z3_sys::Z3_get_numeral_uint64;
+use z3_sys::Z3_get_sort;
+use z3_sys::Z3_get_sort_kind;
 use z3_sys::Z3_inc_ref;
 use z3_sys::Z3_mk_context_rc;
 use z3_sys::Z3_del_config;
@@ -42,7 +53,9 @@ use z3_sys::Z3_mk_config;
 use z3_sys::Z3_mk_eq;
 use z3_sys::Z3_mk_model;
 use z3_sys::Z3_mk_not;
+use z3_sys::Z3_mk_unsigned_int64;
 use z3_sys::Z3_model_dec_ref;
+use z3_sys::Z3_model_eval;
 use z3_sys::Z3_model_inc_ref;
 use z3_sys::Z3_solver;
 use z3_sys::Z3_mk_solver;
@@ -155,7 +168,7 @@ impl ScfiaStdlib {
                     expression.try_borrow_mut().unwrap().assert(self);
                     true
                 } else {
-                    panic!()
+                    panic!("unexpected fork")
                 }
             } else if can_be_true {
                 true
@@ -163,6 +176,80 @@ impl ScfiaStdlib {
                 false
             } else {
                 unreachable!("expression= {:?}, can_be_true={}, can_be_false={}", expression, can_be_true, can_be_false)
+            }
+        }
+    }
+
+    pub fn monomorphize(&mut self, ast: Z3_ast, candidates: &mut BTreeSet<u64>) {
+        unsafe {
+            let mut assumptions: Vec<Z3_ast> = vec![];
+            let sort = Z3_get_sort(self.z3_context, ast);
+            let sort_kind = Z3_get_sort_kind(self.z3_context, sort);
+            assert_eq!(SortKind::BV, sort_kind);
+
+            // Fill assumptions with known candidates
+            for candidate in candidates.iter() {
+                let assumption = Z3_mk_not(self.z3_context,
+                    Z3_mk_eq(
+                        self.z3_context,
+                        Z3_mk_unsigned_int64(self.z3_context, *candidate, sort),
+                        ast,
+                    ));
+                Z3_inc_ref(self.z3_context, assumption);
+                assumptions.push(assumption)
+            }
+
+            // Find all remaining candidates
+            loop {
+                let assumptions_count = assumptions.len().try_into().unwrap();
+                if Z3_solver_check_assumptions(
+                    self.z3_context,
+                    self.z3_solver,
+                    assumptions_count,
+                    assumptions.as_ptr()) == Z3_L_FALSE {
+                        break;
+                }
+        
+                let model = Z3_solver_get_model(
+                    self.z3_context,
+                    self.z3_solver);
+
+                let mut z3_ast: Z3_ast = ptr::null_mut();
+                assert!(Z3_model_eval(
+                    self.z3_context,
+                    model, ast, true, &mut z3_ast));
+
+                let ast_kind = Z3_get_ast_kind(self.z3_context, z3_ast);
+                let mut v: u64 = 0;
+                if ast_kind == AstKind::Numeral {
+                    let size = Z3_get_bv_sort_size(
+                        self.z3_context,
+                        Z3_get_sort(self.z3_context, z3_ast));
+                    assert_eq!(32, size);
+                    assert!(Z3_get_numeral_uint64(
+                        self.z3_context,
+                        z3_ast,
+                        &mut v
+                    ));
+                } else {
+                    panic!("{:?}", ast_kind)
+                }
+                
+                // println!("found {}", v);
+                debug_assert!(candidates.insert(v));
+
+                let assumption = Z3_mk_not(self.z3_context,
+                    Z3_mk_eq(
+                        self.z3_context,
+                        Z3_mk_unsigned_int64(self.z3_context, v, sort),
+                        ast,
+                    ));
+                    Z3_inc_ref(self.z3_context, assumption);
+                assumptions.push(assumption)
+            }
+
+            for assumption in assumptions {
+                Z3_dec_ref(self.z3_context, assumption);
             }
         }
     }

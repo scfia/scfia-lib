@@ -63,20 +63,11 @@ impl MemoryRegion32 for StableMemoryRegion32 {
         value
     }
 
-    fn write(&mut self, address: u32, value: Rc<RefCell<ActiveValue>>, stdlib: &mut crate::ScfiaStdlib, fork_sink: &mut Option<&mut ForkSink>) {
-        let value_ref = value.try_borrow().unwrap();
-        match &*value_ref {
-            ActiveValue::BitvectorConcrete(e) => {
-                // Split concrete value into bytes
-                // println!("0x{:x} => 0x{} ({} bytes)", address, e.value, e.width/8);
-                assert_eq!(e.width % 8, 0);
-                let bytes = e.width / 8;
-                for byte in 0..bytes {
-                    let v = BVSliceExpression::new(value.clone(), (byte * 8) + 7, byte * 8, stdlib, fork_sink);
-                    self.memory.insert(address + byte, v.into());
-                }
-            },
-            _ => unimplemented!("{:?}", value),
+    fn write(&mut self, address: u32, value: Rc<RefCell<ActiveValue>>, width: u32, stdlib: &mut crate::ScfiaStdlib, fork_sink: &mut Option<&mut ForkSink>) {
+        let bytes = width / 8;
+        for byte in 0..bytes {
+            let v = BVSliceExpression::new(value.clone(), (byte * 8) + 7, byte * 8, stdlib, fork_sink);
+            self.memory.insert(address + byte, v.into());
         }
     }
 }

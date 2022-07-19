@@ -17,6 +17,7 @@ use z3_sys::Z3_inc_ref;
 use z3_sys::Z3_mk_bvadd;
 use z3_sys::Z3_mk_bvand;
 
+use super::finish_clone;
 use super::inherit;
 
 #[derive(Debug)]
@@ -46,7 +47,7 @@ impl BVAndExpression {
         stdlib: &mut ScfiaStdlib,
         fork_sink: &mut Option<&mut ForkSink>,
     ) -> Rc<RefCell<ActiveValue>> {
-        let value: Rc<RefCell<ActiveValue>> = Self::new_try_concretize(s1, s2, stdlib, fork_sink).into();
+        let value: Rc<RefCell<ActiveValue>> = Self::new_try_concretize(s1, s2, stdlib, fork_sink);
         if let Some(fork_sink) = fork_sink {
             fork_sink.new_values.push(value.clone());
         }
@@ -98,6 +99,33 @@ impl BVAndExpression {
                 z3_ast: ast,
             }
         }
+    }
+
+    pub fn clone_to_stdlib(
+        &self,
+        cloned_active_values: &mut BTreeMap<u64, Rc<RefCell<ActiveValue>>>,
+        cloned_retired_values: &mut BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
+        cloned_stdlib: &mut ScfiaStdlib
+    ) -> Rc<RefCell<ActiveValue>> {
+        // Clone s1, s2
+        let s1 = self.s1.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+        let s2 = self.s2.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+        if let Some(e) = cloned_active_values.get(&self.id) {
+            return e.clone()
+        }
+
+        // Build clone
+        let cloned_expression = Self::new_with_id(self.id, s1, s2, cloned_stdlib);
+
+        finish_clone(
+            self.id,
+            &self.inherited_asts,
+            &self.discovered_asts,
+            cloned_expression.into(),
+            cloned_active_values,
+            cloned_retired_values,
+            cloned_stdlib
+        )
     }
 }
 

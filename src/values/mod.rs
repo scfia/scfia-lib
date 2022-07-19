@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::{Rc, Weak}, collections::BTreeMap};
 use std::collections::HashMap;
 use z3_sys::Z3_solver_assert;
 
-use crate::{ScfiaStdlib, expressions::{bool_less_than_uint_expression::{BoolLessThanUIntExpression, RetiredBoolLessThanUIntExpression}, bool_not_expression::{RetiredBoolNotExpression, BoolNotExpression}, bv_and_expression::{BVAndExpression, RetiredBVAndExpression}, bv_shift_right_logical_expression::{BVShiftRightLogicalExpression, RetiredBVShiftRightLogicalExpression}, bv_shift_left_logical_expression::{BVShiftLeftLogicalExpression, RetiredBVShiftLeftLogicalExpression}, bv_xor_expression::{BVXorExpression, RetiredBVXorExpression}, bv_sub_expression::{BVSubExpression, RetiredBVSubExpression}, bool_less_than_signed_expression::{BoolLessThanSignedExpression, RetiredBoolLessThanSignedExpression}}};
+use crate::{ScfiaStdlib, expressions::{bool_less_than_uint_expression::{BoolLessThanUIntExpression, RetiredBoolLessThanUIntExpression}, bool_not_expression::{RetiredBoolNotExpression, BoolNotExpression}, bv_and_expression::{BVAndExpression, RetiredBVAndExpression}, bv_shift_right_logical_expression::{BVShiftRightLogicalExpression, RetiredBVShiftRightLogicalExpression}, bv_shift_left_logical_expression::{BVShiftLeftLogicalExpression, RetiredBVShiftLeftLogicalExpression}, bv_xor_expression::{BVXorExpression, RetiredBVXorExpression}, bv_sub_expression::{BVSubExpression, RetiredBVSubExpression}, bool_less_than_signed_expression::{BoolLessThanSignedExpression, RetiredBoolLessThanSignedExpression}, bv_multiply_expression::{BVMultiplyExpression, RetiredBVMultiplyExpression}, bv_unsigned_remainder_expression::{RetiredBVUnsignedRemainderExpression, BVUnsignedRemainderExpression}}};
 
 use crate::{expressions::{bool_eq_expression::{BoolEqExpression, RetiredBoolEqExpression}, bool_neq_expression::{BoolNEqExpression, RetiredBoolNEqExpression}, bv_add_expression::{BVAddExpression, RetiredBVAddExpression}, bv_concat_expression::{BVConcatExpression, RetiredBVConcatExpression}, bv_or_expression::{BVOrExpression, RetiredBVOrExpression}, bv_sign_extend_expression::{BVSignExtendExpression, RetiredBVSignExtendExpression}, bv_slice_expression::{BVSliceExpression, RetiredBVSliceExpression}}};
 
@@ -29,6 +29,8 @@ pub enum ActiveValue {
     BoolNotExpression(BoolNotExpression),
     BoolConcrete(BoolConcrete),
     BitvectorAddExpression(BVAddExpression),
+    BitvectorUnsignedRemainderExpression(BVUnsignedRemainderExpression),
+    BitvectorMultiplyExpression(BVMultiplyExpression),
     BitvectorAndExpression(BVAndExpression),
     BitvectorSubExpression(BVSubExpression),
     BitvectorXorExpression(BVXorExpression),
@@ -51,6 +53,8 @@ pub enum RetiredValue {
     RetiredBoolNotExpression(RetiredBoolNotExpression),
     RetiredBoolConcrete(RetiredBoolConcrete),
     RetiredBitvectorAddExpression(RetiredBVAddExpression),
+    RetiredBitvectorUnsignedRemainderExpression(RetiredBVUnsignedRemainderExpression),
+    RetiredBitvectorMultiplyExpression(RetiredBVMultiplyExpression),
     RetiredBitvectorSubExpression(RetiredBVSubExpression),
     RetiredBitvectorAndExpression(RetiredBVAndExpression),
     RetiredBitvectorXorExpression(RetiredBVXorExpression),
@@ -90,17 +94,19 @@ impl ActiveValue {
             ActiveValue::BitvectorAddExpression(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
             ActiveValue::BitvectorConcatExpression(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
             ActiveValue::BitvectorOrExpression(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
-            ActiveValue::BitvectorSignExtendExpression(_) => unimplemented!(),
+            ActiveValue::BitvectorSignExtendExpression(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
             ActiveValue::BitvectorSliceExpression(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
             ActiveValue::BoolLessThanUIntExpression(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
             ActiveValue::BoolNotExpression(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
-            ActiveValue::BitvectorAndExpression(_) => todo!(),
+            ActiveValue::BitvectorAndExpression(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
             ActiveValue::BitvectorShiftRightLogicalExpression(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
             ActiveValue::BitvectorShiftLeftLogicalExpression(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
             ActiveValue::BoolConcrete(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
             ActiveValue::BitvectorXorExpression(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
             ActiveValue::BitvectorSubExpression(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
             ActiveValue::BoolLessThanSignedExpression(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
+            ActiveValue::BitvectorMultiplyExpression(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
+            ActiveValue::BitvectorUnsignedRemainderExpression(e) => e.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
         };
         clone
     }
@@ -152,8 +158,10 @@ impl RetiredValue {
             RetiredValue::RetiredBitvectorShiftLeftLogicalExpression(_) => todo!(),
             RetiredValue::RetiredBoolConcrete(_) => todo!(),
             RetiredValue::RetiredBitvectorXorExpression(_) => todo!(),
-            RetiredValue::RetiredBitvectorSubExpression(_) => todo!(),
+            RetiredValue::RetiredBitvectorSubExpression(x) => x.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
             RetiredValue::RetiredBoolLessThanSignedExpression(x) => x.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
+            RetiredValue::RetiredBitvectorMultiplyExpression(x) => x.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
+            RetiredValue::RetiredBitvectorUnsignedRemainderExpression(x) => x.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
         }
     }
 
@@ -177,6 +185,8 @@ impl RetiredValue {
             RetiredValue::RetiredBitvectorXorExpression(e) => e.id,
             RetiredValue::RetiredBitvectorSubExpression(e) => e.id,
             RetiredValue::RetiredBoolLessThanSignedExpression(e) => e.id,
+            RetiredValue::RetiredBitvectorMultiplyExpression(e) => e.id,
+            RetiredValue::RetiredBitvectorUnsignedRemainderExpression(e) => e.id,
         }
     }
 
@@ -200,6 +210,8 @@ impl RetiredValue {
             RetiredValue::RetiredBitvectorXorExpression(e) => e.z3_ast,
             RetiredValue::RetiredBitvectorSubExpression(e) => e.z3_ast,
             RetiredValue::RetiredBoolLessThanSignedExpression(e) => e.z3_ast,
+            RetiredValue::RetiredBitvectorMultiplyExpression(e) => e.z3_ast,
+            RetiredValue::RetiredBitvectorUnsignedRemainderExpression(e) => e.z3_ast,
         }
     }
 }
@@ -225,6 +237,8 @@ impl ActiveValue {
             ActiveValue::BitvectorXorExpression(e) => e.id,
             ActiveValue::BitvectorSubExpression(e) => e.id,
             ActiveValue::BoolLessThanSignedExpression(e) => e.id,
+            ActiveValue::BitvectorMultiplyExpression(e) => e.id,
+            ActiveValue::BitvectorUnsignedRemainderExpression(e) => e.id,
         }
     }
 
@@ -248,6 +262,8 @@ impl ActiveValue {
             ActiveValue::BitvectorXorExpression(e) => e.z3_ast,
             ActiveValue::BitvectorSubExpression(e) => e.z3_ast,
             ActiveValue::BoolLessThanSignedExpression(e) => e.z3_ast,
+            ActiveValue::BitvectorMultiplyExpression(e) => e.z3_ast,
+            ActiveValue::BitvectorUnsignedRemainderExpression(e) => e.z3_ast,
         }
     }
 
@@ -272,6 +288,8 @@ impl ActiveValue {
             ActiveValue::BitvectorXorExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
             ActiveValue::BitvectorSubExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
             ActiveValue::BoolLessThanSignedExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
+            ActiveValue::BitvectorMultiplyExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
+            ActiveValue::BitvectorUnsignedRemainderExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
         }
     }
 
@@ -295,6 +313,8 @@ impl ActiveValue {
             ActiveValue::BitvectorXorExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
             ActiveValue::BitvectorSubExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
             ActiveValue::BoolLessThanSignedExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
+            ActiveValue::BitvectorMultiplyExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
+            ActiveValue::BitvectorUnsignedRemainderExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
         }
     }
 
@@ -321,6 +341,8 @@ impl ActiveValue {
             ActiveValue::BitvectorXorExpression(e) => { e.discovered_asts.insert(ast_id, ast); },
             ActiveValue::BitvectorSubExpression(e) => { e.discovered_asts.insert(ast_id, ast); },
             ActiveValue::BoolLessThanSignedExpression(e) => { e.discovered_asts.insert(ast_id, ast); },
+            ActiveValue::BitvectorMultiplyExpression(e) => { e.discovered_asts.insert(ast_id, ast); },
+            ActiveValue::BitvectorUnsignedRemainderExpression(e) => { e.discovered_asts.insert(ast_id, ast); },
         }
     }
 }
@@ -397,6 +419,12 @@ impl From<BVConcatExpression> for Rc<RefCell<ActiveValue>> {
     }
 }
 
+impl From<BVUnsignedRemainderExpression> for Rc<RefCell<ActiveValue>> {
+    fn from(s: BVUnsignedRemainderExpression) -> Self {
+        Rc::new(RefCell::new(ActiveValue::BitvectorUnsignedRemainderExpression(s)))
+    }
+}
+
 impl From<BVOrExpression> for Rc<RefCell<ActiveValue>> {
     fn from(s: BVOrExpression) -> Self {
         Rc::new(RefCell::new(ActiveValue::BitvectorOrExpression(s)))
@@ -415,6 +443,12 @@ impl From<BVShiftRightLogicalExpression> for Rc<RefCell<ActiveValue>> {
     }
 }
 
+impl From<BVAndExpression> for Rc<RefCell<ActiveValue>> {
+    fn from(s: BVAndExpression) -> Self {
+        Rc::new(RefCell::new(ActiveValue::BitvectorAndExpression(s)))
+    }
+}
+
 impl From<BVShiftLeftLogicalExpression> for Rc<RefCell<ActiveValue>> {
     fn from(s: BVShiftLeftLogicalExpression) -> Self {
         Rc::new(RefCell::new(ActiveValue::BitvectorShiftLeftLogicalExpression(s)))
@@ -424,6 +458,12 @@ impl From<BVShiftLeftLogicalExpression> for Rc<RefCell<ActiveValue>> {
 impl From<BVSliceExpression> for Rc<RefCell<ActiveValue>> {
     fn from(s: BVSliceExpression) -> Self {
         Rc::new(RefCell::new(ActiveValue::BitvectorSliceExpression(s)))
+    }
+}
+
+impl From<BVMultiplyExpression> for Rc<RefCell<ActiveValue>> {
+    fn from(s: BVMultiplyExpression) -> Self {
+        Rc::new(RefCell::new(ActiveValue::BitvectorMultiplyExpression(s)))
     }
 }
 
@@ -538,5 +578,17 @@ impl From<RetiredBVShiftRightLogicalExpression> for Rc<RefCell<RetiredValue>> {
 impl From<RetiredBVShiftLeftLogicalExpression> for Rc<RefCell<RetiredValue>> {
     fn from(s: RetiredBVShiftLeftLogicalExpression) -> Self {
         Rc::new(RefCell::new(RetiredValue::RetiredBitvectorShiftLeftLogicalExpression(s)))
+    }
+}
+
+impl From<RetiredBVMultiplyExpression> for Rc<RefCell<RetiredValue>> {
+    fn from(s: RetiredBVMultiplyExpression) -> Self {
+        Rc::new(RefCell::new(RetiredValue::RetiredBitvectorMultiplyExpression(s)))
+    }
+}
+
+impl From<RetiredBVUnsignedRemainderExpression> for Rc<RefCell<RetiredValue>> {
+    fn from(s: RetiredBVUnsignedRemainderExpression) -> Self {
+        Rc::new(RefCell::new(RetiredValue::RetiredBitvectorUnsignedRemainderExpression(s)))
     }
 }

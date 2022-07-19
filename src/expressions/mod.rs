@@ -17,6 +17,8 @@ pub mod bv_shift_right_logical_expression;
 pub mod bv_shift_left_logical_expression;
 pub mod bv_sub_expression;
 pub mod bv_xor_expression;
+pub mod bv_multiply_expression;
+pub mod bv_unsigned_remainder_expression;
 
 
 pub(crate) fn inherit(

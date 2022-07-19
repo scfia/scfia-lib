@@ -16,6 +16,10 @@ impl VolatileMemoryRegion32 {
             length
         }
     }
+
+    pub fn contains(&self, address: u32, width: u32) -> bool {
+        address >= self.start_address && address + width <= self.start_address + self.length
+    }
 }
 
 impl fmt::Debug for VolatileMemoryRegion32 {
@@ -31,6 +35,6 @@ impl MemoryRegion32 for VolatileMemoryRegion32 {
         s
     }
 
-    fn write(&mut self, _address: u32, _value: Rc<RefCell<ActiveValue>>, _stdlib: &mut crate::ScfiaStdlib, fork_sink: &mut Option<&mut ForkSink>) {
+    fn write(&mut self, _address: u32, _value: Rc<RefCell<ActiveValue>>, _width: u32, _stdlib: &mut crate::ScfiaStdlib, fork_sink: &mut Option<&mut ForkSink>) {
     }
 }
