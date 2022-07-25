@@ -252,7 +252,6 @@ fn test_system_state() {
         continuing.step()
     }
 
-    println!("--- doing 1024 check {:?}", continuing.system_state.x10);
     let mut successors = continuing.step_forking();
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
@@ -261,6 +260,14 @@ fn test_system_state() {
     while panicking.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x508 {
         panicking.step()
     }
+
+    println!("Stepping until NIC2 receivequeue configure_virtqueue");
+    while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x4 {
+        continuing.step();
+    }
+
+    println!("Cloning state to free some z3 memory");
+    continuing = continuing.clone();
 
     println!("Stepping until NIC2 receivequeue queue_pfn check");
     while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x24 {
@@ -294,73 +301,4 @@ fn step_all_until(mut states: Vec<RV32iSystemState>, branch_points: Vec<u64>, un
     }
     
     done
-}
-
-unsafe fn monomorphize(ast: Z3_ast, z3_context: Z3_context, z3_solver: Z3_solver, candidates: &mut BTreeSet<u64>) {
-    let mut assumptions: Vec<Z3_ast> = vec![];
-    let sort = Z3_get_sort(z3_context, ast);
-    let sort_kind = Z3_get_sort_kind(z3_context, sort);
-    assert_eq!(SortKind::BV, sort_kind);
-
-    // Fill assumptions with known candidates
-    for candidate in candidates.iter() {
-        let assumption = Z3_mk_not(z3_context,
-            Z3_mk_eq(
-                z3_context,
-                Z3_mk_unsigned_int64(z3_context, *candidate, sort),
-                ast,
-            ));
-        Z3_inc_ref(z3_context, assumption);
-        assumptions.push(assumption)
-    }
-
-    // Find all remaining candidates
-    loop {
-        let assumptions_count = assumptions.len().try_into().unwrap();
-        if Z3_solver_check_assumptions(
-            z3_context,
-            z3_solver,
-            assumptions_count,
-            assumptions.as_ptr()) == Z3_L_FALSE {
-                break;
-        }
-
-        let model = Z3_solver_get_model(
-            z3_context,
-            z3_solver);
-
-        let mut z3_ast: Z3_ast = ptr::null_mut();
-        assert!(Z3_model_eval(
-            z3_context,
-            model, ast, false, &mut z3_ast));
-
-        let ast_kind = Z3_get_ast_kind(z3_context, z3_ast);
-        assert_eq!(ast_kind, AstKind::Numeral);
-        let size = Z3_get_bv_sort_size(
-            z3_context,
-            Z3_get_sort(z3_context, z3_ast));
-        assert_eq!(32, size);
-
-        let mut v: u64 = 0;
-        assert!(Z3_get_numeral_uint64(
-            z3_context,
-            z3_ast,
-            &mut v
-        ));
-        println!("found {}", v);
-        debug_assert!(candidates.insert(v));
-
-        let assumption = Z3_mk_not(z3_context,
-            Z3_mk_eq(
-                z3_context,
-                Z3_mk_unsigned_int64(z3_context, v, sort),
-                ast,
-            ));
-            Z3_inc_ref(z3_context, assumption);
-        assumptions.push(assumption)
-    }
-
-    for assumption in assumptions {
-        Z3_dec_ref(z3_context, assumption);
-    }
 }

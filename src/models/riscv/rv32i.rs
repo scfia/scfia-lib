@@ -857,9 +857,16 @@ pub unsafe fn execute_add32(state: *mut SystemState, destination_id: Rc<RefCell<
 impl RV32iSystemState {
     pub fn step(&mut self) {
         unsafe {
-            println!("stepping {:?}", self.system_state.pc);
+            // println!("RV32iSystemState::step {:?}", self.system_state.pc);
             step(&mut self.system_state, &mut self.stdlib, &mut None, &mut self.memory);
         }
+    }
+
+    pub fn clone(&self) -> RV32iSystemState {
+        let cloned_stdlib = ScfiaStdlib::new_with_next_id(self.stdlib.id.clone(), self.stdlib.next_symbol_id);
+        let mut cloned_active_values = BTreeMap::new();
+        let mut cloned_retired_values = BTreeMap::new();
+        self.clone_to_stdlib(cloned_stdlib, &mut cloned_active_values, &mut cloned_retired_values)
     }
 
     pub fn step_forking(self) -> Vec<RV32iSystemState> {

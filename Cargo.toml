@@ -5,6 +5,8 @@ edition = "2021"
 
 [dependencies]
 z3-sys = { path = "../z3.rs/z3-sys" }
+# z3-sys = { git = "https://github.com/Trolldemorted/z3.rs", branch = "buildfix3" }
+
 
 [dev-dependencies]
 xmas-elf = "0.7"

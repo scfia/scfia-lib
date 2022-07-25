@@ -55,7 +55,7 @@ impl Memory32 {
                 for candidate in HINTS1 {
                     candidates.insert(candidate);
                 }
-                println!("monomorphizing expression {}", x.get_id());
+                // println!("monomorphizing expression {}", x.get_id());
                 stdlib.monomorphize(x.get_z3_ast(), &mut candidates);
                 if candidates.len() == 1 {
                     // unanimous
