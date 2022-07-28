@@ -68,8 +68,8 @@ impl BVUnsignedRemainderExpression {
                         // TODO check
                         let one: u64 = 1;
                         let mask = one.rotate_left(e2.width).overflowing_sub(1).0;
-                        let product = e1.value.overflowing_mul(e2.value).0;
-                        let value = mask & product;
+                        let remainder = e1.value % e2.value;
+                        let value = mask & remainder;
                         return BitVectorConcrete::new(value, e2.width, stdlib, fork_sink);
                     },
                     _ => {}
