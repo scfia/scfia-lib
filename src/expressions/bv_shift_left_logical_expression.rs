@@ -15,9 +15,6 @@ use z3_sys::Z3_ast;
 use z3_sys::Z3_context;
 use z3_sys::Z3_dec_ref;
 use z3_sys::Z3_inc_ref;
-use z3_sys::Z3_mk_bvadd;
-use z3_sys::Z3_mk_bvand;
-use z3_sys::Z3_mk_bvlshr;
 use z3_sys::Z3_mk_bvshl;
 use z3_sys::Z3_mk_zero_ext;
 
@@ -40,8 +37,12 @@ pub struct BVShiftLeftLogicalExpression {
 #[derive(Debug)]
 pub struct RetiredBVShiftLeftLogicalExpression {
     pub id: u64,
-    s1: u64,
-    s2: u64,
+    s1_id: u64,
+    s1: Weak<RefCell<ActiveValue>>,
+    s2_id: u64,
+    s2: Weak<RefCell<ActiveValue>>,
+    input_width: u32,
+    shamt_width: u32,
     pub z3_context: Z3_context,
     pub z3_ast: Z3_ast,
 }
@@ -155,8 +156,12 @@ impl Drop for BVShiftLeftLogicalExpression {
         debug_assert!(s2_id < self.id);
         let retired_expression = Rc::new(RefCell::new(RetiredValue::RetiredBitvectorShiftLeftLogicalExpression(RetiredBVShiftLeftLogicalExpression {
             id: self.id,
-            s1: s1_id,
-            s2: s2_id,
+            s1_id,
+            s1: Rc::downgrade(&self.s1),
+            s2_id,
+            s2: Rc::downgrade(&self.s2),
+            shamt_width: self.shamt_width,
+            input_width: self.input_width,
             z3_context: self.z3_context,
             z3_ast: self.z3_ast,
         })));
@@ -173,6 +178,73 @@ impl Drop for BVShiftLeftLogicalExpression {
             &self.inherited_asts,
             &self.discovered_asts
         );
+    }
+}
+
+impl RetiredBVShiftLeftLogicalExpression {
+    pub fn clone_to_stdlib(
+        &self,
+        cloned_active_values: &mut BTreeMap<u64, Rc<RefCell<ActiveValue>>>,
+        cloned_retired_values: &mut BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
+        cloned_stdlib: &mut ScfiaStdlib
+    ) -> Rc<RefCell<RetiredValue>> {
+        let cloned_s1_ast;
+        let cloned_s1;
+        if let Some(s1_rc) = cloned_active_values.get(&self.s1_id) {
+            let s1 = s1_rc.try_borrow().unwrap();
+            cloned_s1_ast = s1.get_z3_ast();
+            cloned_s1 = Rc::downgrade(s1_rc);
+        } else if let Some(s1_rc) = self.s1.upgrade() {
+            let cloned_s1_rc = s1_rc.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+            cloned_s1_ast = cloned_s1_rc.try_borrow().unwrap().get_z3_ast();
+            cloned_s1 = Rc::downgrade(&cloned_s1_rc);
+        } else {
+            let cloned_s1_rc = cloned_retired_values.get(&self.s1_id).unwrap();
+            cloned_s1_ast = cloned_s1_rc.try_borrow().unwrap().get_z3_ast();
+            cloned_s1 = Weak::new();
+        };
+
+        let cloned_s2_ast;
+        let cloned_s2;
+        if let Some(s2_rc) = cloned_active_values.get(&self.s2_id) {
+            let s2 = s2_rc.try_borrow().unwrap();
+            cloned_s2_ast = s2.get_z3_ast();
+            cloned_s2 = Rc::downgrade(s2_rc);
+        } else if let Some(s2_rc) = self.s2.upgrade() {
+            let cloned_s2_rc = s2_rc.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+            cloned_s2_ast = cloned_s2_rc.try_borrow().unwrap().get_z3_ast();
+            cloned_s2 = Rc::downgrade(&cloned_s2_rc);
+        } else {
+            let cloned_s2_rc = cloned_retired_values.get(&self.s2_id).unwrap();
+            cloned_s2_ast = cloned_s2_rc.try_borrow().unwrap().get_z3_ast();
+            cloned_s2 = Weak::new();
+        };
+
+        let cloned: Rc<RefCell<RetiredValue>> = unsafe {
+            let z3_ast = Z3_mk_bvshl(
+                cloned_stdlib.z3_context,
+                cloned_s1_ast,
+                Z3_mk_zero_ext(
+                    cloned_stdlib.z3_context,
+                    self.input_width - self.shamt_width,
+                    cloned_s2_ast),
+            );
+            Z3_inc_ref(cloned_stdlib.z3_context, z3_ast);
+            RetiredBVShiftLeftLogicalExpression {
+                id: self.id,
+                s1_id: self.s1_id,
+                s1: cloned_s1,
+                s2_id: self.s2_id,
+                s2: cloned_s2,
+                input_width: self.input_width,
+                shamt_width: self.shamt_width,
+                z3_context: cloned_stdlib.z3_context,
+                z3_ast
+            }
+        }.into();
+
+        cloned_retired_values.insert(self.id, cloned.clone());
+        cloned
     }
 }
 

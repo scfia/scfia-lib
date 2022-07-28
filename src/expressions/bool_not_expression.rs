@@ -15,7 +15,6 @@ use z3_sys::Z3_ast;
 use z3_sys::Z3_context;
 use z3_sys::Z3_dec_ref;
 use z3_sys::Z3_inc_ref;
-use z3_sys::Z3_mk_bvadd;
 use z3_sys::Z3_mk_eq;
 use z3_sys::Z3_mk_not;
 use z3_sys::Z3_solver_assert;

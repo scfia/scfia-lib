@@ -22,7 +22,6 @@ use z3_sys::Z3_get_bv_sort_size;
 use z3_sys::Z3_get_numeral_uint64;
 use z3_sys::Z3_get_sort;
 use z3_sys::Z3_inc_ref;
-use z3_sys::Z3_mk_bvadd;
 use z3_sys::Z3_mk_bvsub;
 use z3_sys::Z3_model_eval;
 use z3_sys::Z3_solver_check;

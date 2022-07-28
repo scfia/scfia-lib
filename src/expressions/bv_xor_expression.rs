@@ -14,7 +14,7 @@ use z3_sys::Z3_ast;
 use z3_sys::Z3_context;
 use z3_sys::Z3_dec_ref;
 use z3_sys::Z3_inc_ref;
-use z3_sys::Z3_mk_bvadd;
+use z3_sys::Z3_mk_bvxor;
 
 use super::finish_clone;
 use super::inherit;
@@ -33,8 +33,10 @@ pub struct BVXorExpression {
 #[derive(Debug)]
 pub struct RetiredBVXorExpression {
     pub id: u64,
-    s1: u64,
-    s2: u64,
+    s1_id: u64,
+    s1: Weak<RefCell<ActiveValue>>,
+    s2_id: u64,
+    s2: Weak<RefCell<ActiveValue>>,
     pub z3_context: Z3_context,
     pub z3_ast: Z3_ast,
 }
@@ -83,7 +85,7 @@ impl BVXorExpression {
     ) -> BVXorExpression {
         unsafe {
             let z3_context = stdlib.z3_context;
-            let ast = Z3_mk_bvadd(
+            let ast = Z3_mk_bvxor(
                 stdlib.z3_context,
                 s1.try_borrow().unwrap().get_z3_ast(),
                 s2.try_borrow().unwrap().get_z3_ast(),
@@ -139,8 +141,10 @@ impl Drop for BVXorExpression {
 
         let retired_expression = Rc::new(RefCell::new(RetiredValue::RetiredBitvectorXorExpression(RetiredBVXorExpression {
             id: self.id,
-            s1: s1_id,
-            s2: s2_id,
+            s1_id,
+            s1: Rc::downgrade(&self.s1),
+            s2_id,
+            s2: Rc::downgrade(&self.s2),
             z3_context: self.z3_context,
             z3_ast: self.z3_ast,
         })));
@@ -157,6 +161,68 @@ impl Drop for BVXorExpression {
             &self.inherited_asts,
             &self.discovered_asts
         );
+    }
+}
+
+impl RetiredBVXorExpression {
+    pub fn clone_to_stdlib(
+        &self,
+        cloned_active_values: &mut BTreeMap<u64, Rc<RefCell<ActiveValue>>>,
+        cloned_retired_values: &mut BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
+        cloned_stdlib: &mut ScfiaStdlib
+    ) -> Rc<RefCell<RetiredValue>> {
+        let cloned_s1_ast;
+        let cloned_s1;
+        if let Some(s1_rc) = cloned_active_values.get(&self.s1_id) {
+            let s1 = s1_rc.try_borrow().unwrap();
+            cloned_s1_ast = s1.get_z3_ast();
+            cloned_s1 = Rc::downgrade(s1_rc);
+        } else if let Some(s1_rc) = self.s1.upgrade() {
+            let cloned_s1_rc = s1_rc.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+            cloned_s1_ast = cloned_s1_rc.try_borrow().unwrap().get_z3_ast();
+            cloned_s1 = Rc::downgrade(&cloned_s1_rc);
+        } else {
+            let cloned_s1_rc = cloned_retired_values.get(&self.s1_id).unwrap();
+            cloned_s1_ast = cloned_s1_rc.try_borrow().unwrap().get_z3_ast();
+            cloned_s1 = Weak::new();
+        };
+
+        let cloned_s2_ast;
+        let cloned_s2;
+        if let Some(s2_rc) = cloned_active_values.get(&self.s2_id) {
+            let s2 = s2_rc.try_borrow().unwrap();
+            cloned_s2_ast = s2.get_z3_ast();
+            cloned_s2 = Rc::downgrade(s2_rc);
+        } else if let Some(s2_rc) = self.s2.upgrade() {
+            let cloned_s2_rc = s2_rc.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+            cloned_s2_ast = cloned_s2_rc.try_borrow().unwrap().get_z3_ast();
+            cloned_s2 = Rc::downgrade(&cloned_s2_rc);
+        } else {
+            let cloned_s2_rc = cloned_retired_values.get(&self.s2_id).unwrap();
+            cloned_s2_ast = cloned_s2_rc.try_borrow().unwrap().get_z3_ast();
+            cloned_s2 = Weak::new();
+        };
+
+        let cloned: Rc<RefCell<RetiredValue>> = unsafe {
+            let z3_ast = Z3_mk_bvxor(
+                cloned_stdlib.z3_context,
+                cloned_s1_ast,
+                cloned_s2_ast,
+            );
+            Z3_inc_ref(cloned_stdlib.z3_context, z3_ast);
+            RetiredBVXorExpression {
+                id: self.id,
+                s1_id: self.s1_id,
+                s1: cloned_s1,
+                s2_id: self.s2_id,
+                s2: cloned_s2,
+                z3_context: cloned_stdlib.z3_context,
+                z3_ast
+            }
+        }.into();
+
+        cloned_retired_values.insert(self.id, cloned.clone());
+        cloned
     }
 }
 

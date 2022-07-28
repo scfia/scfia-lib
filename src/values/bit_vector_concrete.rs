@@ -81,7 +81,7 @@ impl BitVectorConcrete {
     }
 
     pub fn inherit(&mut self, ast_id: u64, ast: Rc<RefCell<RetiredValue>>) {
-        self.inherited_asts.insert(ast_id, ast);
+        // self.inherited_asts.insert(ast_id, ast);
     }
 
     pub fn clone_to_stdlib(
