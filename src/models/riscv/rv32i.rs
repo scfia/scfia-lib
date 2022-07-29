@@ -544,6 +544,26 @@ pub unsafe fn step(state: *mut SystemState, _stdlib: *mut ScfiaStdlib, _fork_sin
                 progress_pc_4(state, _stdlib, _fork_sink, _memory);
             }
         }
+        else if _stdlib.as_mut().unwrap().do_condition(BoolEqExpression::new(funct3.clone(), BitVectorConcrete::new(0b101, 3, _stdlib.as_mut().unwrap(), _fork_sink), _stdlib.as_mut().unwrap(), _fork_sink), _fork_sink) {
+            let lhs: Rc<RefCell<ActiveValue>> = register_read_BV32(state, extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink, _memory), _stdlib, _fork_sink, _memory);
+            let rhs: Rc<RefCell<ActiveValue>> = register_read_BV32(state, extract_rs2_32(instruction_32.clone(), _stdlib, _fork_sink, _memory), _stdlib, _fork_sink, _memory);
+            if _stdlib.as_mut().unwrap().do_condition(BoolLessThanSignedExpression::new(lhs.clone(), rhs.clone(), _stdlib.as_mut().unwrap(), _fork_sink), _fork_sink) {
+                progress_pc_4(state, _stdlib, _fork_sink, _memory);
+            }
+            else {
+                let imm_4_1: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 11, 8, _stdlib.as_mut().unwrap(), _fork_sink);
+                let imm_10_5: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 30, 25, _stdlib.as_mut().unwrap(), _fork_sink);
+                let imm11: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 7, 7, _stdlib.as_mut().unwrap(), _fork_sink);
+                let imm12: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 31, _stdlib.as_mut().unwrap(), _fork_sink);
+                let imm_4_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(imm_4_1.clone(), BitVectorConcrete::new(0b0, 1, _stdlib.as_mut().unwrap(), _fork_sink), _stdlib.as_mut().unwrap(), _fork_sink);
+                let imm_10_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(imm_10_5.clone(), imm_4_0.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
+                let imm_11_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(imm11.clone(), imm_10_0.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
+                let imm_12_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(imm12.clone(), imm_11_0.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
+                let offset: Rc<RefCell<ActiveValue>> = BVSignExtendExpression::new(imm_12_0.clone(), 13, 32, _stdlib.as_mut().unwrap(), _fork_sink);
+                let address: Rc<RefCell<ActiveValue>> = BVAddExpression::new((*state).pc.clone(), offset.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
+                (*state).pc = address.clone();
+            }
+        }
         else if _stdlib.as_mut().unwrap().do_condition(BoolEqExpression::new(funct3.clone(), BitVectorConcrete::new(0b110, 3, _stdlib.as_mut().unwrap(), _fork_sink), _stdlib.as_mut().unwrap(), _fork_sink), _fork_sink) {
             let lhs: Rc<RefCell<ActiveValue>> = register_read_BV32(state, extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink, _memory), _stdlib, _fork_sink, _memory);
             let rhs: Rc<RefCell<ActiveValue>> = register_read_BV32(state, extract_rs2_32(instruction_32.clone(), _stdlib, _fork_sink, _memory), _stdlib, _fork_sink, _memory);

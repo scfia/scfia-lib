@@ -460,7 +460,7 @@ fn test_system_state() {
     }
 
     println!("[{}s] Stepping until start of main loop", begin.elapsed().as_secs());
-    while panicking.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x6E8 {
+    while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x6E8 {
         continuing.step()
     }
 
