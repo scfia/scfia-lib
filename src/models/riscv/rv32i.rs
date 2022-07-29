@@ -857,7 +857,7 @@ pub unsafe fn execute_add32(state: *mut SystemState, destination_id: Rc<RefCell<
 impl RV32iSystemState {
     pub fn step(&mut self) {
         unsafe {
-            // println!("RV32iSystemState::step {:?}", self.system_state.pc);
+            println!("RV32iSystemState::step {:?}", self.system_state.pc);
             step(&mut self.system_state, &mut self.stdlib, &mut None, &mut self.memory);
         }
     }

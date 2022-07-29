@@ -180,6 +180,7 @@ impl ScfiaStdlib {
         }
     }
 
+    // TODO why is this broken? :()
     pub fn monomorphize(&mut self, ast: Z3_ast, candidates: &mut BTreeSet<u64>) {
         unsafe {
             let mut assumptions: Vec<Z3_ast> = vec![];
@@ -235,7 +236,7 @@ impl ScfiaStdlib {
                     panic!("{:?}", ast_kind)
                 }
                 
-                // println!("found {}", v);
+                println!("WARNING: Unexpected monomorphization candidate 0x{:x} ({} assumptions, {} candidates)", v, assumptions.len(), candidates.len());
                 debug_assert!(candidates.insert(v));
 
                 let assumption = Z3_mk_not(self.z3_context,
@@ -244,7 +245,7 @@ impl ScfiaStdlib {
                         Z3_mk_unsigned_int64(self.z3_context, v, sort),
                         ast,
                     ));
-                    Z3_inc_ref(self.z3_context, assumption);
+                Z3_inc_ref(self.z3_context, assumption);
                 assumptions.push(assumption)
             }
 
