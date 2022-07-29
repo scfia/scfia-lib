@@ -30,8 +30,8 @@ impl fmt::Debug for VolatileMemoryRegion32 {
 
 impl MemoryRegion32 for VolatileMemoryRegion32 {
     fn read(&mut self, address: u32, width: u32, stdlib: &mut crate::ScfiaStdlib, fork_sink: &mut Option<&mut ForkSink>,) -> Rc<RefCell<ActiveValue>> {
-        let s = BitVectorSymbol::new(None, width, stdlib, fork_sink);
-        println!("<= 0x{:x} (volatile) yielding {}", address, s.try_borrow().unwrap().get_id());
+        let s = BitVectorSymbol::new(None, width, format!("<= 0x{:x}", address).into(), stdlib, fork_sink);
+        // println!("<= 0x{:x} (volatile) yielding {}", address, s.try_borrow().unwrap().get_id());
         s
     }
 

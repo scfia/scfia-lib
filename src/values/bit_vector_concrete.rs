@@ -29,6 +29,7 @@ pub struct BitVectorConcrete {
     pub discovered_asts: BTreeMap<u64, Weak<RefCell<ActiveValue>>>,
     pub z3_context: Z3_context,
     pub z3_ast: Z3_ast,
+    pub depth: u64,
 }
 
 #[derive(Debug)]
@@ -75,6 +76,7 @@ impl BitVectorConcrete {
                 discovered_asts: BTreeMap::new(),
                 z3_context: stdlib.z3_context,
                 z3_ast: ast,
+                depth: 1,
             };
             bvc
         }

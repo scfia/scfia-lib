@@ -31,6 +31,7 @@ pub struct BoolNotExpression {
     pub is_assert: bool,
     pub z3_context: Z3_context,
     pub z3_ast: Z3_ast,
+    pub depth: u64,
 }
 
 #[derive(Debug)]
@@ -82,6 +83,10 @@ impl BoolNotExpression {
                 s1.try_borrow().unwrap().get_z3_ast(),
             );
             Z3_inc_ref(z3_context, ast);
+            let depth = 1 + s1.try_borrow().unwrap().get_depth();
+            if depth > super::MAX_DEPTH {
+                panic!("Depth too big:\n{:?}", s1)
+            }
             BoolNotExpression {
                 id,
                 s1: s1,
@@ -90,6 +95,7 @@ impl BoolNotExpression {
                 is_assert: false,
                 z3_context: z3_context,
                 z3_ast: ast,
+                depth,
             }
         }
     }

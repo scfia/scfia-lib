@@ -122,6 +122,7 @@ fn test_system_state() {
         if let Ph32(ph32) = program_header {
             match program_header.get_type().unwrap() {
                 program::Type::Load => {
+                    println!("{:?}", program_header);
                     let mut i = 0;
                     let mut stable_region =
                         StableMemoryRegion32::new(ph32.virtual_addr as u32, ph32.mem_size as u32);
@@ -219,6 +220,7 @@ fn test_system_state() {
         stdlib,
     };
 
+    let begin = Instant::now();
     println!("Stepping until NIC1 receivequeue queue_pfn check");
     while rv32i_system_state.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x24 {
         rv32i_system_state.step();
@@ -228,26 +230,26 @@ fn test_system_state() {
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
 
-    println!("Stepping panic until loop");
+    println!("[{}s] Stepping panic until loop", begin.elapsed().as_secs());
     while panicking.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x508 {
         panicking.step()
     }
 
-    println!("Stepping {} until NIC1 receivequeue queue_num_max 0 check", continuing.stdlib.id);
+    println!("[{}s] Stepping until NIC1 receivequeue queue_num_max 0 check", begin.elapsed().as_secs());
     while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x30 {
         continuing.step()
     }
-    
+
     let mut successors = continuing.step_forking();
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
-    
-    println!("Stepping panic until loop");
+
+    println!("[{}s] Stepping panic until loop", begin.elapsed().as_secs());
     while panicking.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x508 {
         panicking.step()
     }
 
-    println!("Stepping {} until NIC1 receivequeue queue_num_max <1024 check", continuing.stdlib.id);
+    println!("[{}s] Stepping until NIC1 receivequeue queue_num_max <1024 check", begin.elapsed().as_secs());
     while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x38 {
         continuing.step()
     }
@@ -256,20 +258,20 @@ fn test_system_state() {
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
 
-    println!("Stepping panic until loop");
+    println!("[{}s] Stepping panic until loop", begin.elapsed().as_secs());
     while panicking.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x508 {
         panicking.step()
     }
 
-    println!("Stepping until NIC2 receivequeue configure_virtqueue");
+    println!("[{}s] Stepping until NIC2 receivequeue configure_virtqueue", begin.elapsed().as_secs());
     while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x4 {
         continuing.step();
     }
 
-    println!("Cloning state to free some z3 memory");
+    println!("[{}s] Cloning state to free some z3 memory", begin.elapsed().as_secs());
     continuing = continuing.clone();
 
-    println!("Stepping until NIC2 receivequeue queue_pfn check");
+    println!("[{}s] Stepping until NIC2 receivequeue queue_pfn check", begin.elapsed().as_secs());
     while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x24 {
         continuing.step();
     }
@@ -278,7 +280,7 @@ fn test_system_state() {
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
 
-    println!("Stepping panic until loop");
+    println!("[{}s] Stepping panic until loop", begin.elapsed().as_secs());
     while panicking.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x508 {
         panicking.step()
     }

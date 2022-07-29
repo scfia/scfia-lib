@@ -48,7 +48,7 @@ impl MemoryRegion32 for StableMemoryRegion32 {
                 byte_values.push_back(byte.clone());
             } else {
                 println!("Warning: Reading from uninitialized 0x{:x}", address + i);
-                byte_values.push_back(BitVectorSymbol::new(None, 8, stdlib, fork_sink))
+                byte_values.push_back(BitVectorSymbol::new(None, 8, format!("<= 0x{:x}", address+i).into(), stdlib, fork_sink))
             }
         }
 

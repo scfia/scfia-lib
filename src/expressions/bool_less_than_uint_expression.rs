@@ -32,6 +32,7 @@ pub struct BoolLessThanUIntExpression {
     pub is_assert: bool,
     pub z3_context: Z3_context,
     pub z3_ast: Z3_ast,
+    pub depth: u64,
 }
 
 #[derive(Debug)]
@@ -94,9 +95,11 @@ impl BoolLessThanUIntExpression {
                 s2.try_borrow().unwrap().get_z3_ast(),
             );
             
-            debug_assert!(s1.try_borrow().unwrap().get_id() < id);
-            debug_assert!(s2.try_borrow().unwrap().get_id() < id);
             Z3_inc_ref(z3_context, ast);
+            let depth = 1 + std::cmp::max(s1.try_borrow().unwrap().get_depth(), s2.try_borrow().unwrap().get_depth());
+            if depth > super::MAX_DEPTH {
+                panic!("Depth too big:\n{:?}\n{:?}", s1, s2)
+            }
             BoolLessThanUIntExpression {
                 id,
                 s1: s1,
@@ -106,6 +109,7 @@ impl BoolLessThanUIntExpression {
                 is_assert: false,
                 z3_context: z3_context,
                 z3_ast: ast,
+                depth,
             }
         }
     }

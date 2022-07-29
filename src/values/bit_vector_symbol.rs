@@ -26,6 +26,8 @@ pub struct BitVectorSymbol {
     pub discovered_asts: BTreeMap<u64, Weak<RefCell<ActiveValue>>>,
     pub z3_context: Z3_context,
     pub z3_ast: Z3_ast,
+    pub depth: u64,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug)]
@@ -41,10 +43,11 @@ impl BitVectorSymbol {
     pub fn new(
         expression: Option<(u64, Rc<RefCell<ActiveValue>>)>,
         width: u32,
+        comment: Option<String>,
         stdlib: &mut ScfiaStdlib,
         fork_sink: &mut Option<&mut ForkSink>
     ) -> Rc<RefCell<ActiveValue>> {
-        let value: Rc<RefCell<ActiveValue>> = Self::new_with_id(stdlib.get_symbol_id(), stdlib.id.clone(), width, expression, stdlib).into();
+        let value: Rc<RefCell<ActiveValue>> = Self::new_with_id(stdlib.get_symbol_id(), stdlib.id.clone(), width, expression, comment, stdlib).into();
         if let Some(fork_sink) = fork_sink {
             fork_sink.new_values.push(value.clone());
         }
@@ -56,6 +59,7 @@ impl BitVectorSymbol {
         stdlib_id: String,
         width: u32,
         expression: Option<(u64, Rc<RefCell<ActiveValue>>)>,
+        comment: Option<String>,
         stdlib: &mut ScfiaStdlib,
     ) -> Self {
         unsafe {
@@ -81,6 +85,8 @@ impl BitVectorSymbol {
                 discovered_asts: BTreeMap::new(),
                 z3_context,
                 z3_ast,
+                depth: 1,
+                comment,
             };
 
             bvs
@@ -104,7 +110,8 @@ impl BitVectorSymbol {
             cloned_stdlib.id.clone(),
             self.width,
             cloned_expression,
-            cloned_stdlib
+            self.comment.clone(),
+            cloned_stdlib,
         );
 
         finish_clone(

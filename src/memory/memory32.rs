@@ -71,13 +71,13 @@ impl Memory32 {
     }
 
     fn read_concrete(&mut self, address: u32, width: u32, stdlib: &mut ScfiaStdlib, fork_sink: &mut Option<&mut ForkSink>,) -> Rc<RefCell<ActiveValue>> {
-        for region in &mut self.stable_memory_regions {
+        for region in &mut self.volatile_memory_regions {
             if address >= region.start_address && address < region.start_address + region.length {
                 return region.read(address, width, stdlib, fork_sink)
             }
         }
 
-        for region in &mut self.volatile_memory_regions {
+        for region in &mut self.stable_memory_regions {
             if address >= region.start_address && address < region.start_address + region.length {
                 return region.read(address, width, stdlib, fork_sink)
             }

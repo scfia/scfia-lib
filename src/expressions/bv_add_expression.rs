@@ -28,6 +28,7 @@ pub struct BVAddExpression {
     pub discovered_asts: BTreeMap<u64, Weak<RefCell<ActiveValue>>>,
     pub z3_context: Z3_context,
     pub z3_ast: Z3_ast,
+    pub depth: u64,
 }
 
 #[derive(Debug)]
@@ -94,6 +95,12 @@ impl BVAddExpression {
                 s2.try_borrow().unwrap().get_z3_ast(),
             );
             Z3_inc_ref(z3_context, ast);
+            let depth = 1 + std::cmp::max(s1.try_borrow().unwrap().get_depth(), s2.try_borrow().unwrap().get_depth());
+            if depth > super::MAX_DEPTH {
+                println!("s1={}", s1.try_borrow().unwrap().to_json());
+                println!("s2={}", s2.try_borrow().unwrap().to_json());
+                panic!("Depth too big:\n{:?}\n{:?}", s1, s2)
+            }
             BVAddExpression {
                 id: id,
                 s1: s1,
@@ -102,6 +109,7 @@ impl BVAddExpression {
                 discovered_asts: BTreeMap::new(),
                 z3_context: z3_context,
                 z3_ast: ast,
+                depth,
             }
         }
     }

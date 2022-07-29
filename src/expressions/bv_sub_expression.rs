@@ -40,6 +40,7 @@ pub struct BVSubExpression {
     pub discovered_asts: BTreeMap<u64, Weak<RefCell<ActiveValue>>>,
     pub z3_context: Z3_context,
     pub z3_ast: Z3_ast,
+    pub depth: u64,
 }
 
 #[derive(Debug)]
@@ -106,6 +107,10 @@ impl BVSubExpression {
                 s2.try_borrow().unwrap().get_z3_ast(),
             );
             Z3_inc_ref(z3_context, ast);
+            let depth = 1 + std::cmp::max(s1.try_borrow().unwrap().get_depth(), s2.try_borrow().unwrap().get_depth());
+            if depth > super::MAX_DEPTH {
+                panic!("Depth too big:\n{:?}\n{:?}", s1, s2)
+            }
             BVSubExpression {
                 id: id,
                 s1: s1,
@@ -114,6 +119,7 @@ impl BVSubExpression {
                 discovered_asts: BTreeMap::new(),
                 z3_context: z3_context,
                 z3_ast: ast,
+                depth,
             }
         }
     }
@@ -250,7 +256,7 @@ impl Drop for RetiredBVSubExpression {
 #[test]
 fn test_sub_symbolic1() {
     let mut stdlib = ScfiaStdlib::new("0".to_string());
-    let s1 = BitVectorSymbol::new(None, 32, &mut stdlib, &mut None);
+    let s1 = BitVectorSymbol::new(None, 32, None, &mut stdlib, &mut None);
     let sub = BVSubExpression::new(s1.clone(), BitVectorConcrete::new(1, 32, &mut stdlib, &mut None), &mut stdlib, &mut None);
     let eq = BoolEqExpression::new(sub, BitVectorConcrete::new(i32::MAX as u64, 32, &mut stdlib, &mut None), &mut stdlib, &mut None);
     // x - 1 = i32::MAX
@@ -291,7 +297,7 @@ fn test_sub_symbolic1() {
 #[test]
 fn test_sub_symbolic2() {
     let mut stdlib = ScfiaStdlib::new("0".to_string());
-    let s1 = BitVectorSymbol::new(None, 32, &mut stdlib, &mut None);
+    let s1 = BitVectorSymbol::new(None, 32, None, &mut stdlib, &mut None);
     let sub = BVSubExpression::new(s1.clone(), BitVectorConcrete::new(1, 32, &mut stdlib, &mut None), &mut stdlib, &mut None);
     let eq = BoolEqExpression::new(sub, BitVectorConcrete::new(5 as u64, 32, &mut stdlib, &mut None), &mut stdlib, &mut None);
     // x - 1 = 5

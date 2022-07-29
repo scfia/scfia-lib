@@ -18,6 +18,7 @@ use z3_sys::Z3_inc_ref;
 use z3_sys::Z3_mk_eq;
 use z3_sys::Z3_solver_assert;
 
+use super::MAX_DEPTH;
 use super::finish_clone;
 use super::inherit;
 
@@ -31,6 +32,7 @@ pub struct BoolEqExpression {
     pub is_assert: bool,
     pub z3_context: Z3_context,
     pub z3_ast: Z3_ast,
+    pub depth: u64,
 }
 
 #[derive(Debug)]
@@ -93,6 +95,10 @@ impl BoolEqExpression {
                 s2.try_borrow().unwrap().get_z3_ast(),
             );
             Z3_inc_ref(z3_context, ast);
+            let depth = 1 + std::cmp::max(s1.try_borrow().unwrap().get_depth(), s2.try_borrow().unwrap().get_depth());
+            if depth > MAX_DEPTH {
+                panic!("Depth too big:\n{:?}\n{:?}", s1, s2)
+            }
             BoolEqExpression {
                 id,
                 s1: s1,
@@ -102,6 +108,7 @@ impl BoolEqExpression {
                 is_assert: false,
                 z3_context: z3_context,
                 z3_ast: ast,
+                depth,
             }
         }
     }

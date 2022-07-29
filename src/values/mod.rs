@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::{Rc, Weak}, collections::BTreeMap};
 use std::collections::HashMap;
 use z3_sys::Z3_solver_assert;
 
-use crate::{ScfiaStdlib, expressions::{bool_less_than_uint_expression::{BoolLessThanUIntExpression, RetiredBoolLessThanUIntExpression}, bool_not_expression::{RetiredBoolNotExpression, BoolNotExpression}, bv_and_expression::{BVAndExpression, RetiredBVAndExpression}, bv_shift_right_logical_expression::{BVShiftRightLogicalExpression, RetiredBVShiftRightLogicalExpression}, bv_shift_left_logical_expression::{BVShiftLeftLogicalExpression, RetiredBVShiftLeftLogicalExpression}, bv_xor_expression::{BVXorExpression, RetiredBVXorExpression}, bv_sub_expression::{BVSubExpression, RetiredBVSubExpression}, bool_less_than_signed_expression::{BoolLessThanSignedExpression, RetiredBoolLessThanSignedExpression}, bv_multiply_expression::{BVMultiplyExpression, RetiredBVMultiplyExpression}, bv_unsigned_remainder_expression::{RetiredBVUnsignedRemainderExpression, BVUnsignedRemainderExpression}}};
+use crate::{ScfiaStdlib, expressions::{bool_less_than_uint_expression::{BoolLessThanUIntExpression, RetiredBoolLessThanUIntExpression}, bool_not_expression::{RetiredBoolNotExpression, BoolNotExpression}, bv_and_expression::{BVAndExpression, RetiredBVAndExpression}, bv_shift_right_logical_expression::{BVShiftRightLogicalExpression, RetiredBVShiftRightLogicalExpression}, bv_shift_left_logical_expression::{BVShiftLeftLogicalExpression, RetiredBVShiftLeftLogicalExpression}, bv_xor_expression::{BVXorExpression, RetiredBVXorExpression}, bv_sub_expression::{BVSubExpression, RetiredBVSubExpression}, bool_less_than_signed_expression::{BoolLessThanSignedExpression, RetiredBoolLessThanSignedExpression}, bv_multiply_expression::{BVMultiplyExpression, RetiredBVMultiplyExpression}, bv_unsigned_remainder_expression::{RetiredBVUnsignedRemainderExpression, BVUnsignedRemainderExpression}, MAX_DEPTH}};
 
 use crate::{expressions::{bool_eq_expression::{BoolEqExpression, RetiredBoolEqExpression}, bool_neq_expression::{BoolNEqExpression, RetiredBoolNEqExpression}, bv_add_expression::{BVAddExpression, RetiredBVAddExpression}, bv_concat_expression::{BVConcatExpression, RetiredBVConcatExpression}, bv_or_expression::{BVOrExpression, RetiredBVOrExpression}, bv_sign_extend_expression::{BVSignExtendExpression, RetiredBVSignExtendExpression}, bv_slice_expression::{BVSliceExpression, RetiredBVSliceExpression}}};
 
@@ -84,6 +84,10 @@ impl ActiveValue {
             let clone = cloned_active_value.clone();
             debug_assert_eq!(clone.try_borrow().unwrap().get_id(), self.get_id());
             return clone
+        }
+
+        if self.get_depth() > MAX_DEPTH {
+            panic!("{:?}", self)
         }
 
         let clone = match self {
@@ -217,6 +221,131 @@ impl RetiredValue {
 }
 
 impl ActiveValue {
+    pub fn to_json(&self) -> serde_json::Value {
+        // println!("to_json {} (depth {})", self.get_id(), depth);
+        let mut map = serde_json::Map::new();
+        match self {
+            ActiveValue::BitvectorConcrete(e) => {
+                map.insert("id".into(), serde_json::Value::Number(e.id.into()));
+                map.insert("valueType".into(), serde_json::Value::String("BitvectorConcrete".into()));
+                map.insert("value".into(), serde_json::Value::Number(e.value.into()));
+            }
+            ActiveValue::BitvectorSymbol(e) => {
+                map.insert("id".into(), serde_json::Value::Number(e.id.into()));
+                if let Some(comment) = &e.comment {
+                    map.insert("comment".into(), serde_json::Value::String(comment.into()));
+                }
+                map.insert("valueType".into(), serde_json::Value::String("BitvectorSymbol".into()));
+            }
+            ActiveValue::BoolEqExpression(e) => {
+                map.insert("id".into(), serde_json::Value::Number(e.id.into()));
+                map.insert("valueType".into(), serde_json::Value::String("BoolEqExpression".into()));
+                map.insert("s1".into(), e.s1.try_borrow().unwrap().to_json());
+                map.insert("s2".into(), e.s2.try_borrow().unwrap().to_json());
+            }
+            ActiveValue::BoolLessThanUIntExpression(e) => {
+                map.insert("id".into(), serde_json::Value::Number(e.id.into()));
+                map.insert("valueType".into(), serde_json::Value::String("BoolLessThanUIntExpression".into()));
+                map.insert("s1".into(), e.s1.try_borrow().unwrap().to_json());
+                map.insert("s2".into(), e.s2.try_borrow().unwrap().to_json());
+            }
+            ActiveValue::BoolLessThanSignedExpression(e) => {
+                map.insert("id".into(), serde_json::Value::Number(e.id.into()));
+                map.insert("valueType".into(), serde_json::Value::String("BoolLessThanSignedExpression".into()));
+                map.insert("s1".into(), e.s1.try_borrow().unwrap().to_json());
+                map.insert("s2".into(), e.s2.try_borrow().unwrap().to_json());
+            }
+            ActiveValue::BoolNEqExpression(e) => {
+                map.insert("id".into(), serde_json::Value::Number(e.id.into()));
+                map.insert("valueType".into(), serde_json::Value::String("BoolNEqExpression".into()));
+                map.insert("s1".into(), e.s1.try_borrow().unwrap().to_json());
+                map.insert("s2".into(), e.s2.try_borrow().unwrap().to_json());
+            }
+            ActiveValue::BoolNotExpression(e) => {
+                map.insert("id".into(), serde_json::Value::Number(e.id.into()));
+                map.insert("valueType".into(), serde_json::Value::String("BoolNotExpression".into()));
+                map.insert("s1".into(), e.s1.try_borrow().unwrap().to_json());
+            }
+            ActiveValue::BoolConcrete(e) => {
+                map.insert("id".into(), serde_json::Value::Number(e.id.into()));
+                map.insert("valueType".into(), serde_json::Value::String("BoolConcrete".into()));
+                map.insert("value".into(), serde_json::Value::Bool(e.value.into()));
+            }
+            ActiveValue::BitvectorAddExpression(e) => {
+                map.insert("id".into(), serde_json::Value::Number(e.id.into()));
+                map.insert("valueType".into(), serde_json::Value::String("BitvectorAddExpression".into()));
+                map.insert("s1".into(), e.s1.try_borrow().unwrap().to_json());
+                map.insert("s2".into(), e.s2.try_borrow().unwrap().to_json());
+            }
+            ActiveValue::BitvectorUnsignedRemainderExpression(e) => {
+                map.insert("id".into(), serde_json::Value::Number(e.id.into()));
+                map.insert("valueType".into(), serde_json::Value::String("BitvectorUnsignedRemainderExpression".into()));
+                map.insert("s1".into(), e.s1.try_borrow().unwrap().to_json());
+                map.insert("s2".into(), e.s2.try_borrow().unwrap().to_json());
+            }
+            ActiveValue::BitvectorMultiplyExpression(e) => {
+                map.insert("id".into(), serde_json::Value::Number(e.id.into()));
+                map.insert("valueType".into(), serde_json::Value::String("BitvectorMultiplyExpression".into()));
+                map.insert("s1".into(), e.s1.try_borrow().unwrap().to_json());
+                map.insert("s2".into(), e.s2.try_borrow().unwrap().to_json());
+            }
+            ActiveValue::BitvectorAndExpression(e) => {
+                map.insert("id".into(), serde_json::Value::Number(e.id.into()));
+                map.insert("valueType".into(), serde_json::Value::String("BitvectorAndExpression".into()));
+                map.insert("s1".into(), e.s1.try_borrow().unwrap().to_json());
+                map.insert("s2".into(), e.s2.try_borrow().unwrap().to_json());
+            }
+            ActiveValue::BitvectorSubExpression(e) => {
+                map.insert("id".into(), serde_json::Value::Number(e.id.into()));
+                map.insert("valueType".into(), serde_json::Value::String("BitvectorSubExpression".into()));
+                map.insert("s1".into(), e.s1.try_borrow().unwrap().to_json());
+                map.insert("s2".into(), e.s2.try_borrow().unwrap().to_json());
+            }
+            ActiveValue::BitvectorXorExpression(e) => {
+                map.insert("id".into(), serde_json::Value::Number(e.id.into()));
+                map.insert("valueType".into(), serde_json::Value::String("BitvectorXorExpression".into()));
+                map.insert("s1".into(), e.s1.try_borrow().unwrap().to_json());
+                map.insert("s2".into(), e.s2.try_borrow().unwrap().to_json());
+            }
+            ActiveValue::BitvectorConcatExpression(e) => {
+                map.insert("id".into(), serde_json::Value::Number(e.id.into()));
+                map.insert("valueType".into(), serde_json::Value::String("BitvectorConcatExpression".into()));
+                map.insert("s1".into(), e.s1.try_borrow().unwrap().to_json());
+                map.insert("s2".into(), e.s2.try_borrow().unwrap().to_json());
+            }
+            ActiveValue::BitvectorOrExpression(e) => {
+                map.insert("id".into(), serde_json::Value::Number(e.id.into()));
+                map.insert("valueType".into(), serde_json::Value::String("BitvectorOrExpression".into()));
+                map.insert("s1".into(), e.s1.try_borrow().unwrap().to_json());
+                map.insert("s2".into(), e.s2.try_borrow().unwrap().to_json());
+            }
+            ActiveValue::BitvectorSignExtendExpression(e) => {
+                map.insert("id".into(), serde_json::Value::Number(e.id.into()));
+                map.insert("valueType".into(), serde_json::Value::String("BitvectorSignExtendExpression".into()));
+                map.insert("s1".into(), e.s1.try_borrow().unwrap().to_json());
+            }
+            ActiveValue::BitvectorSliceExpression(e) => {
+                map.insert("id".into(), serde_json::Value::Number(e.id.into()));
+                map.insert("valueType".into(), serde_json::Value::String("BitvectorSliceExpression".into()));
+                map.insert("s1".into(), e.s1.try_borrow().unwrap().to_json());
+            }
+            ActiveValue::BitvectorShiftRightLogicalExpression(e) => {
+                map.insert("id".into(), serde_json::Value::Number(e.id.into()));
+                map.insert("valueType".into(), serde_json::Value::String("BitvectorShiftRightLogicalExpression".into()));
+                map.insert("s1".into(), e.s1.try_borrow().unwrap().to_json());
+                map.insert("s2".into(), e.s2.try_borrow().unwrap().to_json());
+            }
+            ActiveValue::BitvectorShiftLeftLogicalExpression(e) => {
+                map.insert("id".into(), serde_json::Value::Number(e.id.into()));
+                map.insert("valueType".into(), serde_json::Value::String("BitvectorShiftLeftLogicalExpression".into()));
+                map.insert("s1".into(), e.s1.try_borrow().unwrap().to_json());
+                map.insert("s2".into(), e.s2.try_borrow().unwrap().to_json());
+            }
+        }
+
+        serde_json::Value::Object(map)
+    }
+
     pub fn get_id(&self) -> u64 {
         match self {
             ActiveValue::BitvectorConcrete(e) => e.id,
@@ -267,83 +396,107 @@ impl ActiveValue {
         }
     }
 
+    pub fn get_depth(&self) -> u64 {
+        match self {
+            ActiveValue::BitvectorConcrete(e) => e.depth,
+            ActiveValue::BitvectorSymbol(e) => e.depth,
+            ActiveValue::BoolEqExpression(e) => e.depth,
+            ActiveValue::BoolLessThanUIntExpression(e) => e.depth,
+            ActiveValue::BoolLessThanSignedExpression(e) => e.depth,
+            ActiveValue::BoolNEqExpression(e) => e.depth,
+            ActiveValue::BoolNotExpression(e) => e.depth,
+            ActiveValue::BoolConcrete(e) => e.depth,
+            ActiveValue::BitvectorAddExpression(e) => e.depth,
+            ActiveValue::BitvectorUnsignedRemainderExpression(e) => e.depth,
+            ActiveValue::BitvectorMultiplyExpression(e) => e.depth,
+            ActiveValue::BitvectorAndExpression(e) => e.depth,
+            ActiveValue::BitvectorSubExpression(e) => e.depth,
+            ActiveValue::BitvectorXorExpression(e) => e.depth,
+            ActiveValue::BitvectorConcatExpression(e) => e.depth,
+            ActiveValue::BitvectorOrExpression(e) => e.depth,
+            ActiveValue::BitvectorSignExtendExpression(e) => e.depth,
+            ActiveValue::BitvectorSliceExpression(e) => e.depth,
+            ActiveValue::BitvectorShiftRightLogicalExpression(e) => e.depth,
+            ActiveValue::BitvectorShiftLeftLogicalExpression(e) => e.depth,
+        }
+    }
+
+    pub fn get_inherited_asts(&mut self) -> &mut BTreeMap<u64, Rc<RefCell<RetiredValue>>> {
+        match self {
+            ActiveValue::BitvectorConcrete(e) => panic!(),
+            ActiveValue::BitvectorSymbol(e) => &mut e.inherited_asts,
+            ActiveValue::BoolEqExpression(e) => &mut e.inherited_asts,
+            ActiveValue::BoolLessThanUIntExpression(e) => &mut e.inherited_asts,
+            ActiveValue::BoolLessThanSignedExpression(e) => &mut e.inherited_asts,
+            ActiveValue::BoolNEqExpression(e) => &mut e.inherited_asts,
+            ActiveValue::BoolNotExpression(e) => &mut e.inherited_asts,
+            ActiveValue::BoolConcrete(e) => panic!(),
+            ActiveValue::BitvectorAddExpression(e) => &mut e.inherited_asts,
+            ActiveValue::BitvectorUnsignedRemainderExpression(e) => &mut e.inherited_asts,
+            ActiveValue::BitvectorMultiplyExpression(e) => &mut e.inherited_asts,
+            ActiveValue::BitvectorAndExpression(e) => &mut e.inherited_asts,
+            ActiveValue::BitvectorSubExpression(e) => &mut e.inherited_asts,
+            ActiveValue::BitvectorXorExpression(e) => &mut e.inherited_asts,
+            ActiveValue::BitvectorConcatExpression(e) => &mut e.inherited_asts,
+            ActiveValue::BitvectorOrExpression(e) => &mut e.inherited_asts,
+            ActiveValue::BitvectorSignExtendExpression(e) => &mut e.inherited_asts,
+            ActiveValue::BitvectorSliceExpression(e) => &mut e.inherited_asts,
+            ActiveValue::BitvectorShiftRightLogicalExpression(e) => &mut e.inherited_asts,
+            ActiveValue::BitvectorShiftLeftLogicalExpression(e) => &mut e.inherited_asts,
+        }
+    }
+
+    pub fn get_discovered_asts(&mut self) -> &mut BTreeMap<u64, Weak<RefCell<ActiveValue>>> {
+        match self {
+            ActiveValue::BitvectorConcrete(e) => &mut e.discovered_asts,
+            ActiveValue::BitvectorSymbol(e) => &mut e.discovered_asts,
+            ActiveValue::BoolEqExpression(e) => &mut e.discovered_asts,
+            ActiveValue::BoolLessThanUIntExpression(e) => &mut e.discovered_asts,
+            ActiveValue::BoolLessThanSignedExpression(e) => &mut e.discovered_asts,
+            ActiveValue::BoolNEqExpression(e) => &mut e.discovered_asts,
+            ActiveValue::BoolNotExpression(e) => &mut e.discovered_asts,
+            ActiveValue::BoolConcrete(e) => &mut e.discovered_asts,
+            ActiveValue::BitvectorAddExpression(e) => &mut e.discovered_asts,
+            ActiveValue::BitvectorUnsignedRemainderExpression(e) => &mut e.discovered_asts,
+            ActiveValue::BitvectorMultiplyExpression(e) => &mut e.discovered_asts,
+            ActiveValue::BitvectorAndExpression(e) => &mut e.discovered_asts,
+            ActiveValue::BitvectorSubExpression(e) => &mut e.discovered_asts,
+            ActiveValue::BitvectorXorExpression(e) => &mut e.discovered_asts,
+            ActiveValue::BitvectorConcatExpression(e) => &mut e.discovered_asts,
+            ActiveValue::BitvectorOrExpression(e) => &mut e.discovered_asts,
+            ActiveValue::BitvectorSignExtendExpression(e) => &mut e.discovered_asts,
+            ActiveValue::BitvectorSliceExpression(e) => &mut e.discovered_asts,
+            ActiveValue::BitvectorShiftRightLogicalExpression(e) => &mut e.discovered_asts,
+            ActiveValue::BitvectorShiftLeftLogicalExpression(e) => &mut e.discovered_asts,
+        }
+    }
+
     pub fn inherit(&mut self, ast_id: u64, ast: Rc<RefCell<RetiredValue>>) {
         debug_assert_ne!(self.get_id(), ast_id);
-        match self {
-            ActiveValue::BitvectorConcrete(e) => {},
-            ActiveValue::BitvectorSymbol(e) => { e.inherited_asts.insert(ast_id, ast); },
-            ActiveValue::BoolEqExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
-            ActiveValue::BoolNEqExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
-            ActiveValue::BitvectorAddExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
-            ActiveValue::BitvectorConcatExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
-            ActiveValue::BitvectorOrExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
-            ActiveValue::BitvectorSignExtendExpression(e) =>{ e.inherited_asts.insert(ast_id, ast); },
-            ActiveValue::BitvectorSliceExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
-            ActiveValue::BoolLessThanUIntExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
-            ActiveValue::BoolNotExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
-            ActiveValue::BitvectorAndExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
-            ActiveValue::BitvectorShiftRightLogicalExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
-            ActiveValue::BitvectorShiftLeftLogicalExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
-            ActiveValue::BoolConcrete(e) => {},
-            ActiveValue::BitvectorXorExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
-            ActiveValue::BitvectorSubExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
-            ActiveValue::BoolLessThanSignedExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
-            ActiveValue::BitvectorMultiplyExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
-            ActiveValue::BitvectorUnsignedRemainderExpression(e) => { e.inherited_asts.insert(ast_id, ast); },
+        let inherited_asts = self.get_inherited_asts();
+        if inherited_asts.len() > 100 {
+            println!("{} inherited too much", self.get_id());
+            println!("{}", self.to_json());
+            panic!("{:?}", self)
         }
+        inherited_asts.insert(ast_id, ast);
     }
 
     pub fn forget(&mut self, id: u64) {
-        match self {
-            ActiveValue::BitvectorConcrete(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
-            ActiveValue::BitvectorSymbol(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
-            ActiveValue::BoolEqExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
-            ActiveValue::BoolNEqExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
-            ActiveValue::BitvectorAddExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
-            ActiveValue::BitvectorConcatExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
-            ActiveValue::BitvectorOrExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
-            ActiveValue::BitvectorSignExtendExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
-            ActiveValue::BitvectorSliceExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
-            ActiveValue::BoolLessThanUIntExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
-            ActiveValue::BoolNotExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
-            ActiveValue::BitvectorAndExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
-            ActiveValue::BitvectorShiftRightLogicalExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
-            ActiveValue::BitvectorShiftLeftLogicalExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
-            ActiveValue::BoolConcrete(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
-            ActiveValue::BitvectorXorExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
-            ActiveValue::BitvectorSubExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
-            ActiveValue::BoolLessThanSignedExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
-            ActiveValue::BitvectorMultiplyExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
-            ActiveValue::BitvectorUnsignedRemainderExpression(e) => { assert!(e.discovered_asts.remove(&id).is_some()); },
-        }
+        debug_assert_ne!(self.get_id(), id);
+        let discovered_asts = self.get_discovered_asts();
+        assert!(discovered_asts.remove(&id).is_some());
     }
 
     pub fn discover(&mut self, ast_id: u64, ast: Weak<RefCell<ActiveValue>>) {
-        if self.get_id() == 16012 {
-            println!("{} discovering {}", self.get_id(), ast_id);
+        debug_assert_ne!(self.get_id(), ast_id);
+        let discovered_asts = self.get_discovered_asts();
+        if discovered_asts.len() > 100 {
+            println!("{} discovered too much", self.get_id());
+            println!("{}", self.to_json());
+            panic!("{:?}", self)
         }
-        match self {
-            ActiveValue::BitvectorConcrete(e) => { e.discovered_asts.insert(ast_id, ast); },
-            ActiveValue::BitvectorSymbol(e) => { e.discovered_asts.insert(ast_id, ast); },
-            ActiveValue::BoolEqExpression(e) => { e.discovered_asts.insert(ast_id, ast); },
-            ActiveValue::BoolNEqExpression(e) => { e.discovered_asts.insert(ast_id, ast); },
-            ActiveValue::BitvectorAddExpression(e) => { e.discovered_asts.insert(ast_id, ast); },
-            ActiveValue::BitvectorConcatExpression(e) => { e.discovered_asts.insert(ast_id, ast); },
-            ActiveValue::BitvectorOrExpression(e) => { e.discovered_asts.insert(ast_id, ast); },
-            ActiveValue::BitvectorSignExtendExpression(e) => { e.discovered_asts.insert(ast_id, ast); },
-            ActiveValue::BitvectorSliceExpression(e) => { e.discovered_asts.insert(ast_id, ast); },
-            ActiveValue::BoolLessThanUIntExpression(e) => { e.discovered_asts.insert(ast_id, ast); },
-            ActiveValue::BoolNotExpression(e) => { e.discovered_asts.insert(ast_id, ast); },
-            ActiveValue::BitvectorAndExpression(e) => { e.discovered_asts.insert(ast_id, ast); },
-            ActiveValue::BitvectorShiftRightLogicalExpression(e) => { e.discovered_asts.insert(ast_id, ast); },
-            ActiveValue::BitvectorShiftLeftLogicalExpression(e) => { e.discovered_asts.insert(ast_id, ast); },
-            ActiveValue::BoolConcrete(e) => { e.discovered_asts.insert(ast_id, ast); },
-            ActiveValue::BitvectorXorExpression(e) => { e.discovered_asts.insert(ast_id, ast); },
-            ActiveValue::BitvectorSubExpression(e) => { e.discovered_asts.insert(ast_id, ast); },
-            ActiveValue::BoolLessThanSignedExpression(e) => { e.discovered_asts.insert(ast_id, ast); },
-            ActiveValue::BitvectorMultiplyExpression(e) => { e.discovered_asts.insert(ast_id, ast); },
-            ActiveValue::BitvectorUnsignedRemainderExpression(e) => { e.discovered_asts.insert(ast_id, ast); },
-        }
+        discovered_asts.insert(ast_id, ast);
     }
 }
 

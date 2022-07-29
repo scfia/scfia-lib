@@ -20,6 +20,8 @@ pub mod bv_xor_expression;
 pub mod bv_multiply_expression;
 pub mod bv_unsigned_remainder_expression;
 
+pub const MAX_DEPTH: u64 = 30;
+
 
 pub(crate) fn inherit(
     id: u64,
@@ -42,13 +44,21 @@ pub(crate) fn inherit(
         let mut heir_ref = heir.try_borrow_mut().unwrap();
         debug_assert_eq!(*heir_id, heir_ref.get_id());
 
-        // Inherit
-        heir_ref.inherit(id, retired_expression.clone());
+        // Inherit if parent is not concrete
+        match *heir_ref {
+            ActiveValue::BitvectorConcrete(_) => {},
+            ActiveValue::BoolConcrete(_) => {},
+            _ => {heir_ref.inherit(id, retired_expression.clone())}
+        }
 
         // Pass on inherited symbols
         for (inherited_id, inherited) in inherited_asts {
             // println!("passing on {} to {}", inherited_id, &heir_ref.get_id());
-            heir_ref.inherit(*inherited_id, inherited.clone());
+            match *heir_ref {
+                ActiveValue::BitvectorConcrete(_) => {},
+                ActiveValue::BoolConcrete(_) => {},
+                _ => { heir_ref.inherit(*inherited_id, inherited.clone()); }
+            }
         }
 
         // Acquaint all heirs

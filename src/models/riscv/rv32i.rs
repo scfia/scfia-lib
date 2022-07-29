@@ -747,7 +747,7 @@ pub unsafe fn register_write_BV32(state: *mut SystemState, register_id: Rc<RefCe
 
 pub unsafe fn register_read_BV32(state: *mut SystemState, register_id: Rc<RefCell<ActiveValue>>, _stdlib: *mut ScfiaStdlib, _fork_sink: &mut Option<&mut ForkSink>, _memory: &mut Memory32) -> Rc<RefCell<ActiveValue>> {
     if _stdlib.as_mut().unwrap().do_condition(BoolEqExpression::new(register_id.clone(), BitVectorConcrete::new(0b0, 5, _stdlib.as_mut().unwrap(), _fork_sink), _stdlib.as_mut().unwrap(), _fork_sink), _fork_sink) {
-        return (*state).x0.clone();
+        return BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink);
     }
     else if _stdlib.as_mut().unwrap().do_condition(BoolEqExpression::new(register_id.clone(), BitVectorConcrete::new(0b1, 5, _stdlib.as_mut().unwrap(), _fork_sink), _stdlib.as_mut().unwrap(), _fork_sink), _fork_sink) {
         return (*state).x1.clone();
