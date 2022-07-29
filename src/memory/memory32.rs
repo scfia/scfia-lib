@@ -566,7 +566,11 @@ impl Memory32 {
             ActiveValue::BitvectorConcrete(e) => {
                 self.read_concrete(e.value as u32, width, stdlib, fork_sink)
             }
-            _ => panic!(),
+            x => {
+                let mut candidates = BTreeSet::new();
+                stdlib.monomorphize(x.get_z3_ast(), &mut candidates);
+                panic!("{}\n{:?}", x.to_json(), candidates);
+            }
         }
     }
 

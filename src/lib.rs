@@ -236,7 +236,7 @@ impl ScfiaStdlib {
                     panic!("{:?}", ast_kind)
                 }
                 
-                println!("WARNING: Unexpected monomorphization candidate 0x{:x} ({} assumptions, {} candidates)", v, assumptions.len(), candidates.len());
+                println!("WARNING: Unpredicted monomorphization candidate 0x{:x} ({} assumptions, {} candidates)", v, assumptions.len(), candidates.len());
                 debug_assert!(candidates.insert(v));
 
                 let assumption = Z3_mk_not(self.z3_context,

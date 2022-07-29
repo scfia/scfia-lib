@@ -464,8 +464,21 @@ fn test_system_state() {
         continuing.step()
     }
 
-    println!("[{}s] HERE BE DRAGONS", begin.elapsed().as_secs());
+    println!("[{}s] Stepping until ingress try_take fork", begin.elapsed().as_secs());
+    while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x428 {
+        continuing.step()
+    }
 
+    let mut successors = continuing.step_forking();
+    let mut continuing = successors.remove(0);
+    let mut returning = successors.remove(0);
+
+    println!("[{}s] Stepping aborting until start of main loop", begin.elapsed().as_secs());
+    while returning.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x6E8 {
+        returning.step()
+    }
+
+    println!("[{}s] HERE BE DRAGONS", begin.elapsed().as_secs());
     loop {
         continuing.step()
     }
