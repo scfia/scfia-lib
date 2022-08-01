@@ -478,6 +478,16 @@ fn test_system_state() {
         returning.step()
     }
 
+    while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x460 {
+        continuing.step()
+    }
+    println!("[{}s] Monomorphizing a4 to 0x46005004?", begin.elapsed().as_secs());
+    let mut monomorphizing_candidates = BTreeSet::new();
+    monomorphizing_candidates.insert(0x46005004);
+    continuing.stdlib.monomorphize(continuing.system_state.x14.try_borrow().unwrap().get_z3_ast(), &mut monomorphizing_candidates);
+    assert_eq!(monomorphizing_candidates.len(), 1);
+    continuing.system_state.x14 = BitVectorConcrete::new(*monomorphizing_candidates.iter().next().unwrap(), 32, &mut continuing.stdlib, &mut None);
+
     println!("[{}s] HERE BE DRAGONS", begin.elapsed().as_secs());
     loop {
         continuing.step()
