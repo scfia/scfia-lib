@@ -474,7 +474,7 @@ impl ActiveValue {
     pub fn inherit(&mut self, ast_id: u64, ast: Rc<RefCell<RetiredValue>>) {
         debug_assert_ne!(self.get_id(), ast_id);
         let inherited_asts = self.get_inherited_asts();
-        if inherited_asts.len() > 100 {
+        if inherited_asts.len() > 1000 {
             println!("{} inherited too much", self.get_id());
             println!("{}", self.to_json());
             panic!("{:?}", self)
@@ -491,7 +491,7 @@ impl ActiveValue {
     pub fn discover(&mut self, ast_id: u64, ast: Weak<RefCell<ActiveValue>>) {
         debug_assert_ne!(self.get_id(), ast_id);
         let discovered_asts = self.get_discovered_asts();
-        if discovered_asts.len() > 100 {
+        if discovered_asts.len() > 1000 {
             println!("{} discovered too much", self.get_id());
             println!("{}", self.to_json());
             panic!("{:?}", self)

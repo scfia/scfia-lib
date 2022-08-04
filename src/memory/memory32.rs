@@ -1,3 +1,15 @@
+use crate::BitVectorSymbol;
+use crate::Z3_L_FALSE;
+use crate::Z3_solver_check_assumptions;
+use crate::Z3_mk_unsigned_int64;
+use z3_sys::Z3_mk_bv_sort;
+use z3_sys::Z3_mk_bvadd;
+use z3_sys::Z3_mk_add;
+use z3_sys::Z3_mk_ge;
+use crate::Z3_dec_ref;
+use crate::Z3_inc_ref;
+use z3_sys::Z3_mk_lt;
+use crate::memory::symbolic_volatile_memory_region::SymbolicVolatileMemoryRegion32;
 use std::{
     cell::RefCell,
     collections::{BTreeMap, BTreeSet, HashMap},
@@ -544,6 +556,7 @@ const EGRESS_SENDQUEUE_DRIVER_POSITIONS: [u64; 1024] = [
 pub struct Memory32 {
     pub stable_memory_regions: Vec<StableMemoryRegion32>,
     pub volatile_memory_regions: Vec<VolatileMemoryRegion32>,
+    pub symbolic_volatile_memory_regions: Vec<SymbolicVolatileMemoryRegion32>,
 }
 
 impl Memory32 {
@@ -551,6 +564,7 @@ impl Memory32 {
         Memory32 {
             stable_memory_regions: vec![],
             volatile_memory_regions: vec![],
+            symbolic_volatile_memory_regions: vec![],
         }
     }
 
@@ -567,9 +581,7 @@ impl Memory32 {
                 self.read_concrete(e.value as u32, width, stdlib, fork_sink)
             }
             x => {
-                let mut candidates = BTreeSet::new();
-                stdlib.monomorphize(x.get_z3_ast(), &mut candidates);
-                panic!("{}\n{:?}", x.to_json(), candidates);
+                self.read_symbolic(x, width, stdlib, fork_sink)
             }
         }
     }
@@ -642,7 +654,52 @@ impl Memory32 {
         panic!("0x{:x} {:?}", address, self.volatile_memory_regions);
     }
 
-    fn write_concrete(
+    fn read_symbolic(
+        &mut self,
+        address: &ActiveValue,
+        width: u32,
+        stdlib: &mut ScfiaStdlib,
+        fork_sink: &mut Option<&mut ForkSink>,
+    ) -> Rc<RefCell<ActiveValue>> {
+        for symbolic_volatile_memory_region in &self.symbolic_volatile_memory_regions {
+            let symbolic_volatile_memory_region_base_ast = symbolic_volatile_memory_region.base_symbol.try_borrow().unwrap().get_z3_ast();
+            unsafe {
+                // address < base_address
+                let lt = Z3_mk_lt(stdlib.z3_context, address.get_z3_ast(), symbolic_volatile_memory_region_base_ast);
+                Z3_inc_ref(stdlib.z3_context, lt);
+
+                // address >= base_address + length
+                let sort = Z3_mk_bv_sort(stdlib.z3_context, width);
+                let add_ast = Z3_mk_unsigned_int64(stdlib.z3_context, symbolic_volatile_memory_region.length.into(), sort);
+                let ge = Z3_mk_ge(stdlib.z3_context,
+                    address.get_z3_ast(),
+                    Z3_mk_bvadd(
+                        stdlib.z3_context,
+                        symbolic_volatile_memory_region_base_ast,
+                        add_ast,),
+                    );
+                Z3_inc_ref(stdlib.z3_context, ge);
+
+                let assumptions = [lt, ge];
+
+                if Z3_solver_check_assumptions(
+                    stdlib.z3_context,
+                    stdlib.z3_solver,
+                    2,
+                    assumptions.as_ptr()) == Z3_L_FALSE {
+                    // If the address CAN NOT be outside the symbolic volatile region, we can return a new BVS
+                    return BitVectorSymbol::new(None, width, Some("<= [symbolic volatile region]".into()), stdlib, fork_sink);
+                }
+
+                Z3_dec_ref(stdlib.z3_context, lt);
+                Z3_dec_ref(stdlib.z3_context, ge);
+            }
+        }
+
+        panic!("Could not resolve symbolic read {}", address.to_json().to_string())
+    }
+
+    pub fn write_concrete(
         &mut self,
         address: u32,
         value: Rc<RefCell<ActiveValue>>,

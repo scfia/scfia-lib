@@ -1,3 +1,4 @@
+use scfia_lib::memory::symbolic_volatile_memory_region::SymbolicVolatileMemoryRegion32;
 use std::collections::{BTreeSet, HashSet};
 use std::{fs, ptr};
 use std::time::Instant;
@@ -481,12 +482,29 @@ fn test_system_state() {
     while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x460 {
         continuing.step()
     }
-    println!("[{}s] Monomorphizing a4 to 0x46005004?", begin.elapsed().as_secs());
+    println!("[{}s] Monomorphizing a4 to 0x46005004", begin.elapsed().as_secs());
     let mut monomorphizing_candidates = BTreeSet::new();
     monomorphizing_candidates.insert(0x46005004);
     continuing.stdlib.monomorphize(continuing.system_state.x14.try_borrow().unwrap().get_z3_ast(), &mut monomorphizing_candidates);
     assert_eq!(monomorphizing_candidates.len(), 1);
     continuing.system_state.x14 = BitVectorConcrete::new(*monomorphizing_candidates.iter().next().unwrap(), 32, &mut continuing.stdlib, &mut None);
+
+    println!("[{}s] Creating symbolic volatile memory regions", begin.elapsed().as_secs());
+    let sym_region = SymbolicVolatileMemoryRegion32 {
+        base_symbol: BitVectorSymbol::new(None, 32, Some("SymbolicVolatileMemoryRegion32".into()), &mut continuing.stdlib, &mut None),
+        length: 4096,
+    };
+    for i in 0..1024 {
+        let pointer_offset: u32 = i * 3;
+        let ingress_receive_queue_pointer_address = 0x46000000 + pointer_offset;
+        continuing.memory.write_concrete(
+            ingress_receive_queue_pointer_address,
+            sym_region.base_symbol.clone(),
+            32,
+            &mut continuing.stdlib,
+            &mut None);
+    }
+    continuing.memory.symbolic_volatile_memory_regions.push(sym_region);
 
     println!("[{}s] HERE BE DRAGONS", begin.elapsed().as_secs());
     loop {

@@ -4,6 +4,7 @@ use crate::{values::ActiveValue, ScfiaStdlib, models::riscv::rv32i::ForkSink};
 
 pub mod memory32;
 pub mod stable_memory_region32;
+pub mod symbolic_volatile_memory_region;
 pub mod volatile_memory_region;
 
 pub trait MemoryRegion32 {
