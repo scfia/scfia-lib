@@ -1,12 +1,12 @@
+use z3_sys::Z3_mk_bvuge;
+use z3_sys::Z3_mk_bvult;
 use z3_sys::Z3_solver_check_assumptions;
 use z3_sys::Z3_L_FALSE;
 use z3_sys::Z3_dec_ref;
-use z3_sys::Z3_mk_ge;
 use z3_sys::Z3_mk_bv_sort;
 use z3_sys::Z3_mk_unsigned_int64;
 use z3_sys::Z3_mk_bvadd;
 use z3_sys::Z3_inc_ref;
-use z3_sys::Z3_mk_lt;
 use crate::ForkSink;
 use crate::ActiveValue;
 use core::cell::RefCell;
@@ -37,13 +37,13 @@ impl SymbolicVolatileMemoryRegion32 {
             let base_ast = self.base_symbol.try_borrow().unwrap().get_z3_ast();
 
             // address < base_address
-            let lt = Z3_mk_lt(stdlib.z3_context, address.get_z3_ast(), base_ast);
+            let lt = Z3_mk_bvult(stdlib.z3_context, address.get_z3_ast(), base_ast);
             Z3_inc_ref(stdlib.z3_context, lt);
 
             // address >= base_address + length
             let sort = Z3_mk_bv_sort(stdlib.z3_context, 32);
             let add_ast = Z3_mk_unsigned_int64(stdlib.z3_context, self.length.into(), sort);
-            let ge = Z3_mk_ge(stdlib.z3_context,
+            let ge = Z3_mk_bvuge(stdlib.z3_context,
                 address.get_z3_ast(),
                 Z3_mk_bvadd(
                     stdlib.z3_context,

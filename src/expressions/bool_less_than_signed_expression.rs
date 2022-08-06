@@ -16,7 +16,6 @@ use z3_sys::Z3_context;
 use z3_sys::Z3_dec_ref;
 use z3_sys::Z3_inc_ref;
 use z3_sys::Z3_mk_bvslt;
-use z3_sys::Z3_mk_lt;
 use z3_sys::Z3_solver_assert;
 
 use super::finish_clone;

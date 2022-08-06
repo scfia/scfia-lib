@@ -494,6 +494,8 @@ fn test_system_state() {
         base_symbol: BitVectorSymbol::new(None, 32, Some("SymbolicVolatileMemoryRegion32".into()), &mut continuing.stdlib, &mut None),
         length: 4096,
     };
+
+    println!("[{}s] Writing symbolic pointers to descriptor table", begin.elapsed().as_secs());
     for i in 0..1024 {
         let pointer_offset: u32 = i * 3;
         let ingress_receive_queue_pointer_address = 0x46000000 + pointer_offset;

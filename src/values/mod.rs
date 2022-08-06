@@ -224,6 +224,7 @@ impl ActiveValue {
     pub fn to_json(&self) -> serde_json::Value {
         // println!("to_json {} (depth {})", self.get_id(), depth);
         let mut map = serde_json::Map::new();
+        map.insert("width".into(), serde_json::Value::Number(self.get_width().into()));
         match self {
             ActiveValue::BitvectorConcrete(e) => {
                 map.insert("id".into(), serde_json::Value::Number(e.id.into()));
@@ -344,6 +345,31 @@ impl ActiveValue {
         }
 
         serde_json::Value::Object(map)
+    }
+
+    pub fn get_width(&self) -> u32 {
+        match self {
+            ActiveValue::BitvectorConcrete(e) => e.width,
+            ActiveValue::BitvectorSymbol(e) => e.width,
+            ActiveValue::BoolEqExpression(e) => panic!(),
+            ActiveValue::BoolLessThanUIntExpression(e) => panic!(),
+            ActiveValue::BoolLessThanSignedExpression(e) => panic!(),
+            ActiveValue::BoolNEqExpression(e) => panic!(),
+            ActiveValue::BoolNotExpression(e) => panic!(),
+            ActiveValue::BoolConcrete(e) => panic!(),
+            ActiveValue::BitvectorAddExpression(e) => e.width,
+            ActiveValue::BitvectorUnsignedRemainderExpression(e) => e.width,
+            ActiveValue::BitvectorMultiplyExpression(e) => e.width,
+            ActiveValue::BitvectorAndExpression(e) => e.width,
+            ActiveValue::BitvectorSubExpression(e) => e.width,
+            ActiveValue::BitvectorXorExpression(e) => e.width,
+            ActiveValue::BitvectorConcatExpression(e) => e.width,
+            ActiveValue::BitvectorOrExpression(e) => e.width,
+            ActiveValue::BitvectorSignExtendExpression(e) => e.output_width,
+            ActiveValue::BitvectorSliceExpression(e) => e.width,
+            ActiveValue::BitvectorShiftRightLogicalExpression(e) => e.width,
+            ActiveValue::BitvectorShiftLeftLogicalExpression(e) => e.width,
+        }
     }
 
     pub fn get_id(&self) -> u64 {
@@ -474,7 +500,7 @@ impl ActiveValue {
     pub fn inherit(&mut self, ast_id: u64, ast: Rc<RefCell<RetiredValue>>) {
         debug_assert_ne!(self.get_id(), ast_id);
         let inherited_asts = self.get_inherited_asts();
-        if inherited_asts.len() > 1000 {
+        if inherited_asts.len() > 1000000 {
             println!("{} inherited too much", self.get_id());
             println!("{}", self.to_json());
             panic!("{:?}", self)
@@ -491,7 +517,7 @@ impl ActiveValue {
     pub fn discover(&mut self, ast_id: u64, ast: Weak<RefCell<ActiveValue>>) {
         debug_assert_ne!(self.get_id(), ast_id);
         let discovered_asts = self.get_discovered_asts();
-        if discovered_asts.len() > 1000 {
+        if discovered_asts.len() > 1000000 {
             println!("{} discovered too much", self.get_id());
             println!("{}", self.to_json());
             panic!("{:?}", self)

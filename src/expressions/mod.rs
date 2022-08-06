@@ -20,7 +20,7 @@ pub mod bv_xor_expression;
 pub mod bv_multiply_expression;
 pub mod bv_unsigned_remainder_expression;
 
-pub const MAX_DEPTH: u64 = 30;
+pub const MAX_DEPTH: u64 = 1000000;
 
 
 pub(crate) fn inherit(
