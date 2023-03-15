@@ -1,25 +1,26 @@
+use crate::memory::symbolic_volatile_memory_region::SymbolicVolatileMemoryRegion32;
 use crate::BitVectorSymbol;
 use crate::SymbolicHints;
-use crate::Z3_L_FALSE;
-use crate::Z3_solver_check_assumptions;
-use crate::Z3_mk_unsigned_int64;
-use z3_sys::Z3_get_bv_sort_size;
-use z3_sys::Z3_get_sort;
-use z3_sys::Z3_mk_bv_sort;
-use z3_sys::Z3_mk_bvadd;
-use z3_sys::Z3_mk_add;
-use z3_sys::Z3_mk_bvuge;
-use z3_sys::Z3_mk_bvult;
-use z3_sys::Z3_mk_eq;
 use crate::Z3_dec_ref;
 use crate::Z3_inc_ref;
-use crate::memory::symbolic_volatile_memory_region::SymbolicVolatileMemoryRegion32;
+use crate::Z3_mk_unsigned_int64;
+use crate::Z3_solver_check_assumptions;
+use crate::Z3_L_FALSE;
 use std::{
     cell::RefCell,
     collections::{BTreeMap, BTreeSet, HashMap},
     ops::Deref,
     rc::Rc,
 };
+use z3_sys::Z3_get_bv_sort_size;
+use z3_sys::Z3_get_sort;
+use z3_sys::Z3_mk_add;
+use z3_sys::Z3_mk_bv_sort;
+use z3_sys::Z3_mk_bvadd;
+use z3_sys::Z3_mk_bvuge;
+use z3_sys::Z3_mk_bvult;
+use z3_sys::Z3_mk_eq;
+use z3_sys::Z3_mk_or;
 
 use crate::memory::MemoryRegion32;
 use crate::{
@@ -28,9 +29,7 @@ use crate::{
     ScfiaStdlib,
 };
 
-use super::{
-    stable_memory_region32::StableMemoryRegion32, volatile_memory_region::VolatileMemoryRegion32,
-};
+use super::{stable_memory_region32::StableMemoryRegion32, volatile_memory_region::VolatileMemoryRegion32};
 
 #[derive(Debug)]
 pub struct Memory32 {
@@ -58,12 +57,8 @@ impl Memory32 {
     ) -> Rc<RefCell<ActiveValue>> {
         let address = address.try_borrow().unwrap();
         match &*address {
-            ActiveValue::BitvectorConcrete(e) => {
-                self.read_concrete(e.value as u32, width, stdlib, fork_sink)
-            }
-            x => {
-                self.read_symbolic(x, width, stdlib, fork_sink, hints)
-            }
+            ActiveValue::BitvectorConcrete(e) => self.read_concrete(e.value as u32, width, stdlib, fork_sink),
+            x => self.read_symbolic(x, width, stdlib, fork_sink, hints),
         }
     }
 
@@ -78,35 +73,63 @@ impl Memory32 {
     ) {
         let address = address.try_borrow().unwrap();
         match &*address {
-            ActiveValue::BitvectorConcrete(e) => {
-                self.write_concrete(e.value as u32, value, width, stdlib, fork_sink)
-            }
+            ActiveValue::BitvectorConcrete(e) => self.write_concrete(e.value as u32, value, width, stdlib, fork_sink),
             x => {
                 // A symbolic write is occuring! These can be
                 // - unanimous conrete writes, i.e. the symbol points to exactly one conrete memory location
                 // - irrelevant writes, i.e. the symbol points to volatile memory locations only
                 // - symbolic offset writes, i.e. the symbol points to a concrete offset of a symbolic region
-                let mut candidates = vec!();
-                
+                // Symbolic Offset Read
+                println!(
+                    "Attempting to perform Symbolic Offset Read through {} regions",
+                    self.symbolic_volatile_memory_regions.len()
+                );
+                for symbolic_volatile_memory_region in &self.symbolic_volatile_memory_regions {
+                    let symbolic_volatile_memory_region_base_ast = symbolic_volatile_memory_region.base_symbol.try_borrow().unwrap().get_z3_ast();
+                    unsafe {
+                        // address < base_address
+                        let lt = Z3_mk_bvult(stdlib.z3_context, address.get_z3_ast(), symbolic_volatile_memory_region_base_ast);
+                        Z3_inc_ref(stdlib.z3_context, lt);
+
+                        // address >= base_address + length
+                        let sort = Z3_mk_bv_sort(stdlib.z3_context, 32);
+                        let add_ast = Z3_mk_unsigned_int64(stdlib.z3_context, symbolic_volatile_memory_region.length.into(), sort);
+                        let ge = Z3_mk_bvuge(
+                            stdlib.z3_context,
+                            address.get_z3_ast(),
+                            Z3_mk_bvadd(stdlib.z3_context, symbolic_volatile_memory_region_base_ast, add_ast),
+                        );
+                        Z3_inc_ref(stdlib.z3_context, ge);
+
+                        let assumptions = [lt, ge];
+                        println!("Z3_solver_check_assumptions");
+                        let check_result = Z3_solver_check_assumptions(stdlib.z3_context, stdlib.z3_solver, 2, assumptions.as_ptr());
+                        if check_result == Z3_L_FALSE {
+                            // If the address CAN NOT be outside the symbolic volatile region, we can return a new BVS
+                            println!("Symbolic Offset Write covered");
+                            return;
+                        } else {
+                            println!("Z3_solver_check_assumptions returned {:?}", check_result);
+                            println!("{:?}", Z3_solver_check_assumptions(stdlib.z3_context, stdlib.z3_solver, 1, [lt].as_ptr()));
+                            println!("{:?}", Z3_solver_check_assumptions(stdlib.z3_context, stdlib.z3_solver, 1, [ge].as_ptr()));
+                        }
+
+                        Z3_dec_ref(stdlib.z3_context, lt);
+                        Z3_dec_ref(stdlib.z3_context, ge);
+                    }
+                }
+
+                let mut candidates = vec![];
+
                 if let Some(hints) = hints {
                     if hints.hints.len() > 0 {
                         candidates = hints.hints.pop().unwrap();
                         println!("Using initial candiates {:x?}", candidates)
                     }
                 }
-                
-                /*
-                for candidate in INGRESS_SENDQUEUE_DRIVER_POSITIONS {
-                    candidates.insert(candidate);
-                }
-                for candidate in EGRESS_RECEIVQUEUE_DRIVER_POSITIONS {
-                    candidates.insert(candidate);
-                }
-                for candidate in EGRESS_SENDQUEUE_DRIVER_POSITIONS {
-                    candidates.insert(candidate);
-                }
-                */
+
                 stdlib.monomorphize(x.get_z3_ast(), &mut candidates);
+                println!("Write monomorphized addresses {:?}", &candidates);
                 if candidates.len() == 1 {
                     // unanimous concrete write
                     let address = candidates.iter().next().unwrap();
@@ -120,13 +143,7 @@ impl Memory32 {
         }
     }
 
-    fn read_concrete(
-        &mut self,
-        address: u32,
-        width: u32,
-        stdlib: &mut ScfiaStdlib,
-        fork_sink: &mut Option<&mut ForkSink>,
-    ) -> Rc<RefCell<ActiveValue>> {
+    fn read_concrete(&mut self, address: u32, width: u32, stdlib: &mut ScfiaStdlib, fork_sink: &mut Option<&mut ForkSink>) -> Rc<RefCell<ActiveValue>> {
         for region in &mut self.volatile_memory_regions {
             if address >= region.start_address && address < region.start_address + region.length {
                 return region.read(address, width, stdlib, fork_sink);
@@ -142,7 +159,7 @@ impl Memory32 {
         panic!("0x{:x} {:?}", address, self.volatile_memory_regions);
     }
 
-    fn  read_symbolic(
+    fn read_symbolic(
         &mut self,
         address: &ActiveValue,
         width: u32,
@@ -154,14 +171,13 @@ impl Memory32 {
         // - unanimous address reads, i.e. the symbol points to exactly one memory location
         // - unanimous value reads, i.e. the symbol points to several memory locations which all contain the same value
         // - symbolic offset reads, i.e. the symbol points to a concrete offset of a symbolic region
-        let hints = if let Some(hints) = hints {
-            hints.hints.pop().unwrap()
-        } else {
-            vec!()
-        };
+        let hints = if let Some(hints) = hints { hints.hints.pop().unwrap() } else { vec![] };
 
         // Symbolic Offset Read
-        println!("Attempting to perform Symbolic Offset Read");
+        println!(
+            "Attempting to perform Symbolic Offset Read through {} regions",
+            self.symbolic_volatile_memory_regions.len()
+        );
         for symbolic_volatile_memory_region in &self.symbolic_volatile_memory_regions {
             let symbolic_volatile_memory_region_base_ast = symbolic_volatile_memory_region.base_symbol.try_borrow().unwrap().get_z3_ast();
             unsafe {
@@ -172,55 +188,45 @@ impl Memory32 {
                 // address >= base_address + length
                 let sort = Z3_mk_bv_sort(stdlib.z3_context, 32);
                 let add_ast = Z3_mk_unsigned_int64(stdlib.z3_context, symbolic_volatile_memory_region.length.into(), sort);
-                let ge = Z3_mk_bvuge(stdlib.z3_context,
-                    address.get_z3_ast(),
-                    Z3_mk_bvadd(
-                        stdlib.z3_context,
-                        symbolic_volatile_memory_region_base_ast,
-                        add_ast,),
-                    );
-                Z3_inc_ref(stdlib.z3_context, ge);
-
-                let assumptions = [lt, ge];
-                println!("Z3_solver_check_assumptions");
-                let check_result = Z3_solver_check_assumptions(
+                let ge = Z3_mk_bvuge(
                     stdlib.z3_context,
-                    stdlib.z3_solver,
-                    2,
-                    assumptions.as_ptr());
+                    address.get_z3_ast(),
+                    Z3_mk_bvadd(stdlib.z3_context, symbolic_volatile_memory_region_base_ast, add_ast),
+                );
+                Z3_inc_ref(stdlib.z3_context, ge);
+                let asts = [lt, ge];
+                let assumption = Z3_mk_or(stdlib.z3_context, 2, asts.as_ptr());
+                Z3_inc_ref(stdlib.z3_context, assumption);
+
+                println!("Z3_solver_check_assumptions");
+                let check_result = Z3_solver_check_assumptions(stdlib.z3_context, stdlib.z3_solver, 1, asts.as_ptr());
                 if check_result == Z3_L_FALSE {
                     // If the address CAN NOT be outside the symbolic volatile region, we can return a new BVS
                     println!("Symbolic Offset Read returning new symbol");
                     return BitVectorSymbol::new(None, width, Some("<= [symbolic volatile region]".into()), stdlib, fork_sink);
                 } else {
                     println!("Z3_solver_check_assumptions returned {:?}", check_result);
-                    println!("{:?}", Z3_solver_check_assumptions(
-                        stdlib.z3_context,
-                        stdlib.z3_solver,
-                        1,
-                        [lt].as_ptr()));
-                    println!("{:?}", Z3_solver_check_assumptions(
-                        stdlib.z3_context,
-                        stdlib.z3_solver,
-                        1,
-                        [ge].as_ptr()));
+                    println!("{:?}", Z3_solver_check_assumptions(stdlib.z3_context, stdlib.z3_solver, 1, [lt].as_ptr()));
+                    println!("{:?}", Z3_solver_check_assumptions(stdlib.z3_context, stdlib.z3_solver, 1, [ge].as_ptr()));
                 }
 
                 Z3_dec_ref(stdlib.z3_context, lt);
                 Z3_dec_ref(stdlib.z3_context, ge);
+                Z3_dec_ref(stdlib.z3_context, assumption);
             }
         }
 
         // Unanimous Read
-        println!("Attemtping to perform Unanimous Value Read");
+        println!("Attempting to perform Unanimous Value Read");
         let mut addresses = hints.clone();
         stdlib.monomorphize(address.get_z3_ast(), &mut addresses);
         assert!(addresses.len() > 0);
-        println!("Monomorphized addresses {:?}", &addresses);
+        println!("Read monomorphized addresses {:?}", &addresses);
         let unanimous_address = addresses.windows(2).all(|w| w[0] == w[1]);
         if unanimous_address {
             // The addresses are unanimous
-            unimplemented!()
+            println!("Read was unanimous");
+            return self.read_concrete(addresses[0].try_into().unwrap(), width, stdlib, fork_sink);
         } else {
             // The addresses are not unanimous, but the values might still be
             let value = self.read_concrete(addresses[0].try_into().unwrap(), width, stdlib, fork_sink);
@@ -235,7 +241,7 @@ impl Memory32 {
             }
 
             println!("Unamimous value read returning {:?}", value);
-            return value
+            return value;
         }
     }
 
@@ -293,18 +299,26 @@ impl Memory32 {
         let mut cloned_memory = Self::new();
 
         for region in &self.stable_memory_regions {
-            let cloned_region =
-                region.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+            let cloned_region = region.clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
             cloned_memory.stable_memory_regions.push(cloned_region);
         }
 
         for region in &self.volatile_memory_regions {
-            cloned_memory
-                .volatile_memory_regions
-                .push(VolatileMemoryRegion32 {
-                    start_address: region.start_address,
-                    length: region.length,
-                })
+            cloned_memory.volatile_memory_regions.push(VolatileMemoryRegion32 {
+                start_address: region.start_address,
+                length: region.length,
+            })
+        }
+
+        for region in &self.symbolic_volatile_memory_regions {
+            cloned_memory.symbolic_volatile_memory_regions.push(SymbolicVolatileMemoryRegion32 {
+                base_symbol: region
+                    .base_symbol
+                    .try_borrow()
+                    .unwrap()
+                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
+                length: region.length,
+            })
         }
 
         cloned_memory

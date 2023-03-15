@@ -1,6 +1,15 @@
-use std::{collections::{HashMap, VecDeque}, cell::RefCell, rc::Rc, fmt};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, VecDeque},
+    fmt,
+    rc::Rc,
+};
 
-use crate::{values::{ActiveValue, bit_vector_concrete::BitVectorConcrete, bit_vector_symbol::BitVectorSymbol}, expressions::{bv_or_expression::BVOrExpression, bv_slice_expression::BVSliceExpression, bv_concat_expression::BVConcatExpression}, models::riscv::rv32i::ForkSink};
+use crate::{
+    expressions::{bv_concat_expression::BVConcatExpression, bv_or_expression::BVOrExpression, bv_slice_expression::BVSliceExpression},
+    models::riscv::rv32i::ForkSink,
+    values::{bit_vector_concrete::BitVectorConcrete, bit_vector_symbol::BitVectorSymbol, ActiveValue},
+};
 
 use super::{memory32::Memory32, MemoryRegion32};
 
@@ -11,10 +20,7 @@ pub struct VolatileMemoryRegion32 {
 
 impl VolatileMemoryRegion32 {
     pub fn new(start_address: u32, length: u32) -> Self {
-        VolatileMemoryRegion32 {
-            start_address,
-            length
-        }
+        VolatileMemoryRegion32 { start_address, length }
     }
 
     pub fn contains(&self, address: u32, width: u32) -> bool {
@@ -24,12 +30,15 @@ impl VolatileMemoryRegion32 {
 
 impl fmt::Debug for VolatileMemoryRegion32 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&format!("VolatileMemoryRegion32 {{ start_address: 0x{:x}, length: 0x{:x}}}", self.start_address, self.length))
+        f.write_str(&format!(
+            "VolatileMemoryRegion32 {{ start_address: 0x{:x}, length: 0x{:x}}}",
+            self.start_address, self.length
+        ))
     }
 }
 
 impl MemoryRegion32 for VolatileMemoryRegion32 {
-    fn read(&mut self, address: u32, width: u32, stdlib: &mut crate::ScfiaStdlib, fork_sink: &mut Option<&mut ForkSink>,) -> Rc<RefCell<ActiveValue>> {
+    fn read(&mut self, address: u32, width: u32, stdlib: &mut crate::ScfiaStdlib, fork_sink: &mut Option<&mut ForkSink>) -> Rc<RefCell<ActiveValue>> {
         let s = BitVectorSymbol::new(None, width, format!("<= 0x{:x}", address).into(), stdlib, fork_sink);
         // println!("<= 0x{:x} (volatile) yielding {}", address, s.try_borrow().unwrap().get_id());
         s

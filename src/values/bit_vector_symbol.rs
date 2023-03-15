@@ -1,18 +1,18 @@
 use std::borrow::Borrow;
 use std::cell::Ref;
-use std::collections::{HashMap, HashSet, BTreeMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::Hash;
 use std::rc::Weak;
 use std::{borrow::BorrowMut, cell::RefCell, rc::Rc};
 
 use z3_sys::{
-    Z3_ast, Z3_context, Z3_dec_ref, Z3_inc_ref, Z3_mk_bool_sort, Z3_mk_const, Z3_mk_fresh_const,
-    Z3_mk_string, Z3_solver_assert, _Z3_symbol, Z3_mk_bv_sort, Z3_string,
+    Z3_ast, Z3_context, Z3_dec_ref, Z3_inc_ref, Z3_mk_bool_sort, Z3_mk_bv_sort, Z3_mk_const, Z3_mk_fresh_const, Z3_mk_string, Z3_solver_assert, Z3_string,
+    _Z3_symbol,
 };
 
 use crate::expressions::{finish_clone, inherit};
 use crate::models::riscv::rv32i::ForkSink;
-use crate::{ScfiaStdlib};
+use crate::ScfiaStdlib;
 
 use super::{ActiveValue, RetiredValue};
 
@@ -45,7 +45,7 @@ impl BitVectorSymbol {
         width: u32,
         comment: Option<String>,
         stdlib: &mut ScfiaStdlib,
-        fork_sink: &mut Option<&mut ForkSink>
+        fork_sink: &mut Option<&mut ForkSink>,
     ) -> Rc<RefCell<ActiveValue>> {
         let value: Rc<RefCell<ActiveValue>> = Self::new_with_id(stdlib.get_symbol_id(), stdlib.id.clone(), width, expression, comment, stdlib).into();
         if let Some(fork_sink) = fork_sink {
@@ -66,11 +66,7 @@ impl BitVectorSymbol {
             let z3_ast;
             let z3_context = stdlib.z3_context;
 
-            z3_ast = Z3_mk_fresh_const(
-                z3_context,
-                0 as Z3_string,
-                Z3_mk_bv_sort(stdlib.z3_context, width),
-            );
+            z3_ast = Z3_mk_fresh_const(z3_context, 0 as Z3_string, Z3_mk_bv_sort(stdlib.z3_context, width));
             Z3_inc_ref(z3_context, z3_ast);
             if let Some(ref expression) = expression {
                 unimplemented!()
@@ -100,7 +96,14 @@ impl BitVectorSymbol {
         cloned_stdlib: &mut ScfiaStdlib,
     ) -> Rc<RefCell<ActiveValue>> {
         let cloned_expression = if let Some(expression) = &self.expression {
-            Some((expression.0, expression.1.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib)))
+            Some((
+                expression.0,
+                expression
+                    .1
+                    .try_borrow()
+                    .unwrap()
+                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib),
+            ))
         } else {
             None
         };
@@ -121,10 +124,9 @@ impl BitVectorSymbol {
             cloned_symbol.into(),
             cloned_active_values,
             cloned_retired_values,
-            cloned_stdlib
+            cloned_stdlib,
         )
     }
-
 }
 
 impl Drop for BitVectorSymbol {
@@ -133,7 +135,11 @@ impl Drop for BitVectorSymbol {
         let retired_expression = Rc::new(RefCell::new(RetiredValue::RetiredBitvectorSymbol(RetiredBitvectorSymbol {
             id: self.id,
             width: self.width,
-            expression: if let Some(expression) = &self.expression { Some((expression.0, Rc::downgrade(&expression.1))) } else { None },
+            expression: if let Some(expression) = &self.expression {
+                Some((expression.0, Rc::downgrade(&expression.1)))
+            } else {
+                None
+            },
             z3_context: self.z3_context,
             z3_ast: self.z3_ast,
         })));
@@ -148,13 +154,7 @@ impl Drop for BitVectorSymbol {
             println!("dropping active BVS 16012 from {}", self.stdlib_id);
         }
 
-        inherit(
-            self.id,
-            retired_expression,
-            parents,
-            &self.inherited_asts,
-            &self.discovered_asts
-        );
+        inherit(self.id, retired_expression, parents, &self.inherited_asts, &self.discovered_asts);
     }
 }
 
@@ -163,23 +163,15 @@ impl RetiredBitvectorSymbol {
         &self,
         _cloned_active_values: &mut BTreeMap<u64, Rc<RefCell<ActiveValue>>>,
         cloned_retired_values: &mut BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
-        cloned_stdlib: &mut ScfiaStdlib
+        cloned_stdlib: &mut ScfiaStdlib,
     ) -> Rc<RefCell<RetiredValue>> {
         unsafe {
             let cloned_z3_ast;
             let cloned_z3_context = cloned_stdlib.z3_context;
 
-            cloned_z3_ast = Z3_mk_fresh_const(
-                cloned_z3_context,
-                0 as Z3_string,
-                Z3_mk_bv_sort(cloned_stdlib.z3_context, self.width),
-            );
+            cloned_z3_ast = Z3_mk_fresh_const(cloned_z3_context, 0 as Z3_string, Z3_mk_bv_sort(cloned_stdlib.z3_context, self.width));
             Z3_inc_ref(cloned_z3_context, cloned_z3_ast);
-            let cloned_expression = if let Some(ref expression) = self.expression {
-                todo!()
-            } else {
-                None
-            };
+            let cloned_expression = if let Some(ref expression) = self.expression { todo!() } else { None };
 
             let bvs: Rc<RefCell<RetiredValue>> = RetiredBitvectorSymbol {
                 id: self.id,
@@ -187,7 +179,8 @@ impl RetiredBitvectorSymbol {
                 expression: cloned_expression,
                 z3_context: cloned_z3_context,
                 z3_ast: cloned_z3_ast,
-            }.into();
+            }
+            .into();
 
             cloned_retired_values.insert(self.id, bvs.clone());
             bvs

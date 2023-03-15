@@ -1,9 +1,9 @@
-use crate::ScfiaStdlib;
 use crate::models::riscv::rv32i::ForkSink;
+use crate::values::bool_concrete::BoolConcrete;
 use crate::values::ActiveValue;
 use crate::values::RetiredValue;
 use crate::values::Value;
-use crate::values::bool_concrete::BoolConcrete;
+use crate::ScfiaStdlib;
 use std::cell::Ref;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -67,33 +67,20 @@ impl BoolLessThanSignedExpression {
         fork_sink: &mut Option<&mut ForkSink>,
     ) -> Rc<RefCell<ActiveValue>> {
         match s1.try_borrow().unwrap().deref() {
-            ActiveValue::BitvectorConcrete(e1) => {
-                match s2.try_borrow().unwrap().deref() {
-                    ActiveValue::BitvectorConcrete(e2) => {
-                        return BoolConcrete::new((e1.value as i64) < (e2.value as i64), stdlib, fork_sink).into()
-                    },
-                    _ => {}
-                }
-            }
+            ActiveValue::BitvectorConcrete(e1) => match s2.try_borrow().unwrap().deref() {
+                ActiveValue::BitvectorConcrete(e2) => return BoolConcrete::new((e1.value as i64) < (e2.value as i64), stdlib, fork_sink).into(),
+                _ => {}
+            },
             _ => {}
         }
         ActiveValue::BoolLessThanSignedExpression(Self::new_with_id(stdlib.get_symbol_id(), s1, s2, stdlib)).into()
     }
 
-    pub fn new_with_id(
-        id: u64,
-        s1: Rc<RefCell<ActiveValue>>,
-        s2: Rc<RefCell<ActiveValue>>,
-        stdlib: &mut ScfiaStdlib,
-    ) -> BoolLessThanSignedExpression {
+    pub fn new_with_id(id: u64, s1: Rc<RefCell<ActiveValue>>, s2: Rc<RefCell<ActiveValue>>, stdlib: &mut ScfiaStdlib) -> BoolLessThanSignedExpression {
         unsafe {
             let z3_context = stdlib.z3_context;
-            let ast = Z3_mk_bvslt(
-                stdlib.z3_context,
-                s1.try_borrow().unwrap().get_z3_ast(),
-                s2.try_borrow().unwrap().get_z3_ast(),
-            );
-            
+            let ast = Z3_mk_bvslt(stdlib.z3_context, s1.try_borrow().unwrap().get_z3_ast(), s2.try_borrow().unwrap().get_z3_ast());
+
             debug_assert!(s1.try_borrow().unwrap().get_id() < id);
             debug_assert!(s2.try_borrow().unwrap().get_id() < id);
             Z3_inc_ref(z3_context, ast);
@@ -119,13 +106,21 @@ impl BoolLessThanSignedExpression {
         &self,
         cloned_active_values: &mut BTreeMap<u64, Rc<RefCell<ActiveValue>>>,
         cloned_retired_values: &mut BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
-        cloned_stdlib: &mut ScfiaStdlib
+        cloned_stdlib: &mut ScfiaStdlib,
     ) -> Rc<RefCell<ActiveValue>> {
         // Clone s1, s2
-        let s1 = self.s1.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
-        let s2 = self.s2.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+        let s1 = self
+            .s1
+            .try_borrow()
+            .unwrap()
+            .clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+        let s2 = self
+            .s2
+            .try_borrow()
+            .unwrap()
+            .clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
         if let Some(e) = cloned_active_values.get(&self.id) {
-            return e.clone()
+            return e.clone();
         }
 
         // Build clone
@@ -143,7 +138,7 @@ impl BoolLessThanSignedExpression {
             cloned_expression.into(),
             cloned_active_values,
             cloned_retired_values,
-            cloned_stdlib
+            cloned_stdlib,
         )
     }
 
@@ -162,29 +157,22 @@ impl Drop for BoolLessThanSignedExpression {
         let s2_id = self.s2.try_borrow().unwrap().get_id();
         debug_assert!(s1_id < self.id);
         debug_assert!(s2_id < self.id);
-        let retired_expression = Rc::new(RefCell::new(RetiredValue::RetiredBoolLessThanSignedExpression(RetiredBoolLessThanSignedExpression {
-            id: self.id,
-            s1_id,
-            s1: Rc::downgrade(&self.s1),
-            s2_id,
-            s2: Rc::downgrade(&self.s2),
-            is_assert: self.is_assert,
-            z3_context: self.z3_context,
-            z3_ast: self.z3_ast,
-        })));
+        let retired_expression = Rc::new(RefCell::new(RetiredValue::RetiredBoolLessThanSignedExpression(
+            RetiredBoolLessThanSignedExpression {
+                id: self.id,
+                s1_id,
+                s1: Rc::downgrade(&self.s1),
+                s2_id,
+                s2: Rc::downgrade(&self.s2),
+                is_assert: self.is_assert,
+                z3_context: self.z3_context,
+                z3_ast: self.z3_ast,
+            },
+        )));
 
-        let parents = vec![
-            (s1_id, self.s1.clone()),
-            (s2_id, self.s2.clone()),
-        ];
+        let parents = vec![(s1_id, self.s1.clone()), (s2_id, self.s2.clone())];
 
-        inherit(
-            self.id,
-            retired_expression,
-            parents,
-            &self.inherited_asts,
-            &self.discovered_asts
-        );
+        inherit(self.id, retired_expression, parents, &self.inherited_asts, &self.discovered_asts);
     }
 }
 
@@ -193,7 +181,7 @@ impl RetiredBoolLessThanSignedExpression {
         &self,
         cloned_active_values: &mut BTreeMap<u64, Rc<RefCell<ActiveValue>>>,
         cloned_retired_values: &mut BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
-        cloned_stdlib: &mut ScfiaStdlib
+        cloned_stdlib: &mut ScfiaStdlib,
     ) -> Rc<RefCell<RetiredValue>> {
         let cloned_s1_ast;
         let cloned_s1;
@@ -202,7 +190,10 @@ impl RetiredBoolLessThanSignedExpression {
             cloned_s1_ast = s1.get_z3_ast();
             cloned_s1 = Rc::downgrade(s1_rc);
         } else if let Some(s1_rc) = self.s1.upgrade() {
-            let cloned_s1_rc = s1_rc.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+            let cloned_s1_rc = s1_rc
+                .try_borrow()
+                .unwrap()
+                .clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
             cloned_s1_ast = cloned_s1_rc.try_borrow().unwrap().get_z3_ast();
             cloned_s1 = Rc::downgrade(&cloned_s1_rc);
         } else {
@@ -218,7 +209,10 @@ impl RetiredBoolLessThanSignedExpression {
             cloned_s2_ast = s2.get_z3_ast();
             cloned_s2 = Rc::downgrade(s2_rc);
         } else if let Some(s2_rc) = self.s2.upgrade() {
-            let cloned_s2_rc = s2_rc.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+            let cloned_s2_rc = s2_rc
+                .try_borrow()
+                .unwrap()
+                .clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
             cloned_s2_ast = cloned_s2_rc.try_borrow().unwrap().get_z3_ast();
             cloned_s2 = Rc::downgrade(&cloned_s2_rc);
         } else {
@@ -228,11 +222,7 @@ impl RetiredBoolLessThanSignedExpression {
         };
 
         let cloned: Rc<RefCell<RetiredValue>> = unsafe {
-            let z3_ast = Z3_mk_bvslt(
-                cloned_stdlib.z3_context,
-                cloned_s1_ast,
-                cloned_s2_ast,
-            );
+            let z3_ast = Z3_mk_bvslt(cloned_stdlib.z3_context, cloned_s1_ast, cloned_s2_ast);
             Z3_inc_ref(cloned_stdlib.z3_context, z3_ast);
             if self.is_assert {
                 Z3_solver_assert(cloned_stdlib.z3_context, cloned_stdlib.z3_solver, z3_ast);
@@ -246,9 +236,10 @@ impl RetiredBoolLessThanSignedExpression {
                 s2_id: self.s2_id,
                 s2: cloned_s2,
                 z3_context: cloned_stdlib.z3_context,
-                z3_ast
+                z3_ast,
             }
-        }.into();
+        }
+        .into();
 
         cloned_retired_values.insert(self.id, cloned.clone());
         cloned

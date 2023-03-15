@@ -1,9 +1,9 @@
-use crate::ScfiaStdlib;
 use crate::models::riscv::rv32i::ForkSink;
+use crate::values::bool_concrete::BoolConcrete;
 use crate::values::ActiveValue;
 use crate::values::RetiredValue;
 use crate::values::Value;
-use crate::values::bool_concrete::BoolConcrete;
+use crate::ScfiaStdlib;
 use std::cell::Ref;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -45,11 +45,7 @@ pub struct RetiredBoolNotExpression {
 }
 
 impl BoolNotExpression {
-    pub fn new(
-        s1: Rc<RefCell<ActiveValue>>,
-        stdlib: &mut ScfiaStdlib,
-        fork_sink: &mut Option<&mut ForkSink>,
-    ) -> Rc<RefCell<ActiveValue>> {
+    pub fn new(s1: Rc<RefCell<ActiveValue>>, stdlib: &mut ScfiaStdlib, fork_sink: &mut Option<&mut ForkSink>) -> Rc<RefCell<ActiveValue>> {
         let value: Rc<RefCell<ActiveValue>> = Self::new_try_concretize(s1, stdlib, fork_sink).into();
         if let Some(fork_sink) = fork_sink {
             fork_sink.new_values.push(value.clone());
@@ -57,31 +53,18 @@ impl BoolNotExpression {
         value
     }
 
-    pub fn new_try_concretize(
-        s1: Rc<RefCell<ActiveValue>>,
-        stdlib: &mut ScfiaStdlib,
-        fork_sink: &mut Option<&mut ForkSink>,
-    ) -> Rc<RefCell<ActiveValue>> {
+    pub fn new_try_concretize(s1: Rc<RefCell<ActiveValue>>, stdlib: &mut ScfiaStdlib, fork_sink: &mut Option<&mut ForkSink>) -> Rc<RefCell<ActiveValue>> {
         match s1.try_borrow().unwrap().deref() {
-            ActiveValue::BoolConcrete(e1) => {
-                return BoolConcrete::new(!e1.value, stdlib, fork_sink)
-            }
+            ActiveValue::BoolConcrete(e1) => return BoolConcrete::new(!e1.value, stdlib, fork_sink),
             _ => {}
         }
         ActiveValue::BoolNotExpression(Self::new_with_id(stdlib.get_symbol_id(), s1, stdlib)).into()
     }
 
-    pub fn new_with_id(
-        id: u64,
-        s1: Rc<RefCell<ActiveValue>>,
-        stdlib: &mut ScfiaStdlib,
-    ) -> BoolNotExpression {
+    pub fn new_with_id(id: u64, s1: Rc<RefCell<ActiveValue>>, stdlib: &mut ScfiaStdlib) -> BoolNotExpression {
         unsafe {
             let z3_context = stdlib.z3_context;
-            let ast = Z3_mk_not(
-                stdlib.z3_context,
-                s1.try_borrow().unwrap().get_z3_ast(),
-            );
+            let ast = Z3_mk_not(stdlib.z3_context, s1.try_borrow().unwrap().get_z3_ast());
             Z3_inc_ref(z3_context, ast);
             let depth = 1 + s1.try_borrow().unwrap().get_depth();
             if depth > super::MAX_DEPTH {
@@ -104,12 +87,16 @@ impl BoolNotExpression {
         &self,
         cloned_active_values: &mut BTreeMap<u64, Rc<RefCell<ActiveValue>>>,
         cloned_retired_values: &mut BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
-        cloned_stdlib: &mut ScfiaStdlib
+        cloned_stdlib: &mut ScfiaStdlib,
     ) -> Rc<RefCell<ActiveValue>> {
         // Clone s1
-        let s1 = self.s1.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+        let s1 = self
+            .s1
+            .try_borrow()
+            .unwrap()
+            .clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
         if let Some(e) = cloned_active_values.get(&self.id) {
-            return e.clone()
+            return e.clone();
         }
 
         // Build clone
@@ -127,7 +114,7 @@ impl BoolNotExpression {
             cloned_expression.into(),
             cloned_active_values,
             cloned_retired_values,
-            cloned_stdlib
+            cloned_stdlib,
         )
     }
 
@@ -153,16 +140,8 @@ impl Drop for BoolNotExpression {
             z3_ast: self.z3_ast,
         })));
 
-        let parents = vec![
-            (s1_id, self.s1.clone()),
-        ];
-        inherit(
-            self.id,
-            retired_expression,
-            parents,
-            &self.inherited_asts,
-            &self.discovered_asts
-        );
+        let parents = vec![(s1_id, self.s1.clone())];
+        inherit(self.id, retired_expression, parents, &self.inherited_asts, &self.discovered_asts);
     }
 }
 
@@ -171,7 +150,7 @@ impl RetiredBoolNotExpression {
         &self,
         cloned_active_values: &mut BTreeMap<u64, Rc<RefCell<ActiveValue>>>,
         cloned_retired_values: &mut BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
-        cloned_stdlib: &mut ScfiaStdlib
+        cloned_stdlib: &mut ScfiaStdlib,
     ) -> Rc<RefCell<RetiredValue>> {
         let cloned_s1_ast;
         let cloned_s1;
@@ -180,7 +159,10 @@ impl RetiredBoolNotExpression {
             cloned_s1_ast = s1.get_z3_ast();
             cloned_s1 = Rc::downgrade(s1_rc);
         } else if let Some(s1_rc) = self.s1.upgrade() {
-            let cloned_s1_rc = s1_rc.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+            let cloned_s1_rc = s1_rc
+                .try_borrow()
+                .unwrap()
+                .clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
             cloned_s1_ast = cloned_s1_rc.try_borrow().unwrap().get_z3_ast();
             cloned_s1 = Rc::downgrade(&cloned_s1_rc);
         } else {
@@ -190,10 +172,7 @@ impl RetiredBoolNotExpression {
         };
 
         let cloned: Rc<RefCell<RetiredValue>> = unsafe {
-            let z3_ast = Z3_mk_not(
-                cloned_stdlib.z3_context,
-                cloned_s1_ast,
-            );
+            let z3_ast = Z3_mk_not(cloned_stdlib.z3_context, cloned_s1_ast);
             Z3_inc_ref(cloned_stdlib.z3_context, z3_ast);
 
             if self.is_assert {
@@ -206,9 +185,10 @@ impl RetiredBoolNotExpression {
                 s1_id: self.s1_id,
                 s1: cloned_s1,
                 z3_context: cloned_stdlib.z3_context,
-                z3_ast
+                z3_ast,
             }
-        }.into();
+        }
+        .into();
 
         cloned_retired_values.insert(self.id, cloned.clone());
         cloned

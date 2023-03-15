@@ -124,11 +124,7 @@ impl ScfiaStdlib {
         }
     }
 
-    pub fn do_condition(
-        &mut self,
-        expression: Rc<RefCell<ActiveValue>>,
-        fork_sink: &mut Option<&mut ForkSink>,
-    ) -> bool {
+    pub fn do_condition(&mut self, expression: Rc<RefCell<ActiveValue>>, fork_sink: &mut Option<&mut ForkSink>) -> bool {
         unsafe {
             // debug_assert_eq!(Z3_solver_check(self.z3_context, self.z3_solver), Z3_L_TRUE);
 
@@ -147,15 +143,11 @@ impl ScfiaStdlib {
             let neg_condition_symbol = BoolNotExpression::new(expression.clone(), self, fork_sink);
             let neg_condition_ast = neg_condition_symbol.try_borrow().unwrap().get_z3_ast();
 
-            if Z3_solver_check_assumptions(self.z3_context, self.z3_solver, 1, &condition_ast)
-                != Z3_L_FALSE
-            {
+            if Z3_solver_check_assumptions(self.z3_context, self.z3_solver, 1, &condition_ast) != Z3_L_FALSE {
                 can_be_true = true
             }
 
-            if Z3_solver_check_assumptions(self.z3_context, self.z3_solver, 1, &neg_condition_ast)
-                != Z3_L_FALSE
-            {
+            if Z3_solver_check_assumptions(self.z3_context, self.z3_solver, 1, &neg_condition_ast) != Z3_L_FALSE {
                 can_be_false = true
             }
 
@@ -176,23 +168,15 @@ impl ScfiaStdlib {
             } else if can_be_false {
                 false
             } else {
-                unreachable!(
-                    "expression= {:?}, can_be_true={}, can_be_false={}",
-                    expression, can_be_true, can_be_false
-                )
+                unreachable!("expression= {:?}, can_be_true={}, can_be_false={}", expression, can_be_true, can_be_false)
             }
         }
     }
 
     pub fn are_equal(&mut self, lhs: Z3_ast, rhs: Z3_ast) -> bool {
         unsafe {
-            let assumptions = vec![Z3_mk_not(
-                self.z3_context,
-                Z3_mk_eq(self.z3_context, lhs, rhs),
-            )];
-            if Z3_solver_check_assumptions(self.z3_context, self.z3_solver, 1, assumptions.as_ptr())
-                == Z3_L_FALSE
-            {
+            let assumptions = vec![Z3_mk_not(self.z3_context, Z3_mk_eq(self.z3_context, lhs, rhs))];
+            if Z3_solver_check_assumptions(self.z3_context, self.z3_solver, 1, assumptions.as_ptr()) == Z3_L_FALSE {
                 true
             } else {
                 false
@@ -211,11 +195,7 @@ impl ScfiaStdlib {
             for candidate in candidates.iter() {
                 let assumption = Z3_mk_not(
                     self.z3_context,
-                    Z3_mk_eq(
-                        self.z3_context,
-                        Z3_mk_unsigned_int64(self.z3_context, *candidate, sort),
-                        ast,
-                    ),
+                    Z3_mk_eq(self.z3_context, Z3_mk_unsigned_int64(self.z3_context, *candidate, sort), ast),
                 );
                 Z3_inc_ref(self.z3_context, assumption);
                 assumptions.push(assumption)
@@ -224,49 +204,34 @@ impl ScfiaStdlib {
             // Find all remaining candidates
             loop {
                 let assumptions_count = assumptions.len().try_into().unwrap();
-                if Z3_solver_check_assumptions(
-                    self.z3_context,
-                    self.z3_solver,
-                    assumptions_count,
-                    assumptions.as_ptr(),
-                ) == Z3_L_FALSE
-                {
+                if Z3_solver_check_assumptions(self.z3_context, self.z3_solver, assumptions_count, assumptions.as_ptr()) == Z3_L_FALSE {
                     break;
                 }
 
                 let model = Z3_solver_get_model(self.z3_context, self.z3_solver);
 
                 let mut z3_ast: Z3_ast = ptr::null_mut();
-                assert!(Z3_model_eval(
-                    self.z3_context,
-                    model,
-                    ast,
-                    true,
-                    &mut z3_ast
-                ));
+                assert!(Z3_model_eval(self.z3_context, model, ast, true, &mut z3_ast));
 
                 let ast_kind = Z3_get_ast_kind(self.z3_context, z3_ast);
                 let mut v: u64 = 0;
                 if ast_kind == AstKind::Numeral {
-                    let size =
-                        Z3_get_bv_sort_size(self.z3_context, Z3_get_sort(self.z3_context, z3_ast));
+                    let size = Z3_get_bv_sort_size(self.z3_context, Z3_get_sort(self.z3_context, z3_ast));
                     assert_eq!(32, size);
                     assert!(Z3_get_numeral_uint64(self.z3_context, z3_ast, &mut v));
                 } else {
                     panic!("{:?}", ast_kind)
                 }
 
-                println!("WARNING: Unpredicted monomorphization candidate 0x{:x} ({} assumptions, {} candidates)", v, assumptions.len(), candidates.len());
+                println!(
+                    "WARNING: Unpredicted monomorphization candidate 0x{:x} ({} assumptions, {} candidates)",
+                    v,
+                    assumptions.len(),
+                    candidates.len()
+                );
                 candidates.push(v);
 
-                let assumption = Z3_mk_not(
-                    self.z3_context,
-                    Z3_mk_eq(
-                        self.z3_context,
-                        Z3_mk_unsigned_int64(self.z3_context, v, sort),
-                        ast,
-                    ),
-                );
+                let assumption = Z3_mk_not(self.z3_context, Z3_mk_eq(self.z3_context, Z3_mk_unsigned_int64(self.z3_context, v, sort), ast));
                 Z3_inc_ref(self.z3_context, assumption);
                 assumptions.push(assumption)
             }

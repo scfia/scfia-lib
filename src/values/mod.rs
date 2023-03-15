@@ -1,12 +1,43 @@
-use std::{cell::RefCell, rc::{Rc, Weak}, collections::BTreeMap};
 use std::collections::HashMap;
+use std::{
+    cell::RefCell,
+    collections::BTreeMap,
+    rc::{Rc, Weak},
+};
 use z3_sys::Z3_solver_assert;
 
-use crate::{ScfiaStdlib, expressions::{bool_less_than_uint_expression::{BoolLessThanUIntExpression, RetiredBoolLessThanUIntExpression}, bool_not_expression::{RetiredBoolNotExpression, BoolNotExpression}, bv_and_expression::{BVAndExpression, RetiredBVAndExpression}, bv_shift_right_logical_expression::{BVShiftRightLogicalExpression, RetiredBVShiftRightLogicalExpression}, bv_shift_left_logical_expression::{BVShiftLeftLogicalExpression, RetiredBVShiftLeftLogicalExpression}, bv_xor_expression::{BVXorExpression, RetiredBVXorExpression}, bv_sub_expression::{BVSubExpression, RetiredBVSubExpression}, bool_less_than_signed_expression::{BoolLessThanSignedExpression, RetiredBoolLessThanSignedExpression}, bv_multiply_expression::{BVMultiplyExpression, RetiredBVMultiplyExpression}, bv_unsigned_remainder_expression::{RetiredBVUnsignedRemainderExpression, BVUnsignedRemainderExpression}, MAX_DEPTH}};
+use crate::{
+    expressions::{
+        bool_less_than_signed_expression::{BoolLessThanSignedExpression, RetiredBoolLessThanSignedExpression},
+        bool_less_than_uint_expression::{BoolLessThanUIntExpression, RetiredBoolLessThanUIntExpression},
+        bool_not_expression::{BoolNotExpression, RetiredBoolNotExpression},
+        bv_and_expression::{BVAndExpression, RetiredBVAndExpression},
+        bv_multiply_expression::{BVMultiplyExpression, RetiredBVMultiplyExpression},
+        bv_shift_left_logical_expression::{BVShiftLeftLogicalExpression, RetiredBVShiftLeftLogicalExpression},
+        bv_shift_right_logical_expression::{BVShiftRightLogicalExpression, RetiredBVShiftRightLogicalExpression},
+        bv_sub_expression::{BVSubExpression, RetiredBVSubExpression},
+        bv_unsigned_remainder_expression::{BVUnsignedRemainderExpression, RetiredBVUnsignedRemainderExpression},
+        bv_xor_expression::{BVXorExpression, RetiredBVXorExpression},
+        MAX_DEPTH,
+    },
+    ScfiaStdlib,
+};
 
-use crate::{expressions::{bool_eq_expression::{BoolEqExpression, RetiredBoolEqExpression}, bool_neq_expression::{BoolNEqExpression, RetiredBoolNEqExpression}, bv_add_expression::{BVAddExpression, RetiredBVAddExpression}, bv_concat_expression::{BVConcatExpression, RetiredBVConcatExpression}, bv_or_expression::{BVOrExpression, RetiredBVOrExpression}, bv_sign_extend_expression::{BVSignExtendExpression, RetiredBVSignExtendExpression}, bv_slice_expression::{BVSliceExpression, RetiredBVSliceExpression}}};
+use crate::expressions::{
+    bool_eq_expression::{BoolEqExpression, RetiredBoolEqExpression},
+    bool_neq_expression::{BoolNEqExpression, RetiredBoolNEqExpression},
+    bv_add_expression::{BVAddExpression, RetiredBVAddExpression},
+    bv_concat_expression::{BVConcatExpression, RetiredBVConcatExpression},
+    bv_or_expression::{BVOrExpression, RetiredBVOrExpression},
+    bv_sign_extend_expression::{BVSignExtendExpression, RetiredBVSignExtendExpression},
+    bv_slice_expression::{BVSliceExpression, RetiredBVSliceExpression},
+};
 
-use self::{bit_vector_concrete::{BitVectorConcrete, RetiredBitvectorConcrete}, bit_vector_symbol::{BitVectorSymbol, RetiredBitvectorSymbol}, bool_concrete::{BoolConcrete, RetiredBoolConcrete}};
+use self::{
+    bit_vector_concrete::{BitVectorConcrete, RetiredBitvectorConcrete},
+    bit_vector_symbol::{BitVectorSymbol, RetiredBitvectorSymbol},
+    bool_concrete::{BoolConcrete, RetiredBoolConcrete},
+};
 
 pub mod bit_vector_concrete;
 pub mod bit_vector_symbol;
@@ -70,7 +101,7 @@ impl ActiveValue {
     pub fn as_concrete_bitvector(&self) -> &BitVectorConcrete {
         match self {
             ActiveValue::BitvectorConcrete(e) => e,
-            _ => panic!()
+            _ => panic!(),
         }
     }
 
@@ -78,12 +109,12 @@ impl ActiveValue {
         &self,
         cloned_active_values: &mut BTreeMap<u64, Rc<RefCell<ActiveValue>>>,
         cloned_retired_values: &mut BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
-        cloned_stdlib: &mut ScfiaStdlib
+        cloned_stdlib: &mut ScfiaStdlib,
     ) -> Rc<RefCell<ActiveValue>> {
         if let Some(cloned_active_value) = cloned_active_values.get(&self.get_id()) {
             let clone = cloned_active_value.clone();
             debug_assert_eq!(clone.try_borrow().unwrap().get_id(), self.get_id());
-            return clone
+            return clone;
         }
 
         if self.get_depth() > MAX_DEPTH {
@@ -132,17 +163,17 @@ impl RetiredValue {
         &self,
         cloned_active_values: &mut BTreeMap<u64, Rc<RefCell<ActiveValue>>>,
         cloned_retired_values: &mut BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
-        cloned_stdlib: &mut ScfiaStdlib
+        cloned_stdlib: &mut ScfiaStdlib,
     ) -> Rc<RefCell<RetiredValue>> {
         if let Some(cloned_retired_value) = cloned_retired_values.get(&self.get_id()) {
             let clone = cloned_retired_value.clone();
             debug_assert_eq!(clone.try_borrow().unwrap().get_id(), self.get_id());
-            return clone
+            return clone;
         }
 
         match self {
-            RetiredValue::RetiredBitvectorConcrete(_) => {},
-            x => {}, //println!("clone_to_stdlib {} RetiredValue {:?}", cloned_stdlib.id, &x),
+            RetiredValue::RetiredBitvectorConcrete(_) => {}
+            x => {} //println!("clone_to_stdlib {} RetiredValue {:?}", cloned_stdlib.id, &x),
         }
 
         match self {

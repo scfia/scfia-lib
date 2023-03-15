@@ -1,27 +1,26 @@
-use z3_sys::Z3_context;
-use z3_sys::Z3_inc_ref;
-use z3_sys::Z3_dec_ref;
-use z3_sys::Z3_mk_bool_sort;
-use z3_sys::Z3_mk_bv_sort;
-use z3_sys::Z3_mk_false;
-use z3_sys::Z3_mk_fresh_const;
-use z3_sys::Z3_mk_true;
-use z3_sys::Z3_mk_unsigned_int64;
-use z3_sys::Z3_ast;
+use crate::expressions::finish_clone;
+use crate::expressions::inherit;
+use crate::models::riscv::rv32i::ForkSink;
+use crate::ScfiaStdlib;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
 use std::rc::Weak;
-use crate::ScfiaStdlib;
-use crate::expressions::finish_clone;
-use crate::expressions::inherit;
-use crate::models::riscv::rv32i::ForkSink;
+use z3_sys::Z3_ast;
+use z3_sys::Z3_context;
+use z3_sys::Z3_dec_ref;
+use z3_sys::Z3_inc_ref;
+use z3_sys::Z3_mk_bool_sort;
+use z3_sys::Z3_mk_bv_sort;
+use z3_sys::Z3_mk_false;
+use z3_sys::Z3_mk_fresh_const;
+use z3_sys::Z3_mk_true;
+use z3_sys::Z3_mk_unsigned_int64;
 
 use super::ActiveValue;
 use super::RetiredValue;
-
 
 pub struct BoolConcrete {
     pub id: u64,
@@ -57,7 +56,7 @@ impl BoolConcrete {
             } else {
                 Z3_mk_false(stdlib.z3_context)
             };
-            
+
             Z3_inc_ref(stdlib.z3_context, ast);
 
             // let z3_ast = stdlib.z3_context
@@ -88,7 +87,7 @@ impl BoolConcrete {
             clone.into(),
             cloned_active_values,
             cloned_retired_values,
-            cloned_stdlib
+            cloned_stdlib,
         )
     }
 }
@@ -109,13 +108,7 @@ impl Drop for BoolConcrete {
             z3_ast: self.z3_ast,
         })));
 
-        inherit(
-            self.id,
-            retired_expression,
-            vec![],
-            &self.inherited_asts,
-            &self.discovered_asts
-        );
+        inherit(self.id, retired_expression, vec![], &self.inherited_asts, &self.discovered_asts);
     }
 }
 

@@ -1,29 +1,36 @@
 mod constants;
 
-use scfia_lib::SymbolicHints;
+use scfia_lib::expressions::bool_less_than_signed_expression::BoolLessThanSignedExpression;
+use scfia_lib::expressions::bool_less_than_uint_expression::BoolLessThanUIntExpression;
 use scfia_lib::memory::symbolic_volatile_memory_region::SymbolicVolatileMemoryRegion32;
+use scfia_lib::SymbolicHints;
 use std::collections::{BTreeSet, HashSet};
-use std::{fs, ptr};
 use std::time::Instant;
+use std::{fs, ptr};
 
 use scfia_lib::expressions::bool_eq_expression::BoolEqExpression;
 use scfia_lib::expressions::bv_and_expression::BVAndExpression;
 use scfia_lib::expressions::bv_sub_expression::BVSubExpression;
 use scfia_lib::memory::stable_memory_region32::StableMemoryRegion32;
-use scfia_lib::memory::MemoryRegion32;
 use scfia_lib::memory::volatile_memory_region::VolatileMemoryRegion32;
+use scfia_lib::memory::MemoryRegion32;
 use scfia_lib::models::riscv::rv32i::RV32iSystemState;
-use scfia_lib::values::ActiveValue;
 use scfia_lib::values::bit_vector_symbol::BitVectorSymbol;
-use scfia_lib::{
-    memory::memory32::Memory32, models::riscv::rv32i,
-    values::bit_vector_concrete::BitVectorConcrete, ScfiaStdlib,
-};
+use scfia_lib::values::ActiveValue;
+use scfia_lib::{memory::memory32::Memory32, models::riscv::rv32i, values::bit_vector_concrete::BitVectorConcrete, ScfiaStdlib};
 use xmas_elf::program::ProgramHeader::Ph32;
 use xmas_elf::{program, ElfFile};
-use z3_sys::{Z3_solver_check_assumptions, Z3_solver_check, Z3_solver_get_model, Z3_model_eval, Z3_get_numeral_uint64, Z3_ast, Z3_L_TRUE, Z3_get_bv_sort_size, Z3_get_sort, Z3_get_ast_kind, AstKind, Z3_model_get_const_interp, Z3_get_sort_kind, SortKind, Z3_mk_not, Z3_mk_eq, Z3_mk_unsigned_int64, Z3_mk_bv_sort, Z3_L_FALSE, Z3_inc_ref, Z3_context, Z3_solver, Z3_dec_ref};
+use z3_sys::{
+    AstKind, SortKind, Z3_ast, Z3_context, Z3_dec_ref, Z3_get_ast_kind, Z3_get_bv_sort_size, Z3_get_numeral_uint64, Z3_get_sort, Z3_get_sort_kind, Z3_inc_ref,
+    Z3_mk_bv_sort, Z3_mk_eq, Z3_mk_not, Z3_mk_unsigned_int64, Z3_model_eval, Z3_model_get_const_interp, Z3_solver, Z3_solver_check,
+    Z3_solver_check_assumptions, Z3_solver_get_model, Z3_L_FALSE, Z3_L_TRUE,
+};
 
-use crate::rv32im::constants::{INGRESS_RECEIVEQUEUE_DRIVER_POSITIONS, EGRESS_RECEIVEQUEUE_DRIVER_POSITIONS, INGRESS_SENDQUEUE_DRIVER_POSITIONS, EGRESS_SENDQUEUE_DRIVER_POSITIONS, INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_HIGHER_U32, INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_LOWER_U32, INGRESS_RECEIVEQUEUE_DESCRIPTOR_LENGTH};
+use crate::rv32im::constants::{
+    COPY_FROM_1, COPY_FROM_2, COPY_FROM_3, EGRESS_RECEIVEQUEUE_DRIVER_POSITIONS, EGRESS_SENDQUEUE_DRIVER_POSITIONS,
+    INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_HIGHER_U32, INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_LOWER_U32, INGRESS_RECEIVEQUEUE_DESCRIPTOR_LENGTH,
+    INGRESS_RECEIVEQUEUE_DRIVER_POSITIONS, INGRESS_SENDQUEUE_DRIVER_POSITIONS,
+};
 
 fn create_ss() -> RV32iSystemState {
     let binary_blob = fs::read("./tests/rv32i/data/simple_router_risc_v").unwrap();
@@ -37,18 +44,12 @@ fn create_ss() -> RV32iSystemState {
             match program_header.get_type().unwrap() {
                 program::Type::Load => {
                     let mut i = 0;
-                    let mut stable_region =
-                        StableMemoryRegion32::new(ph32.virtual_addr as u32, ph32.mem_size as u32);
+                    let mut stable_region = StableMemoryRegion32::new(ph32.virtual_addr as u32, ph32.mem_size as u32);
 
                     for b in ph32.raw_data(&elf) {
                         stable_region.write(
                             ph32.virtual_addr as u32 + i,
-                            BitVectorConcrete::new(
-                                *b as u64,
-                                8,
-                                &mut stdlib,
-                                &mut None,
-                            ),
+                            BitVectorConcrete::new(*b as u64, 8, &mut stdlib, &mut None),
                             8,
                             &mut stdlib,
                             &mut None,
@@ -130,18 +131,12 @@ fn test_system_state() {
                 program::Type::Load => {
                     println!("{:?}", program_header);
                     let mut i = 0;
-                    let mut stable_region =
-                        StableMemoryRegion32::new(ph32.virtual_addr as u32, ph32.mem_size as u32);
+                    let mut stable_region = StableMemoryRegion32::new(ph32.virtual_addr as u32, ph32.mem_size as u32);
 
                     for b in ph32.raw_data(&elf) {
                         stable_region.write(
                             ph32.virtual_addr as u32 + i,
-                            BitVectorConcrete::new(
-                                *b as u64,
-                                8,
-                                &mut stdlib,
-                                &mut None,
-                            ),
+                            BitVectorConcrete::new(*b as u64, 8, &mut stdlib, &mut None),
                             8,
                             &mut stdlib,
                             &mut None,
@@ -286,7 +281,7 @@ fn test_system_state() {
         print!("({}ms) ", begin.elapsed().as_millis());
         rv32i_system_state.step(None);
     }
-    
+
     let mut successors = rv32i_system_state.step_forking();
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
@@ -313,7 +308,10 @@ fn test_system_state() {
         panicking.step(None)
     }
 
-    println!("[{}s] ### Stepping until NIC1 receivequeue queue_num_max <1024 check", begin.elapsed().as_millis());
+    println!(
+        "[{}s] ### Stepping until NIC1 receivequeue queue_num_max <1024 check",
+        begin.elapsed().as_millis()
+    );
     while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x38 {
         print!("({}ms) ", begin.elapsed().as_millis());
         continuing.step(None)
@@ -334,7 +332,7 @@ fn test_system_state() {
         print!("({}ms) ", begin.elapsed().as_millis());
         if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x3dc {
             continuing.step(Some(SymbolicHints {
-                hints: vec!(INGRESS_RECEIVEQUEUE_DRIVER_POSITIONS.to_vec())
+                hints: vec![INGRESS_RECEIVEQUEUE_DRIVER_POSITIONS.to_vec()],
             }));
         } else {
             continuing.step(None);
@@ -397,13 +395,13 @@ fn test_system_state() {
         print!("({}ms) ", begin.elapsed().as_millis());
         if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x3dc {
             continuing.step(Some(SymbolicHints {
-                hints: vec!(INGRESS_SENDQUEUE_DRIVER_POSITIONS.to_vec())
+                hints: vec![INGRESS_SENDQUEUE_DRIVER_POSITIONS.to_vec()],
             }));
         } else {
             continuing.step(None);
         }
     }
-    
+
     let mut successors = continuing.step_forking();
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
@@ -430,7 +428,10 @@ fn test_system_state() {
         panicking.step(None)
     }
 
-    println!("[{}s] ### Stepping until NIC2 receivequeue queue_num_max <1024 check", begin.elapsed().as_millis());
+    println!(
+        "[{}s] ### Stepping until NIC2 receivequeue queue_num_max <1024 check",
+        begin.elapsed().as_millis()
+    );
     while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x38 {
         print!("({}ms) ", begin.elapsed().as_millis());
         continuing.step(None)
@@ -451,7 +452,7 @@ fn test_system_state() {
         print!("({}ms) ", begin.elapsed().as_millis());
         if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x3dc {
             continuing.step(Some(SymbolicHints {
-                hints: vec!(EGRESS_RECEIVEQUEUE_DRIVER_POSITIONS.to_vec())
+                hints: vec![EGRESS_RECEIVEQUEUE_DRIVER_POSITIONS.to_vec()],
             }));
         } else {
             continuing.step(None);
@@ -515,7 +516,7 @@ fn test_system_state() {
         print!("({}ms) ", begin.elapsed().as_millis());
         if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x3dc {
             continuing.step(Some(SymbolicHints {
-                hints: vec!(EGRESS_SENDQUEUE_DRIVER_POSITIONS.to_vec())
+                hints: vec![EGRESS_SENDQUEUE_DRIVER_POSITIONS.to_vec()],
             }));
         } else {
             continuing.step(None);
@@ -543,14 +544,44 @@ fn test_system_state() {
         continuing.step(None)
     }
     println!("[{}s] ### Monomorphizing a4 to 0x46005004", begin.elapsed().as_millis());
-    let mut monomorphizing_candidates = vec!(0x46005004);
-    continuing.stdlib.monomorphize(continuing.system_state.x14.try_borrow().unwrap().get_z3_ast(), &mut monomorphizing_candidates);
+    let mut monomorphizing_candidates = vec![0x46005004];
+    continuing
+        .stdlib
+        .monomorphize(continuing.system_state.x14.try_borrow().unwrap().get_z3_ast(), &mut monomorphizing_candidates);
     assert_eq!(monomorphizing_candidates.len(), 1);
     continuing.system_state.x14 = BitVectorConcrete::new(*monomorphizing_candidates.iter().next().unwrap(), 32, &mut continuing.stdlib, &mut None);
 
     println!("[{}s] ### Creating symbolic volatile memory regions", begin.elapsed().as_millis());
+    let base_symbol = BitVectorSymbol::new(None, 32, Some("SymbolicVolatileMemoryRegion32Base".into()), &mut continuing.stdlib, &mut None);
+    {
+        let base_symbol_and_expr = BVAndExpression::new(
+            base_symbol.clone(),
+            BitVectorConcrete::new(0xff, 32, &mut continuing.stdlib, &mut None),
+            &mut continuing.stdlib,
+            &mut None,
+        );
+        let expr = BoolEqExpression::new(
+            BitVectorConcrete::new(0, 32, &mut continuing.stdlib, &mut None),
+            base_symbol_and_expr.clone(),
+            &mut continuing.stdlib,
+            &mut None,
+        );
+        expr.try_borrow_mut().unwrap().assert(&mut continuing.stdlib);
+    }
+
+    {
+        // constrain to < 0xFFFF0000 (to prevent wrapping around 0xFFFFFFFF)
+        let expr = BoolLessThanUIntExpression::new(
+            base_symbol.clone(),
+            BitVectorConcrete::new(0xFFFF0000, 32, &mut continuing.stdlib, &mut None),
+            &mut continuing.stdlib,
+            &mut None,
+        );
+        expr.try_borrow_mut().unwrap().assert(&mut continuing.stdlib);
+    }
+
     let sym_region = SymbolicVolatileMemoryRegion32 {
-        base_symbol: BitVectorSymbol::new(None, 32, Some("SymbolicVolatileMemoryRegion32Base".into()), &mut continuing.stdlib, &mut None),
+        base_symbol: base_symbol,
         length: 4096,
     };
 
@@ -559,39 +590,151 @@ fn test_system_state() {
     for i in 0..1024 {
         let pointer_offset: u32 = i * 16;
         let ingress_receive_queue_pointer_address = 0x46000000 + pointer_offset;
-        println!("[{}s] ### overwriting 0x{:x}", begin.elapsed().as_millis(), ingress_receive_queue_pointer_address);
+        println!(
+            "[{}s] ### overwriting 0x{:x}",
+            begin.elapsed().as_millis(),
+            ingress_receive_queue_pointer_address
+        );
         continuing.memory.write_concrete(
             ingress_receive_queue_pointer_address,
             sym_region.base_symbol.clone(),
             32,
             &mut continuing.stdlib,
-            &mut None);
+            &mut None,
+        );
+
+        let egress_send_queue_pointer_address = 0x46c18000 + pointer_offset;
+        println!("[{}s] ### overwriting 0x{:x}", begin.elapsed().as_millis(), egress_send_queue_pointer_address);
+        continuing.memory.write_concrete(
+            egress_send_queue_pointer_address,
+            sym_region.base_symbol.clone(),
+            32,
+            &mut continuing.stdlib,
+            &mut None,
+        );
     }
     continuing.memory.symbolic_volatile_memory_regions.push(sym_region);
 
-    println!("[{}s] ### Stepping until end of main loop", begin.elapsed().as_millis());
-    loop {
+    println!("[{}s] ### Stepping until ethertype ipv4 check", begin.elapsed().as_millis());
+    while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x73c {
         print!("({}ms) ", begin.elapsed().as_millis());
         if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x49C {
             continuing.step(Some(SymbolicHints {
-                hints: vec!(INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_HIGHER_U32.to_vec())
+                hints: vec![INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_HIGHER_U32.to_vec()],
             }));
         } else if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x4a0 {
             continuing.step(Some(SymbolicHints {
-                hints: vec!(INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_LOWER_U32.to_vec())
+                hints: vec![INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_LOWER_U32.to_vec()],
             }));
+        } else if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x4a8 {
+            continuing.step(None);
+            println!("a3={:?}", continuing.system_state.x13);
+            let mut candidates = vec![];
+            continuing
+                .stdlib
+                .monomorphize(continuing.system_state.x13.try_borrow().unwrap().get_z3_ast(), &mut candidates);
+            println!("a3 candidates={:?}", candidates)
         } else if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x4a4 {
             continuing.step(Some(SymbolicHints {
-                hints: vec!(INGRESS_RECEIVEQUEUE_DESCRIPTOR_LENGTH.to_vec())
+                hints: vec![INGRESS_RECEIVEQUEUE_DESCRIPTOR_LENGTH.to_vec()],
             }));
         } else if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x4b0 {
             continuing.step(Some(SymbolicHints {
-                hints: vec!(INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_HIGHER_U32.to_vec())
+                hints: vec![INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_HIGHER_U32.to_vec()],
             }));
         } else if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x4b4 {
             continuing.step(Some(SymbolicHints {
-                hints: vec!(INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_LOWER_U32.to_vec())
+                hints: vec![INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_LOWER_U32.to_vec()],
             }));
+        } else {
+            continuing.step(None);
+        }
+    }
+
+    let mut successors = continuing.step_forking();
+    let mut returning = successors.remove(0);
+    let mut continuing = successors.remove(0);
+
+    println!("[{}s] ### Stepping not ipv4 until start of main loop", begin.elapsed().as_millis());
+    while returning.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x6E8 {
+        print!("({}ms) ", begin.elapsed().as_millis());
+        if returning.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x3DC {
+            returning.step(Some(SymbolicHints {
+                hints: vec![INGRESS_RECEIVEQUEUE_DRIVER_POSITIONS.to_vec()],
+            }));
+        } else {
+            returning.step(None);
+        }
+    }
+
+    println!("[{}s] ### Stepping until egress.try_take fork", begin.elapsed().as_millis());
+    while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x428 {
+        print!("({}ms) ", begin.elapsed().as_millis());
+        continuing.step(None);
+    }
+
+    let mut successors = continuing.step_forking();
+    let mut continuing = successors.remove(0);
+    let mut returning = successors.remove(0);
+
+    println!("[{}s] ### Stepping egress empty until start of main loop", begin.elapsed().as_millis());
+    while returning.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x6E8 {
+        print!("({}ms) ", begin.elapsed().as_millis());
+        if returning.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x3DC {
+            returning.step(Some(SymbolicHints {
+                hints: vec![INGRESS_RECEIVEQUEUE_DRIVER_POSITIONS.to_vec()],
+            }));
+        } else {
+            returning.step(None);
+        }
+    }
+
+    println!("[{}s] ### here be dragons", begin.elapsed().as_millis());
+    loop {
+        print!("({}ms) ", begin.elapsed().as_millis());
+        if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x3DC {
+            continuing.step(Some(SymbolicHints { hints: vec![vec![0x46c1d004]] }));
+        } else if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x460 {
+            continuing.step(Some(SymbolicHints { hints: vec![vec![0x46c1d004]] }));
+        } else if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x150 {
+            continuing.step(Some(SymbolicHints {
+                hints: vec![COPY_FROM_1.to_vec()],
+            }));
+        } else if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x154 {
+            continuing.step(Some(SymbolicHints {
+                hints: vec![COPY_FROM_2.to_vec()],
+            }));
+        } else if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x158 {
+            continuing.step(Some(SymbolicHints {
+                hints: vec![COPY_FROM_3.to_vec()],
+            }));
+        } else if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x160 {
+            continuing.step(Some(SymbolicHints {
+                hints: vec![INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_HIGHER_U32.to_vec()],
+            }));
+        } else if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x164 {
+            continuing.step(Some(SymbolicHints {
+                hints: vec![INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_LOWER_U32.to_vec()],
+            }));
+        } else if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x168 {
+            continuing.step(Some(SymbolicHints {
+                hints: vec![COPY_FROM_3.to_vec()],
+            }));
+        } else if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x11C0 {
+            continuing.step(Some(SymbolicHints { hints: vec![vec![0]] }));
+        } else if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x1264 {
+            continuing.step(None);
+            println!("a3={:?}", &continuing.system_state.x13);
+            println!("a4={:?}", &continuing.system_state.x14);
+            let sub = BVSubExpression::new(
+                continuing.system_state.x13.clone(),
+                continuing.system_state.x14.clone(),
+                &mut continuing.stdlib,
+                &mut None,
+            );
+            let mut candidates = vec![];
+            continuing.stdlib.monomorphize(sub.try_borrow().unwrap().get_z3_ast(), &mut candidates);
+            println!("diff={:?}", candidates)
         } else {
             continuing.step(None);
         }
@@ -613,6 +756,6 @@ fn step_all_until(mut states: Vec<RV32iSystemState>, branch_points: Vec<u64>, un
             done.push(state);
         }
     }
-    
+
     done
 }

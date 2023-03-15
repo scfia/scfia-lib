@@ -1,8 +1,8 @@
-use crate::ScfiaStdlib;
 use crate::models::riscv::rv32i::ForkSink;
+use crate::values::bit_vector_concrete::BitVectorConcrete;
 use crate::values::ActiveValue;
 use crate::values::RetiredValue;
-use crate::values::bit_vector_concrete::BitVectorConcrete;
+use crate::ScfiaStdlib;
 use std::cell::Ref;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -79,13 +79,7 @@ impl BVSignExtendExpression {
         ActiveValue::BitvectorSignExtendExpression(Self::new_with_id(stdlib.get_symbol_id(), s1, input_width, output_width, stdlib)).into()
     }
 
-    pub fn new_with_id(
-        id: u64,
-        s1: Rc<RefCell<ActiveValue>>,
-        input_width: u32,
-        output_width: u32,
-        stdlib: &mut ScfiaStdlib,
-    ) -> BVSignExtendExpression {
+    pub fn new_with_id(id: u64, s1: Rc<RefCell<ActiveValue>>, input_width: u32, output_width: u32, stdlib: &mut ScfiaStdlib) -> BVSignExtendExpression {
         unsafe {
             let z3_context = stdlib.z3_context;
             let s1_ast;
@@ -95,11 +89,7 @@ impl BVSignExtendExpression {
                 s1_ast = s1.get_z3_ast();
                 s1_id = s1.get_id();
             }
-            let ast = Z3_mk_sign_ext(
-                stdlib.z3_context,
-                output_width - input_width,
-                s1_ast,
-            );
+            let ast = Z3_mk_sign_ext(stdlib.z3_context, output_width - input_width, s1_ast);
             Z3_inc_ref(z3_context, ast);
             let depth = 1 + s1.try_borrow().unwrap().get_depth();
             if depth > super::MAX_DEPTH {
@@ -124,12 +114,16 @@ impl BVSignExtendExpression {
         &self,
         cloned_active_values: &mut BTreeMap<u64, Rc<RefCell<ActiveValue>>>,
         cloned_retired_values: &mut BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
-        cloned_stdlib: &mut ScfiaStdlib
+        cloned_stdlib: &mut ScfiaStdlib,
     ) -> Rc<RefCell<ActiveValue>> {
         // Clone s1, s2
-        let s1 = self.s1.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+        let s1 = self
+            .s1
+            .try_borrow()
+            .unwrap()
+            .clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
         if let Some(e) = cloned_active_values.get(&self.id) {
-            return e.clone()
+            return e.clone();
         }
 
         // Build clone
@@ -142,7 +136,7 @@ impl BVSignExtendExpression {
             cloned_expression.into(),
             cloned_active_values,
             cloned_retired_values,
-            cloned_stdlib
+            cloned_stdlib,
         )
     }
 }
@@ -152,27 +146,21 @@ impl Drop for BVSignExtendExpression {
         // Retire expression, maintain z3 ast refcount
         let s1_id = self.s1.try_borrow().unwrap().get_id();
         debug_assert!(s1_id < self.id);
-        let retired_expression = Rc::new(RefCell::new(RetiredValue::RetiredBitvectorSignExtendExpression(RetiredBVSignExtendExpression {
-            id: self.id,
-            s1_id,
-            s1: Rc::downgrade(&self.s1),
-            input_width: self.input_width,
-            output_width: self.output_width,
-            z3_context: self.z3_context,
-            z3_ast: self.z3_ast,
-        })));
+        let retired_expression = Rc::new(RefCell::new(RetiredValue::RetiredBitvectorSignExtendExpression(
+            RetiredBVSignExtendExpression {
+                id: self.id,
+                s1_id,
+                s1: Rc::downgrade(&self.s1),
+                input_width: self.input_width,
+                output_width: self.output_width,
+                z3_context: self.z3_context,
+                z3_ast: self.z3_ast,
+            },
+        )));
 
-        let parents = vec![
-            (s1_id, self.s1.clone()),
-        ];
+        let parents = vec![(s1_id, self.s1.clone())];
 
-        inherit(
-            self.id,
-            retired_expression,
-            parents,
-            &self.inherited_asts,
-            &self.discovered_asts
-        );
+        inherit(self.id, retired_expression, parents, &self.inherited_asts, &self.discovered_asts);
     }
 }
 
@@ -181,7 +169,7 @@ impl RetiredBVSignExtendExpression {
         &self,
         cloned_active_values: &mut BTreeMap<u64, Rc<RefCell<ActiveValue>>>,
         cloned_retired_values: &mut BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
-        cloned_stdlib: &mut ScfiaStdlib
+        cloned_stdlib: &mut ScfiaStdlib,
     ) -> Rc<RefCell<RetiredValue>> {
         let cloned_s1_ast;
         let cloned_s1;
@@ -190,7 +178,10 @@ impl RetiredBVSignExtendExpression {
             cloned_s1_ast = s1.get_z3_ast();
             cloned_s1 = Rc::downgrade(s1_rc);
         } else if let Some(s1_rc) = self.s1.upgrade() {
-            let cloned_s1_rc = s1_rc.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+            let cloned_s1_rc = s1_rc
+                .try_borrow()
+                .unwrap()
+                .clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
             cloned_s1_ast = cloned_s1_rc.try_borrow().unwrap().get_z3_ast();
             cloned_s1 = Rc::downgrade(&cloned_s1_rc);
         } else {
@@ -200,11 +191,7 @@ impl RetiredBVSignExtendExpression {
         };
 
         let cloned: Rc<RefCell<RetiredValue>> = unsafe {
-            let z3_ast = Z3_mk_sign_ext(
-                cloned_stdlib.z3_context,
-                self.output_width - self.input_width,
-                cloned_s1_ast,
-            );
+            let z3_ast = Z3_mk_sign_ext(cloned_stdlib.z3_context, self.output_width - self.input_width, cloned_s1_ast);
             Z3_inc_ref(cloned_stdlib.z3_context, z3_ast);
             RetiredBVSignExtendExpression {
                 id: self.id,
@@ -213,19 +200,18 @@ impl RetiredBVSignExtendExpression {
                 input_width: self.input_width,
                 output_width: self.output_width,
                 z3_context: cloned_stdlib.z3_context,
-                z3_ast
+                z3_ast,
             }
-        }.into();
+        }
+        .into();
 
         cloned_retired_values.insert(self.id, cloned.clone());
         cloned
     }
 }
 
-
 impl Drop for RetiredBVSignExtendExpression {
     fn drop(&mut self) {
         // unsafe { Z3_dec_ref(self.z3_context, self.z3_ast) }
     }
 }
-

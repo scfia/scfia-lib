@@ -1,9 +1,7 @@
-use z3_sys::Z3_context;
-use z3_sys::Z3_inc_ref;
-use z3_sys::Z3_dec_ref;
-use z3_sys::Z3_mk_bv_sort;
-use z3_sys::Z3_mk_unsigned_int64;
-use z3_sys::Z3_ast;
+use crate::expressions::finish_clone;
+use crate::expressions::inherit;
+use crate::models::riscv::rv32i::ForkSink;
+use crate::ScfiaStdlib;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -11,14 +9,15 @@ use std::rc::Rc;
 use std::rc::Weak;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
-use crate::ScfiaStdlib;
-use crate::expressions::finish_clone;
-use crate::expressions::inherit;
-use crate::models::riscv::rv32i::ForkSink;
+use z3_sys::Z3_ast;
+use z3_sys::Z3_context;
+use z3_sys::Z3_dec_ref;
+use z3_sys::Z3_inc_ref;
+use z3_sys::Z3_mk_bv_sort;
+use z3_sys::Z3_mk_unsigned_int64;
 
 use super::ActiveValue;
 use super::RetiredValue;
-
 
 pub struct BitVectorConcrete {
     pub id: u64,
@@ -42,12 +41,7 @@ pub struct RetiredBitvectorConcrete {
 }
 
 impl BitVectorConcrete {
-    pub fn new(
-        value: u64,
-        width: u32,
-        stdlib: &mut ScfiaStdlib,
-        fork_sink: &mut Option<&mut ForkSink>
-    ) -> Rc<RefCell<ActiveValue>> {
+    pub fn new(value: u64, width: u32, stdlib: &mut ScfiaStdlib, fork_sink: &mut Option<&mut ForkSink>) -> Rc<RefCell<ActiveValue>> {
         let value: Rc<RefCell<ActiveValue>> = Self::new_with_id(stdlib.get_symbol_id(), stdlib.id.clone(), value, width, stdlib).into();
         if let Some(fork_sink) = fork_sink {
             fork_sink.new_values.push(value.clone());
@@ -55,13 +49,7 @@ impl BitVectorConcrete {
         value
     }
 
-    pub fn new_with_id(
-        id: u64,
-        stdlib_id: String,
-        value: u64,
-        width: u32,
-        stdlib: &mut ScfiaStdlib
-    ) -> BitVectorConcrete {
+    pub fn new_with_id(id: u64, stdlib_id: String, value: u64, width: u32, stdlib: &mut ScfiaStdlib) -> BitVectorConcrete {
         unsafe {
             let sort = Z3_mk_bv_sort(stdlib.z3_context, width);
             let ast = Z3_mk_unsigned_int64(stdlib.z3_context, value, sort);
@@ -100,7 +88,7 @@ impl BitVectorConcrete {
             clone.into(),
             cloned_active_values,
             cloned_retired_values,
-            cloned_stdlib
+            cloned_stdlib,
         )
     }
 }
@@ -110,7 +98,7 @@ impl RetiredBitvectorConcrete {
         &self,
         _cloned_active_values: &mut BTreeMap<u64, Rc<RefCell<ActiveValue>>>,
         cloned_retired_values: &mut BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
-        cloned_stdlib: &mut ScfiaStdlib
+        cloned_stdlib: &mut ScfiaStdlib,
     ) -> Rc<RefCell<RetiredValue>> {
         unsafe {
             let sort = Z3_mk_bv_sort(cloned_stdlib.z3_context, self.width);
@@ -123,7 +111,8 @@ impl RetiredBitvectorConcrete {
                 width: self.width,
                 z3_context: cloned_stdlib.z3_context,
                 z3_ast: ast,
-            }.into();
+            }
+            .into();
 
             cloned_retired_values.insert(self.id, cloned.clone());
             cloned
@@ -133,7 +122,10 @@ impl RetiredBitvectorConcrete {
 
 impl fmt::Debug for BitVectorConcrete {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&format!("BitVectorConcrete {{ value=0x{:x}, width={}, id={} }}", self.value, self.width, self.id))
+        f.write_str(&format!(
+            "BitVectorConcrete {{ value=0x{:x}, width={}, id={} }}",
+            self.value, self.width, self.id
+        ))
     }
 }
 
@@ -148,13 +140,7 @@ impl Drop for BitVectorConcrete {
             z3_ast: self.z3_ast,
         })));
 
-        inherit(
-            self.id,
-            retired_expression,
-            vec![],
-            &self.inherited_asts,
-            &self.discovered_asts
-        );
+        inherit(self.id, retired_expression, vec![], &self.inherited_asts, &self.discovered_asts);
     }
 }
 

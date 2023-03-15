@@ -472,7 +472,7 @@ Disassembly of section .text:
      6dc:	ca0080e7          	jalr	-864(ra) # 378 <_ZN20simple_router_risc_v9virtqueue15VirtQueueHandle5offer17hce5684e7d6d4c836E>
      6e0:	01012503          	lw	a0,16(sp)
      6e4:	04052823          	sw	zero,80(a0)
-     6e8:	16010513          	addi	a0,sp,352
+     6e8:	16010513          	addi	a0,sp,352 # main loop
      6ec:	00040593          	mv	a1,s0
      6f0:	00000097          	auipc	ra,0x0
      6f4:	c14080e7          	jalr	-1004(ra) # 304 <_ZN20simple_router_risc_v9virtqueue15VirtQueueHandle8try_take17h20214f8037b3f086E>
@@ -1193,13 +1193,13 @@ Disassembly of section .text:
     11a8:	00000317          	auipc	t1,0x0
     11ac:	00830067          	jr	8(t1) # 11b0 <_ZN17compiler_builtins3mem6memcpy17h87802b20b9605f3cE>
 
-000011b0 <_ZN17compiler_builtins3mem6memcpy17h87802b20b9605f3cE>:
-    11b0:	00f00693          	li	a3,15
-    11b4:	08c6f863          	bgeu	a3,a2,1244 <_ZN17compiler_builtins3mem6memcpy17h87802b20b9605f3cE+0x94>
-    11b8:	40a006b3          	neg	a3,a0
-    11bc:	0036f693          	andi	a3,a3,3
-    11c0:	00d50733          	add	a4,a0,a3
-    11c4:	02068063          	beqz	a3,11e4 <_ZN17compiler_builtins3mem6memcpy17h87802b20b9605f3cE+0x34>
+000011b0 <_ZN17compiler_builtins3mem6memcpy17h87802b20b9605f3cE>: # https://github.com/rust-lang/compiler-builtins/blob/b788cf35c07288c1818d6f9eae8cf0c608c1cfc6/src/mem/impls.rs#L100
+    11b0:	00f00693          	li	a3,15          # WORD_COPY_THRESHOLD
+    11b4:	08c6f863          	bgeu	a3,a2,1244 <_ZN17compiler_builtins3mem6memcpy17h87802b20b9605f3cE+0x94> # n >= WORD_COPY_THRESHOLD?
+    11b8:	40a006b3          	neg	a3,a0          # a3 = dest.wrapping_neg()              sub a3, x0, a0
+    11bc:	0036f693          	andi	a3,a3,3        # a3 = a3 & WORD_MASK
+    11c0:	00d50733          	add	a4,a0,a3       # a4 (dest_end?) = a0 (dest) + a3 (diff to next word?)
+    11c4:	02068063          	beqz	a3,11e4 <_ZN17compiler_builtins3mem6memcpy17h87802b20b9605f3cE+0x34> # fork?
     11c8:	00050793          	mv	a5,a0
     11cc:	00058813          	mv	a6,a1
     11d0:	00080883          	lb	a7,0(a6)
@@ -1236,11 +1236,11 @@ Disassembly of section .text:
     124c:	0440006f          	j	1290 <_ZN17compiler_builtins3mem6memcpy17h87802b20b9605f3cE+0xe0>
     1250:	00f05e63          	blez	a5,126c <_ZN17compiler_builtins3mem6memcpy17h87802b20b9605f3cE+0xbc>
     1254:	00058813          	mv	a6,a1
-    1258:	00082883          	lw	a7,0(a6)
-    125c:	01172023          	sw	a7,0(a4)
-    1260:	00470713          	addi	a4,a4,4
-    1264:	00480813          	addi	a6,a6,4
-    1268:	fed768e3          	bltu	a4,a3,1258 <_ZN17compiler_builtins3mem6memcpy17h87802b20b9605f3cE+0xa8>
+    1258:	00082883          	lw	a7,0(a6)       #  a7 = *src_usize
+    125c:	01172023          	sw	a7,0(a4)       # *dest_usize = a7
+    1260:	00470713          	addi	a4,a4,4        # dest_usize.add(1)
+    1264:	00480813          	addi	a6,a6,4        # src_usize.add(1)
+    1268:	fed768e3          	bltu	a4,a3,1258 <_ZN17compiler_builtins3mem6memcpy17h87802b20b9605f3cE+0xa8>    # if dest_usize < dest_end
     126c:	00f585b3          	add	a1,a1,a5
     1270:	00367613          	andi	a2,a2,3
     1274:	00060e63          	beqz	a2,1290 <_ZN17compiler_builtins3mem6memcpy17h87802b20b9605f3cE+0xe0>

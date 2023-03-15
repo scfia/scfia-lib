@@ -1,9 +1,9 @@
-use crate::ScfiaStdlib;
 use crate::models::riscv::rv32i::ForkSink;
-use crate::values::ActiveValue;
-use crate::values::RetiredValue;
 use crate::values::bit_vector_concrete::BitVectorConcrete;
 use crate::values::bit_vector_symbol::BitVectorSymbol;
+use crate::values::ActiveValue;
+use crate::values::RetiredValue;
+use crate::ScfiaStdlib;
 use std::cell::Ref;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -13,7 +13,6 @@ use std::ptr;
 use std::rc::Rc;
 use std::rc::Weak;
 use z3_sys::AstKind;
-use z3_sys::Z3_L_TRUE;
 use z3_sys::Z3_ast;
 use z3_sys::Z3_context;
 use z3_sys::Z3_dec_ref;
@@ -26,6 +25,7 @@ use z3_sys::Z3_mk_bvsub;
 use z3_sys::Z3_model_eval;
 use z3_sys::Z3_solver_check;
 use z3_sys::Z3_solver_get_model;
+use z3_sys::Z3_L_TRUE;
 
 use super::bool_eq_expression::BoolEqExpression;
 use super::finish_clone;
@@ -82,31 +82,22 @@ impl BVSubExpression {
                         // TODO check
                         let one: u64 = 1;
                         let mask = one.rotate_left(e2.width).overflowing_sub(1).0;
-                        let sum = e1.value.overflowing_sub(e2.value).0; 
+                        let sum = e1.value.overflowing_sub(e2.value).0;
                         let value = mask & sum;
                         return BitVectorConcrete::new(value, e2.width, stdlib, fork_sink);
-                    },
+                    }
                     _ => {}
                 }
             }
             _ => {}
         }
-        ActiveValue::BitvectorSubExpression(Self::new_with_id(stdlib.get_symbol_id(), s1,  s2, stdlib)).into()
+        ActiveValue::BitvectorSubExpression(Self::new_with_id(stdlib.get_symbol_id(), s1, s2, stdlib)).into()
     }
 
-    pub fn new_with_id(
-        id: u64,
-        s1: Rc<RefCell<ActiveValue>>,
-        s2: Rc<RefCell<ActiveValue>>,
-        stdlib: &mut ScfiaStdlib,
-    ) -> BVSubExpression {
+    pub fn new_with_id(id: u64, s1: Rc<RefCell<ActiveValue>>, s2: Rc<RefCell<ActiveValue>>, stdlib: &mut ScfiaStdlib) -> BVSubExpression {
         unsafe {
             let z3_context = stdlib.z3_context;
-            let ast = Z3_mk_bvsub(
-                stdlib.z3_context,
-                s1.try_borrow().unwrap().get_z3_ast(),
-                s2.try_borrow().unwrap().get_z3_ast(),
-            );
+            let ast = Z3_mk_bvsub(stdlib.z3_context, s1.try_borrow().unwrap().get_z3_ast(), s2.try_borrow().unwrap().get_z3_ast());
             Z3_inc_ref(z3_context, ast);
             let depth = 1 + std::cmp::max(s1.try_borrow().unwrap().get_depth(), s2.try_borrow().unwrap().get_depth());
             let width = s1.try_borrow().unwrap().get_width();
@@ -130,13 +121,21 @@ impl BVSubExpression {
         &self,
         cloned_active_values: &mut BTreeMap<u64, Rc<RefCell<ActiveValue>>>,
         cloned_retired_values: &mut BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
-        cloned_stdlib: &mut ScfiaStdlib
+        cloned_stdlib: &mut ScfiaStdlib,
     ) -> Rc<RefCell<ActiveValue>> {
         // Clone s1, s2
-        let s1 = self.s1.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
-        let s2 = self.s2.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+        let s1 = self
+            .s1
+            .try_borrow()
+            .unwrap()
+            .clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+        let s2 = self
+            .s2
+            .try_borrow()
+            .unwrap()
+            .clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
         if let Some(e) = cloned_active_values.get(&self.id) {
-            return e.clone()
+            return e.clone();
         }
 
         // Build clone
@@ -149,7 +148,7 @@ impl BVSubExpression {
             cloned_expression.into(),
             cloned_active_values,
             cloned_retired_values,
-            cloned_stdlib
+            cloned_stdlib,
         )
     }
 }
@@ -172,18 +171,9 @@ impl Drop for BVSubExpression {
             z3_ast: self.z3_ast,
         })));
 
-        let parents = vec![
-            (s1_id, self.s1.clone()),
-            (s2_id, self.s2.clone()),
-        ];
+        let parents = vec![(s1_id, self.s1.clone()), (s2_id, self.s2.clone())];
 
-        inherit(
-            self.id,
-            retired_expression,
-            parents,
-            &self.inherited_asts,
-            &self.discovered_asts
-        );
+        inherit(self.id, retired_expression, parents, &self.inherited_asts, &self.discovered_asts);
     }
 }
 
@@ -192,7 +182,7 @@ impl RetiredBVSubExpression {
         &self,
         cloned_active_values: &mut BTreeMap<u64, Rc<RefCell<ActiveValue>>>,
         cloned_retired_values: &mut BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
-        cloned_stdlib: &mut ScfiaStdlib
+        cloned_stdlib: &mut ScfiaStdlib,
     ) -> Rc<RefCell<RetiredValue>> {
         let cloned_s1_ast;
         let cloned_s1;
@@ -201,7 +191,10 @@ impl RetiredBVSubExpression {
             cloned_s1_ast = s1.get_z3_ast();
             cloned_s1 = Rc::downgrade(s1_rc);
         } else if let Some(s1_rc) = self.s1.upgrade() {
-            let cloned_s1_rc = s1_rc.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+            let cloned_s1_rc = s1_rc
+                .try_borrow()
+                .unwrap()
+                .clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
             cloned_s1_ast = cloned_s1_rc.try_borrow().unwrap().get_z3_ast();
             cloned_s1 = Rc::downgrade(&cloned_s1_rc);
         } else {
@@ -217,7 +210,10 @@ impl RetiredBVSubExpression {
             cloned_s2_ast = s2.get_z3_ast();
             cloned_s2 = Rc::downgrade(s2_rc);
         } else if let Some(s2_rc) = self.s2.upgrade() {
-            let cloned_s2_rc = s2_rc.try_borrow().unwrap().clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
+            let cloned_s2_rc = s2_rc
+                .try_borrow()
+                .unwrap()
+                .clone_to_stdlib(cloned_active_values, cloned_retired_values, cloned_stdlib);
             cloned_s2_ast = cloned_s2_rc.try_borrow().unwrap().get_z3_ast();
             cloned_s2 = Rc::downgrade(&cloned_s2_rc);
         } else {
@@ -227,11 +223,7 @@ impl RetiredBVSubExpression {
         };
 
         let cloned: Rc<RefCell<RetiredValue>> = unsafe {
-            let z3_ast = Z3_mk_bvsub(
-                cloned_stdlib.z3_context,
-                cloned_s1_ast,
-                cloned_s2_ast,
-            );
+            let z3_ast = Z3_mk_bvsub(cloned_stdlib.z3_context, cloned_s1_ast, cloned_s2_ast);
             Z3_inc_ref(cloned_stdlib.z3_context, z3_ast);
             RetiredBVSubExpression {
                 id: self.id,
@@ -240,9 +232,10 @@ impl RetiredBVSubExpression {
                 s2_id: self.s2_id,
                 s2: cloned_s2,
                 z3_context: cloned_stdlib.z3_context,
-                z3_ast
+                z3_ast,
             }
-        }.into();
+        }
+        .into();
 
         cloned_retired_values.insert(self.id, cloned.clone());
         cloned
@@ -265,31 +258,25 @@ fn test_sub_symbolic1() {
     eq.try_borrow_mut().unwrap().assert(&mut stdlib);
 
     unsafe {
-        assert_eq!(Z3_solver_check(
-            stdlib.z3_context,
-            stdlib.z3_solver), Z3_L_TRUE);
+        assert_eq!(Z3_solver_check(stdlib.z3_context, stdlib.z3_solver), Z3_L_TRUE);
 
-        let model = Z3_solver_get_model(
-            stdlib.z3_context,
-            stdlib.z3_solver);
+        let model = Z3_solver_get_model(stdlib.z3_context, stdlib.z3_solver);
 
         let mut z3_ast: Z3_ast = ptr::null_mut();
         assert!(Z3_model_eval(
             stdlib.z3_context,
-            model, s1.try_borrow().unwrap().get_z3_ast(), false, &mut z3_ast));
+            model,
+            s1.try_borrow().unwrap().get_z3_ast(),
+            false,
+            &mut z3_ast
+        ));
 
         let ast_kind = Z3_get_ast_kind(stdlib.z3_context, z3_ast);
         assert_eq!(ast_kind, AstKind::Numeral);
-        assert_eq!(32, Z3_get_bv_sort_size(
-            stdlib.z3_context,
-            Z3_get_sort(stdlib.z3_context, z3_ast)));
+        assert_eq!(32, Z3_get_bv_sort_size(stdlib.z3_context, Z3_get_sort(stdlib.z3_context, z3_ast)));
 
         let mut v: u64 = 0;
-        assert!(Z3_get_numeral_uint64(
-            stdlib.z3_context,
-            z3_ast,
-            &mut v
-        ));
+        assert!(Z3_get_numeral_uint64(stdlib.z3_context, z3_ast, &mut v));
 
         assert_eq!(v as i32, i32::MIN);
         println!("{}", v as i32);
@@ -306,31 +293,25 @@ fn test_sub_symbolic2() {
     eq.try_borrow_mut().unwrap().assert(&mut stdlib);
 
     unsafe {
-        assert_eq!(Z3_solver_check(
-            stdlib.z3_context,
-            stdlib.z3_solver), Z3_L_TRUE);
+        assert_eq!(Z3_solver_check(stdlib.z3_context, stdlib.z3_solver), Z3_L_TRUE);
 
-        let model = Z3_solver_get_model(
-            stdlib.z3_context,
-            stdlib.z3_solver);
+        let model = Z3_solver_get_model(stdlib.z3_context, stdlib.z3_solver);
 
         let mut z3_ast: Z3_ast = ptr::null_mut();
         assert!(Z3_model_eval(
             stdlib.z3_context,
-            model, s1.try_borrow().unwrap().get_z3_ast(), false, &mut z3_ast));
+            model,
+            s1.try_borrow().unwrap().get_z3_ast(),
+            false,
+            &mut z3_ast
+        ));
 
         let ast_kind = Z3_get_ast_kind(stdlib.z3_context, z3_ast);
         assert_eq!(ast_kind, AstKind::Numeral);
-        assert_eq!(32, Z3_get_bv_sort_size(
-            stdlib.z3_context,
-            Z3_get_sort(stdlib.z3_context, z3_ast)));
+        assert_eq!(32, Z3_get_bv_sort_size(stdlib.z3_context, Z3_get_sort(stdlib.z3_context, z3_ast)));
 
         let mut v: u64 = 0;
-        assert!(Z3_get_numeral_uint64(
-            stdlib.z3_context,
-            z3_ast,
-            &mut v
-        ));
+        assert!(Z3_get_numeral_uint64(stdlib.z3_context, z3_ast, &mut v));
 
         assert_eq!(v as i32, 6);
         println!("{}", v as i32);

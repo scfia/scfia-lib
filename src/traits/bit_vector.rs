@@ -1,10 +1,7 @@
-use std::{fmt, rc::Rc, cell::RefCell};
 use std::fmt::Debug;
+use std::{cell::RefCell, fmt, rc::Rc};
 
-use z3_sys::{
-    AstKind, Z3_ast, Z3_get_ast_kind, Z3_get_bv_sort_size, Z3_get_numeral_uint64, Z3_get_sort,
-    Z3_inc_ref, Z3_simplify,
-};
+use z3_sys::{AstKind, Z3_ast, Z3_get_ast_kind, Z3_get_bv_sort_size, Z3_get_numeral_uint64, Z3_get_sort, Z3_inc_ref, Z3_simplify};
 
 use crate::{values::bit_vector_concrete::BitVectorConcrete, ScfiaStdlib};
 
