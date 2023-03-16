@@ -29,7 +29,7 @@ use z3_sys::{
 use crate::rv32im::constants::{
     COPY_FROM_1, COPY_FROM_2, COPY_FROM_3, EGRESS_RECEIVEQUEUE_DRIVER_POSITIONS, EGRESS_SENDQUEUE_DRIVER_POSITIONS,
     INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_HIGHER_U32, INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_LOWER_U32, INGRESS_RECEIVEQUEUE_DESCRIPTOR_LENGTH,
-    INGRESS_RECEIVEQUEUE_DRIVER_POSITIONS, INGRESS_SENDQUEUE_DRIVER_POSITIONS,
+    INGRESS_RECEIVEQUEUE_DRIVER_POSITIONS, INGRESS_SENDQUEUE_DRIVER_POSITIONS, START_OF_MAIN_LOOP,
 };
 
 fn create_ss() -> RV32iSystemState {
@@ -512,7 +512,7 @@ fn test_system_state() {
     }
 
     println!("[{}s] ### Stepping until start of main loop", begin.elapsed().as_millis());
-    while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x6E8 {
+    while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != START_OF_MAIN_LOOP {
         print!("({}ms) ", begin.elapsed().as_millis());
         if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x3dc {
             continuing.step(Some(SymbolicHints {
@@ -523,7 +523,7 @@ fn test_system_state() {
         }
     }
 
-    println!("[{}s] ### Stepping until ingress try_take fork", begin.elapsed().as_millis());
+    println!("[{}s] ### Stepping until ingress try_remove fork", begin.elapsed().as_millis());
     while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x428 {
         print!("({}ms) ", begin.elapsed().as_millis());
         continuing.step(None)
@@ -534,7 +534,7 @@ fn test_system_state() {
     let mut returning = successors.remove(0);
 
     println!("[{}s] ### Stepping aborting until start of main loop", begin.elapsed().as_millis());
-    while returning.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x6E8 {
+    while returning.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != START_OF_MAIN_LOOP {
         print!("({}ms) ", begin.elapsed().as_millis());
         returning.step(None)
     }
@@ -656,7 +656,7 @@ fn test_system_state() {
     let mut continuing = successors.remove(0);
 
     println!("[{}s] ### Stepping not ipv4 until start of main loop", begin.elapsed().as_millis());
-    while returning.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x6E8 {
+    while returning.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != START_OF_MAIN_LOOP {
         print!("({}ms) ", begin.elapsed().as_millis());
         if returning.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x3DC {
             returning.step(Some(SymbolicHints {
@@ -667,7 +667,7 @@ fn test_system_state() {
         }
     }
 
-    println!("[{}s] ### Stepping until egress.try_take fork", begin.elapsed().as_millis());
+    println!("[{}s] ### Stepping until egress try_remove fork", begin.elapsed().as_millis());
     while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x428 {
         print!("({}ms) ", begin.elapsed().as_millis());
         continuing.step(None);
@@ -678,7 +678,7 @@ fn test_system_state() {
     let mut returning = successors.remove(0);
 
     println!("[{}s] ### Stepping egress empty until start of main loop", begin.elapsed().as_millis());
-    while returning.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x6E8 {
+    while returning.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != START_OF_MAIN_LOOP {
         print!("({}ms) ", begin.elapsed().as_millis());
         if returning.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x3DC {
             returning.step(Some(SymbolicHints {
@@ -689,8 +689,8 @@ fn test_system_state() {
         }
     }
 
-    println!("[{}s] ### here be dragons", begin.elapsed().as_millis());
-    loop {
+    println!("[{}s] ### stepping success until start of main loop", begin.elapsed().as_millis());
+    while returning.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != START_OF_MAIN_LOOP {
         print!("({}ms) ", begin.elapsed().as_millis());
         if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x3DC {
             continuing.step(Some(SymbolicHints { hints: vec![vec![0x46c1d004]] }));
