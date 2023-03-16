@@ -690,7 +690,7 @@ fn test_system_state() {
     }
 
     println!("[{}s] ### stepping success until start of main loop", begin.elapsed().as_millis());
-    while returning.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != START_OF_MAIN_LOOP {
+    while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != START_OF_MAIN_LOOP {
         print!("({}ms) ", begin.elapsed().as_millis());
         if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x3DC {
             continuing.step(Some(SymbolicHints { hints: vec![vec![0x46c1d004]] }));
@@ -739,23 +739,4 @@ fn test_system_state() {
             continuing.step(None);
         }
     }
-}
-
-fn step_all_until(mut states: Vec<RV32iSystemState>, branch_points: Vec<u64>, until: u64) -> Vec<RV32iSystemState> {
-    let mut done = vec![];
-    while let Some(mut state) = states.pop() {
-        if state.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != until {
-            if branch_points.contains(&state.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value) {
-                let mut forks = state.step_forking();
-                states.append(&mut forks);
-            } else {
-                state.step(None);
-                states.push(state);
-            }
-        } else {
-            done.push(state);
-        }
-    }
-
-    done
 }
