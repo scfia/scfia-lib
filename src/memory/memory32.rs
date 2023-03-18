@@ -241,6 +241,7 @@ impl Memory32 {
             }
 
             println!("Unamimous value read returning {:?}", value);
+            // TODO we must return a fresh symbol/value with the same monomorphization here, not just a random one!
             return value;
         }
     }
