@@ -1,10 +1,6 @@
-use std::{cell::RefCell, collections::BTreeMap, fmt::Debug, rc::Rc};
+use std::fmt::Debug;
 
-use z3_sys::{Z3_ast, Z3_context, Z3_inc_ref, Z3_mk_bvadd};
-
-use crate::scfia::Scfia;
-
-use super::active_value::{ActiveExpression, ActiveValue, ActiveValueInner};
+use super::active_value::ActiveValue;
 
 pub struct BVAddExpression {
     pub s1: ActiveValue,
