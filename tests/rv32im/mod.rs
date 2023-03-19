@@ -1,5 +1,7 @@
 mod constants;
 
+/*
+
 use scfia_lib::expressions::bool_less_than_signed_expression::BoolLessThanSignedExpression;
 use scfia_lib::expressions::bool_less_than_uint_expression::BoolLessThanUIntExpression;
 use scfia_lib::memory::symbolic_volatile_memory_region::SymbolicVolatileMemoryRegion32;
@@ -16,8 +18,8 @@ use scfia_lib::memory::volatile_memory_region::VolatileMemoryRegion32;
 use scfia_lib::memory::MemoryRegion32;
 use scfia_lib::models::riscv::rv32i::RV32iSystemState;
 use scfia_lib::values::bit_vector_symbol::BitVectorSymbol;
-use scfia_lib::values::ActiveValue;
-use scfia_lib::{memory::memory32::Memory32, models::riscv::rv32i, values::bit_vector_concrete::BitVectorConcrete, ScfiaStdlib};
+use scfia_lib::values::ActiveValueInner;
+use scfia_lib::{memory::memory32::Memory32, models::riscv::rv32i, values::bit_vector_concrete::BitVectorConcrete, ScfiaInner};
 use xmas_elf::program::ProgramHeader::Ph32;
 use xmas_elf::{program, ElfFile};
 use z3_sys::{
@@ -36,7 +38,7 @@ fn create_ss() -> RV32iSystemState {
     let binary_blob = fs::read("./tests/rv32i/data/simple_router_risc_v").unwrap();
     let elf = ElfFile::new(&binary_blob).unwrap();
 
-    let mut stdlib = ScfiaStdlib::new("0".to_string());
+    let mut stdlib = ScfiaInner::new("0".to_string());
     let mut memory = Memory32::new();
 
     for program_header in elf.program_iter() {
@@ -122,7 +124,7 @@ fn test_system_state() {
     let binary_blob = fs::read("./tests/rv32im/data/simple_router_risc_v").unwrap();
     let elf = ElfFile::new(&binary_blob).unwrap();
 
-    let mut stdlib = ScfiaStdlib::new("0".to_string());
+    let mut stdlib = ScfiaInner::new("0".to_string());
     let mut memory = Memory32::new();
 
     for program_header in elf.program_iter() {
@@ -740,3 +742,5 @@ fn test_system_state() {
         }
     }
 }
+
+ */

@@ -27,8 +27,5 @@
 		- `active_values: HashMap<u64, Weak<RefCell<ActiveValue>>>` in `SymbolManager`
 		- `retired_values: HashMap<u64, Weak<RefCell<RetiredValue>>>` in `SymbolManager`
 		- Refcounting is done by Rc
-		- **active value needs to get a mutable reference to SymbolManager**
-			- 
-
 
 
