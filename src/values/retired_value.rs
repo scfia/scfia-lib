@@ -4,23 +4,32 @@ use std::{
     rc::{Rc, Weak},
 };
 
+use z3_sys::Z3_ast;
+
 use crate::scfia::Scfia;
 
-use super::{retired_bv_concrete::RetiredBVConcrete, retired_bv_symbol::RetiredBVSymbol};
+use super::{
+    retired_bool_concrete::RetiredBoolConcrete, retired_bool_eq_expression::RetiredBoolEqExpression, retired_bool_not_expresssion::RetiredBoolNotExpression,
+    retired_bv_add_expression::RetiredBVAddExpression, retired_bv_concrete::RetiredBVConcrete, retired_bv_symbol::RetiredBVSymbol,
+};
 
 pub type RetiredValue = Rc<RefCell<RetiredValueInner>>;
 pub type RetiredValueWeak = Weak<RefCell<RetiredValueInner>>;
 
 pub struct RetiredValueInner {
     pub id: u64,
-    pub scfia: Scfia,
+    pub z3_ast: Z3_ast,
     pub expression: RetiredExpression,
+    pub scfia: Scfia,
 }
 
 pub enum RetiredExpression {
+    BoolConcrete(RetiredBoolConcrete),
+    BoolNotExpression(RetiredBoolNotExpression),
+    BoolEqExpression(RetiredBoolEqExpression),
     BVConcrete(RetiredBVConcrete),
     BVSymbol(RetiredBVSymbol),
-    //BVAddExpression(RetiredBVAddExpression),
+    BVAddExpression(RetiredBVAddExpression),
 }
 
 impl Debug for RetiredValueInner {
@@ -41,7 +50,10 @@ impl Debug for RetiredExpression {
         match self {
             RetiredExpression::BVConcrete(e) => e.fmt(f),
             RetiredExpression::BVSymbol(e) => e.fmt(f),
-            //RetiredExpression::BVAddExpression(e) => e.fmt(f),
+            RetiredExpression::BVAddExpression(e) => e.fmt(f),
+            RetiredExpression::BoolConcrete(e) => e.fmt(f),
+            RetiredExpression::BoolEqExpression(e) => e.fmt(f),
+            RetiredExpression::BoolNotExpression(e) => e.fmt(f),
         }
     }
 }

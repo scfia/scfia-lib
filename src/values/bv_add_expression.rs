@@ -23,17 +23,28 @@ mod tests {
     use crate::scfia::Scfia;
 
     #[test]
+    #[allow(unused_must_use)]
     fn test_concrete_add() {
-        simple_logger::SimpleLogger::new().env().init().unwrap();
+        simple_logger::SimpleLogger::new().env().init();
         let scfia = Scfia::new();
         let s1 = scfia.new_bv_concrete(1, 32);
         let s2 = scfia.new_bv_concrete(2, 32);
         let add = scfia.new_bv_add(s1, s2, 32);
-        assert_eq!(add.try_borrow().unwrap().try_as_concrete().unwrap(), 3);
+        assert_eq!(add.try_borrow().unwrap().try_as_concrete_bv().unwrap(), 3);
 
         let s1 = scfia.new_bv_concrete(1, 32);
         let s2 = scfia.new_bv_concrete(u32::MAX as u64, 32);
         let add = scfia.new_bv_add(s1, s2, 32);
-        assert_eq!(add.try_borrow().unwrap().try_as_concrete().unwrap(), 0);
+        assert_eq!(add.try_borrow().unwrap().try_as_concrete_bv().unwrap(), 0);
+    }
+
+    #[test]
+    #[allow(unused_must_use)]
+    fn test_symbol_add() {
+        simple_logger::SimpleLogger::new().env().init();
+        let scfia = Scfia::new();
+        let s1 = scfia.new_bv_concrete(1, 32);
+        let s2 = scfia.new_bv_symbol(32);
+        let _ = scfia.new_bv_add(s1, s2, 32);
     }
 }
