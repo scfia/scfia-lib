@@ -531,7 +531,7 @@ impl Scfia {
                 let sort = Z3_mk_bv_sort(selff.z3_context, width);
                 let z3_ast = Z3_mk_unsigned_int64(selff.z3_context, value, sort);
                 Z3_inc_ref(selff.z3_context, z3_ast);
-                return selff.insert_active(ActiveExpression::BVConcrete(BVConcrete { value, width: width }), z3_ast, id, self.clone());
+                return selff.insert_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, self.clone());
             };
 
             let z3_ast = Z3_mk_extract(selff.z3_context, high, low, s1.try_borrow().unwrap().z3_ast);
@@ -539,7 +539,7 @@ impl Scfia {
             selff.insert_active(
                 ActiveExpression::BVSliceExpression(BVSliceExpression {
                     s1: s1.clone(),
-                    width: width,
+                    width,
                     high,
                     low,
                 }),
@@ -563,7 +563,7 @@ impl Scfia {
                     let sort = Z3_mk_bv_sort(selff.z3_context, width);
                     let z3_ast = Z3_mk_unsigned_int64(selff.z3_context, value, sort);
                     Z3_inc_ref(selff.z3_context, z3_ast);
-                    return selff.insert_active(ActiveExpression::BVConcrete(BVConcrete { value, width: width }), z3_ast, id, self.clone());
+                    return selff.insert_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, self.clone());
                 }
             };
 
@@ -575,7 +575,7 @@ impl Scfia {
                 None
             };
 
-            let z3_ast = Z3_mk_bvshl(selff.z3_context, s1_inner.z3_ast, shamt_ast.unwrap_or_else(|| s2_inner.z3_ast));
+            let z3_ast = Z3_mk_bvshl(selff.z3_context, s1_inner.z3_ast, shamt_ast.unwrap_or(s2_inner.z3_ast));
             Z3_inc_ref(selff.z3_context, z3_ast);
             selff.insert_active(
                 ActiveExpression::BVSllExpression(BVSllExpression {
@@ -604,7 +604,7 @@ impl Scfia {
                     let sort = Z3_mk_bv_sort(selff.z3_context, width);
                     let z3_ast = Z3_mk_unsigned_int64(selff.z3_context, value, sort);
                     Z3_inc_ref(selff.z3_context, z3_ast);
-                    return selff.insert_active(ActiveExpression::BVConcrete(BVConcrete { value, width: width }), z3_ast, id, self.clone());
+                    return selff.insert_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, self.clone());
                 }
             };
 
@@ -616,7 +616,7 @@ impl Scfia {
                 None
             };
 
-            let z3_ast = Z3_mk_bvlshr(selff.z3_context, s1_inner.z3_ast, shamt_ast.unwrap_or_else(|| s2_inner.z3_ast));
+            let z3_ast = Z3_mk_bvlshr(selff.z3_context, s1_inner.z3_ast, shamt_ast.unwrap_or(s2_inner.z3_ast));
             Z3_inc_ref(selff.z3_context, z3_ast);
             selff.insert_active(
                 ActiveExpression::BVSllExpression(BVSllExpression {
