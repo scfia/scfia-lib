@@ -10,6 +10,6 @@ pub struct RetiredBoolEqExpression {
 
 impl Debug for RetiredBoolEqExpression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("(x == y)")
+        f.write_str("RetiredBoolEqExpression")
     }
 }

@@ -12,7 +12,20 @@ use crate::scfia::Scfia;
 use super::bool_concrete::BoolConcrete;
 use super::bool_eq_expression::BoolEqExpression;
 use super::bool_not_expresssion::BoolNotExpression;
+use super::bool_signed_less_than_expression::BoolSignedLessThanExpression;
+use super::bool_unsigned_less_than_expression::BoolUnsignedLessThanExpression;
 use super::bv_add_expression::BVAddExpression;
+use super::bv_and_expression::BVAndExpression;
+use super::bv_concat_expression::BVConcatExpression;
+use super::bv_multiply_expression::BVMultiplyExpression;
+use super::bv_or_expression::BVOrExpression;
+use super::bv_sign_extend_expression::BVSignExtendExpression;
+use super::bv_slice_expression::BVSliceExpression;
+use super::bv_sll_expression::BVSllExpression;
+use super::bv_srl_expression::BVSrlExpression;
+use super::bv_sub_expression::BVSubExpression;
+use super::bv_unsigned_remainder_expression::BVUnsignedRemainderExpression;
+use super::bv_xor_expression::BVXorExpression;
 use super::{bv_concrete::BVConcrete, bv_symbol::BVSymbol, retired_value::RetiredValue};
 
 pub type ActiveValue = Rc<RefCell<ActiveValueInner>>;
@@ -30,12 +43,26 @@ pub struct ActiveValueInner {
 
 pub enum ActiveExpression {
     BoolConcrete(BoolConcrete),
-    BoolNotExpression(BoolNotExpression),
     BoolEqExpression(BoolEqExpression),
-    BVConcrete(BVConcrete),
-    BVSymbol(BVSymbol),
+    BoolNotExpression(BoolNotExpression),
+    BoolSignedLessThanExpression(BoolSignedLessThanExpression),
+    BoolUnsignedLessThanExpression(BoolUnsignedLessThanExpression),
     BVAddExpression(BVAddExpression),
+    BVAndExpression(BVAndExpression),
+    BVConcatExpression(BVConcatExpression),
+    BVConcrete(BVConcrete),
+    BVMultiplyExpression(BVMultiplyExpression),
+    BVOrExpression(BVOrExpression),
+    BVSignExtendExpression(BVSignExtendExpression),
+    BVSliceExpression(BVSliceExpression),
+    BVSllExpression(BVSllExpression),
+    BVSrlExpression(BVSrlExpression),
+    BVSubExpression(BVSubExpression),
+    BVSymbol(BVSymbol),
+    BVUnsignedRemainderExpression(BVUnsignedRemainderExpression),
+    BVXorExpression(BVXorExpression),
 }
+
 impl ActiveExpression {
     pub(crate) fn get_parents(&self, dest: &mut Vec<ActiveValue>) {
         match self {
@@ -52,6 +79,56 @@ impl ActiveExpression {
             }
             ActiveExpression::BoolNotExpression(e) => {
                 dest.push(e.s1.clone());
+            }
+            ActiveExpression::BoolSignedLessThanExpression(e) => {
+                dest.push(e.s1.clone());
+                dest.push(e.s2.clone());
+            }
+            ActiveExpression::BoolUnsignedLessThanExpression(e) => {
+                dest.push(e.s1.clone());
+                dest.push(e.s2.clone());
+            }
+            ActiveExpression::BVAndExpression(e) => {
+                dest.push(e.s1.clone());
+                dest.push(e.s2.clone());
+            }
+            ActiveExpression::BVConcatExpression(e) => {
+                dest.push(e.s1.clone());
+                dest.push(e.s2.clone());
+            }
+            ActiveExpression::BVMultiplyExpression(e) => {
+                dest.push(e.s1.clone());
+                dest.push(e.s2.clone());
+            }
+            ActiveExpression::BVOrExpression(e) => {
+                dest.push(e.s1.clone());
+                dest.push(e.s2.clone());
+            }
+            ActiveExpression::BVSignExtendExpression(e) => {
+                dest.push(e.s1.clone());
+            }
+            ActiveExpression::BVSliceExpression(e) => {
+                dest.push(e.s1.clone());
+            }
+            ActiveExpression::BVSllExpression(e) => {
+                dest.push(e.s1.clone());
+                dest.push(e.s2.clone());
+            }
+            ActiveExpression::BVSrlExpression(e) => {
+                dest.push(e.s1.clone());
+                dest.push(e.s2.clone());
+            }
+            ActiveExpression::BVSubExpression(e) => {
+                dest.push(e.s1.clone());
+                dest.push(e.s2.clone());
+            }
+            ActiveExpression::BVUnsignedRemainderExpression(e) => {
+                dest.push(e.s1.clone());
+                dest.push(e.s2.clone());
+            }
+            ActiveExpression::BVXorExpression(e) => {
+                dest.push(e.s1.clone());
+                dest.push(e.s2.clone());
             }
         }
     }
@@ -103,6 +180,19 @@ impl Debug for ActiveExpression {
             ActiveExpression::BoolConcrete(e) => e.fmt(f),
             ActiveExpression::BoolEqExpression(e) => e.fmt(f),
             ActiveExpression::BoolNotExpression(e) => e.fmt(f),
+            ActiveExpression::BoolSignedLessThanExpression(e) => e.fmt(f),
+            ActiveExpression::BoolUnsignedLessThanExpression(e) => e.fmt(f),
+            ActiveExpression::BVAndExpression(e) => e.fmt(f),
+            ActiveExpression::BVConcatExpression(e) => e.fmt(f),
+            ActiveExpression::BVMultiplyExpression(e) => e.fmt(f),
+            ActiveExpression::BVOrExpression(e) => e.fmt(f),
+            ActiveExpression::BVSignExtendExpression(e) => e.fmt(f),
+            ActiveExpression::BVSliceExpression(e) => e.fmt(f),
+            ActiveExpression::BVSllExpression(e) => e.fmt(f),
+            ActiveExpression::BVSrlExpression(e) => e.fmt(f),
+            ActiveExpression::BVSubExpression(e) => e.fmt(f),
+            ActiveExpression::BVUnsignedRemainderExpression(e) => e.fmt(f),
+            ActiveExpression::BVXorExpression(e) => e.fmt(f),
         }
     }
 }

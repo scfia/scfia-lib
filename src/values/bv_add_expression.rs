@@ -46,5 +46,6 @@ mod tests {
         let s1 = scfia.new_bv_concrete(1, 32);
         let s2 = scfia.new_bv_symbol(32);
         let _ = scfia.new_bv_add(s1, s2, 32);
+        // TODO better test
     }
 }

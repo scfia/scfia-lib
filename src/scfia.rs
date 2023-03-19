@@ -26,17 +26,31 @@ use z3_sys::Z3_get_sort_kind;
 use z3_sys::Z3_inc_ref;
 use z3_sys::Z3_mk_bv_sort;
 use z3_sys::Z3_mk_bvadd;
+use z3_sys::Z3_mk_bvand;
+use z3_sys::Z3_mk_bvlshr;
+use z3_sys::Z3_mk_bvmul;
+use z3_sys::Z3_mk_bvor;
+use z3_sys::Z3_mk_bvshl;
+use z3_sys::Z3_mk_bvslt;
+use z3_sys::Z3_mk_bvsub;
+use z3_sys::Z3_mk_bvult;
+use z3_sys::Z3_mk_bvurem;
+use z3_sys::Z3_mk_bvxor;
+use z3_sys::Z3_mk_concat;
 use z3_sys::Z3_mk_config;
 use z3_sys::Z3_mk_context_rc;
 
 use z3_sys::Z3_mk_eq;
+use z3_sys::Z3_mk_extract;
 use z3_sys::Z3_mk_false;
 use z3_sys::Z3_mk_fresh_const;
 use z3_sys::Z3_mk_not;
+use z3_sys::Z3_mk_sign_ext;
 use z3_sys::Z3_mk_solver;
 use z3_sys::Z3_mk_true;
 use z3_sys::Z3_mk_unsigned_int64;
 
+use z3_sys::Z3_mk_zero_ext;
 use z3_sys::Z3_model_eval;
 use z3_sys::Z3_solver;
 
@@ -53,16 +67,40 @@ use crate::values::active_value::ActiveValueWeak;
 use crate::values::bool_concrete::BoolConcrete;
 use crate::values::bool_eq_expression::BoolEqExpression;
 use crate::values::bool_not_expresssion::BoolNotExpression;
+use crate::values::bool_signed_less_than_expression::BoolSignedLessThanExpression;
+use crate::values::bool_unsigned_less_than_expression::BoolUnsignedLessThanExpression;
 use crate::values::bv_add_expression::BVAddExpression;
+use crate::values::bv_and_expression::BVAndExpression;
+use crate::values::bv_concat_expression::BVConcatExpression;
 use crate::values::bv_concrete::BVConcrete;
 
+use crate::values::bv_multiply_expression::BVMultiplyExpression;
+use crate::values::bv_or_expression::BVOrExpression;
+use crate::values::bv_sign_extend_expression::BVSignExtendExpression;
+use crate::values::bv_slice_expression::BVSliceExpression;
+use crate::values::bv_sll_expression::BVSllExpression;
+use crate::values::bv_sub_expression::BVSubExpression;
 use crate::values::bv_symbol::BVSymbol;
+use crate::values::bv_unsigned_remainder_expression::BVUnsignedRemainderExpression;
+use crate::values::bv_xor_expression::BVXorExpression;
 use crate::values::retired_bool_concrete::RetiredBoolConcrete;
 use crate::values::retired_bool_eq_expression::RetiredBoolEqExpression;
 use crate::values::retired_bool_not_expresssion::RetiredBoolNotExpression;
+use crate::values::retired_bool_signed_less_than_expression::RetiredBoolSignedLessThanExpression;
+use crate::values::retired_bool_unsigned_less_than_expression::RetiredBoolUnsignedLessThanExpression;
 use crate::values::retired_bv_add_expression::RetiredBVAddExpression;
+use crate::values::retired_bv_and_expression::RetiredBVAndExpression;
+use crate::values::retired_bv_concat_expression::RetiredBVConcatExpression;
 use crate::values::retired_bv_concrete::RetiredBVConcrete;
+use crate::values::retired_bv_multiply_expression::RetiredBVMultiplyExpression;
+use crate::values::retired_bv_or_expression::RetiredBVOrExpression;
+use crate::values::retired_bv_sign_extend_expression::RetiredBVSignExtendExpression;
+use crate::values::retired_bv_slice_expression::RetiredBVSliceExpression;
+use crate::values::retired_bv_sll_expression::RetiredBVSllExpression;
+use crate::values::retired_bv_srl_expression::RetiredBVSrlExpression;
+use crate::values::retired_bv_sub_expression::RetiredBVSubExpression;
 use crate::values::retired_bv_symbol::RetiredBVSymbol;
+use crate::values::retired_bv_xor_expression::RetiredBVXorExpression;
 use crate::values::retired_value::RetiredExpression;
 use crate::values::retired_value::RetiredValue;
 use crate::values::retired_value::RetiredValueInner;
@@ -134,35 +172,6 @@ impl Scfia {
         }
     }
 
-    pub fn new_bool_not(&self, s1: ActiveValue) -> ActiveValue {
-        unsafe {
-            let mut selff = self.inner.try_borrow_mut().unwrap();
-            let s1_inner = s1.try_borrow().unwrap();
-            let id = selff.next_symbol_id();
-            if let ActiveExpression::BoolConcrete(s1) = &s1_inner.expression {
-                let z3_ast = if !s1.value {
-                    Z3_mk_true(selff.z3_context)
-                } else {
-                    Z3_mk_false(selff.z3_context)
-                };
-                Z3_inc_ref(selff.z3_context, z3_ast);
-                return selff.insert_active(ActiveExpression::BoolConcrete(BoolConcrete { value: !s1.value }), z3_ast, id, self.clone());
-            }
-
-            let z3_ast = Z3_mk_not(selff.z3_context, s1.try_borrow().unwrap().z3_ast);
-            Z3_inc_ref(selff.z3_context, z3_ast);
-            selff.insert_active(
-                ActiveExpression::BoolNotExpression(BoolNotExpression {
-                    s1: s1.clone(),
-                    is_assert: false,
-                }),
-                z3_ast,
-                id,
-                self.clone(),
-            )
-        }
-    }
-
     pub fn new_bool_eq(&self, s1: ActiveValue, s2: ActiveValue) -> ActiveValue {
         unsafe {
             let mut selff = self.inner.try_borrow_mut().unwrap();
@@ -203,26 +212,92 @@ impl Scfia {
         }
     }
 
-    pub fn new_bv_concrete(&self, value: u64, width: u32) -> ActiveValue {
+    pub fn new_bool_not(&self, s1: ActiveValue) -> ActiveValue {
         unsafe {
             let mut selff = self.inner.try_borrow_mut().unwrap();
-            let sort = Z3_mk_bv_sort(selff.z3_context, width);
-            let z3_ast = Z3_mk_unsigned_int64(selff.z3_context, value, sort);
-            Z3_inc_ref(selff.z3_context, z3_ast);
+            let s1_inner = s1.try_borrow().unwrap();
             let id = selff.next_symbol_id();
+            if let ActiveExpression::BoolConcrete(s1) = &s1_inner.expression {
+                let z3_ast = if !s1.value {
+                    Z3_mk_true(selff.z3_context)
+                } else {
+                    Z3_mk_false(selff.z3_context)
+                };
+                Z3_inc_ref(selff.z3_context, z3_ast);
+                return selff.insert_active(ActiveExpression::BoolConcrete(BoolConcrete { value: !s1.value }), z3_ast, id, self.clone());
+            }
 
-            selff.insert_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, self.clone())
+            let z3_ast = Z3_mk_not(selff.z3_context, s1.try_borrow().unwrap().z3_ast);
+            Z3_inc_ref(selff.z3_context, z3_ast);
+            selff.insert_active(
+                ActiveExpression::BoolNotExpression(BoolNotExpression {
+                    s1: s1.clone(),
+                    is_assert: false,
+                }),
+                z3_ast,
+                id,
+                self.clone(),
+            )
         }
     }
 
-    pub fn new_bv_symbol(&self, width: u32) -> ActiveValue {
+    pub fn new_bool_signed_less_than(&self, s1: ActiveValue, s2: ActiveValue) -> ActiveValue {
         unsafe {
             let mut selff = self.inner.try_borrow_mut().unwrap();
-            let z3_ast = Z3_mk_fresh_const(selff.z3_context, 0 as Z3_string, Z3_mk_bv_sort(selff.z3_context, width));
-            Z3_inc_ref(selff.z3_context, z3_ast);
+            let s1_inner = s1.try_borrow().unwrap();
+            let s2_inner = s2.try_borrow().unwrap();
             let id = selff.next_symbol_id();
+            if let ActiveExpression::BVConcrete(s1) = &s1_inner.expression {
+                if let ActiveExpression::BVConcrete(s2) = &s2_inner.expression {
+                    let slt = (s1.value as i64) < (s2.value as i64);
+                    let z3_ast = if slt { Z3_mk_true(selff.z3_context) } else { Z3_mk_false(selff.z3_context) };
+                    Z3_inc_ref(selff.z3_context, z3_ast);
+                    return selff.insert_active(ActiveExpression::BoolConcrete(BoolConcrete { value: slt }), z3_ast, id, self.clone());
+                }
+            }
 
-            selff.insert_active(ActiveExpression::BVSymbol(BVSymbol { width }), z3_ast, id, self.clone())
+            let z3_ast = Z3_mk_bvslt(selff.z3_context, s1.try_borrow().unwrap().z3_ast, s2.try_borrow().unwrap().z3_ast);
+            Z3_inc_ref(selff.z3_context, z3_ast);
+            selff.insert_active(
+                ActiveExpression::BoolSignedLessThanExpression(BoolSignedLessThanExpression {
+                    s1: s1.clone(),
+                    s2: s2.clone(),
+                    is_assert: false,
+                }),
+                z3_ast,
+                id,
+                self.clone(),
+            )
+        }
+    }
+
+    pub fn new_bool_unsigned_less_than(&self, s1: ActiveValue, s2: ActiveValue) -> ActiveValue {
+        unsafe {
+            let mut selff = self.inner.try_borrow_mut().unwrap();
+            let s1_inner = s1.try_borrow().unwrap();
+            let s2_inner = s2.try_borrow().unwrap();
+            let id = selff.next_symbol_id();
+            if let ActiveExpression::BVConcrete(s1) = &s1_inner.expression {
+                if let ActiveExpression::BVConcrete(s2) = &s2_inner.expression {
+                    let slt = s1.value < s2.value;
+                    let z3_ast = if slt { Z3_mk_true(selff.z3_context) } else { Z3_mk_false(selff.z3_context) };
+                    Z3_inc_ref(selff.z3_context, z3_ast);
+                    return selff.insert_active(ActiveExpression::BoolConcrete(BoolConcrete { value: slt }), z3_ast, id, self.clone());
+                }
+            }
+
+            let z3_ast = Z3_mk_bvult(selff.z3_context, s1.try_borrow().unwrap().z3_ast, s2.try_borrow().unwrap().z3_ast);
+            Z3_inc_ref(selff.z3_context, z3_ast);
+            selff.insert_active(
+                ActiveExpression::BoolUnsignedLessThanExpression(BoolUnsignedLessThanExpression {
+                    s1: s1.clone(),
+                    s2: s2.clone(),
+                    is_assert: false,
+                }),
+                z3_ast,
+                id,
+                self.clone(),
+            )
         }
     }
 
@@ -250,6 +325,418 @@ impl Scfia {
             Z3_inc_ref(selff.z3_context, z3_ast);
             selff.insert_active(
                 ActiveExpression::BVAddExpression(BVAddExpression {
+                    s1: s1.clone(),
+                    s2: s2.clone(),
+                    width,
+                }),
+                z3_ast,
+                id,
+                self.clone(),
+            )
+        }
+    }
+
+    pub fn new_bv_and(&self, s1: ActiveValue, s2: ActiveValue, width: u32) -> ActiveValue {
+        unsafe {
+            let mut selff = self.inner.try_borrow_mut().unwrap();
+            let s1_inner = s1.try_borrow().unwrap();
+            let s2_inner = s2.try_borrow().unwrap();
+            assert!(Rc::ptr_eq(&s1_inner.scfia.inner, &self.inner));
+            let id = selff.next_symbol_id();
+            if let ActiveExpression::BVConcrete(s1) = &s1_inner.expression {
+                if let ActiveExpression::BVConcrete(s2) = &s2_inner.expression {
+                    let value = s1.value & s2.value;
+                    let sort = Z3_mk_bv_sort(selff.z3_context, width);
+                    let z3_ast = Z3_mk_unsigned_int64(selff.z3_context, value, sort);
+                    Z3_inc_ref(selff.z3_context, z3_ast);
+                    return selff.insert_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, self.clone());
+                }
+            };
+
+            let z3_ast = Z3_mk_bvand(selff.z3_context, s1.try_borrow().unwrap().z3_ast, s2.try_borrow().unwrap().z3_ast);
+            Z3_inc_ref(selff.z3_context, z3_ast);
+            selff.insert_active(
+                ActiveExpression::BVAndExpression(BVAndExpression {
+                    s1: s1.clone(),
+                    s2: s2.clone(),
+                    width,
+                }),
+                z3_ast,
+                id,
+                self.clone(),
+            )
+        }
+    }
+
+    pub fn new_bv_concat(&self, s1: ActiveValue, s2: ActiveValue, width: u32) -> ActiveValue {
+        unsafe {
+            let mut selff = self.inner.try_borrow_mut().unwrap();
+            let s1_inner = s1.try_borrow().unwrap();
+            let s2_inner = s2.try_borrow().unwrap();
+            assert!(Rc::ptr_eq(&s1_inner.scfia.inner, &self.inner));
+            let id = selff.next_symbol_id();
+            if let ActiveExpression::BVConcrete(s1) = &s1_inner.expression {
+                if let ActiveExpression::BVConcrete(s2) = &s2_inner.expression {
+                    let e1_shifted = s1.value << s2.width;
+                    let value = e1_shifted | s2.value;
+                    let sort = Z3_mk_bv_sort(selff.z3_context, width);
+                    let z3_ast = Z3_mk_unsigned_int64(selff.z3_context, value, sort);
+                    Z3_inc_ref(selff.z3_context, z3_ast);
+                    return selff.insert_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, self.clone());
+                }
+            };
+
+            let z3_ast = Z3_mk_concat(selff.z3_context, s1.try_borrow().unwrap().z3_ast, s2.try_borrow().unwrap().z3_ast);
+            Z3_inc_ref(selff.z3_context, z3_ast);
+            selff.insert_active(
+                ActiveExpression::BVConcatExpression(BVConcatExpression {
+                    s1: s1.clone(),
+                    s2: s2.clone(),
+                    width,
+                }),
+                z3_ast,
+                id,
+                self.clone(),
+            )
+        }
+    }
+
+    pub fn new_bv_concrete(&self, value: u64, width: u32) -> ActiveValue {
+        unsafe {
+            let mut selff = self.inner.try_borrow_mut().unwrap();
+            let sort = Z3_mk_bv_sort(selff.z3_context, width);
+            let z3_ast = Z3_mk_unsigned_int64(selff.z3_context, value, sort);
+            Z3_inc_ref(selff.z3_context, z3_ast);
+            let id = selff.next_symbol_id();
+
+            selff.insert_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, self.clone())
+        }
+    }
+
+    pub fn new_bv_multiply(&self, s1: ActiveValue, s2: ActiveValue, width: u32) -> ActiveValue {
+        unsafe {
+            let mut selff = self.inner.try_borrow_mut().unwrap();
+            let s1_inner = s1.try_borrow().unwrap();
+            let s2_inner = s2.try_borrow().unwrap();
+            assert!(Rc::ptr_eq(&s1_inner.scfia.inner, &self.inner));
+            let id = selff.next_symbol_id();
+            if let ActiveExpression::BVConcrete(s1) = &s1_inner.expression {
+                if let ActiveExpression::BVConcrete(s2) = &s2_inner.expression {
+                    // TODO check
+                    let one: u64 = 1;
+                    let mask = one.rotate_left(s2.width).overflowing_sub(1).0;
+                    let product = s1.value.overflowing_mul(s2.value).0;
+                    let value = mask & product;
+                    let sort = Z3_mk_bv_sort(selff.z3_context, width);
+                    let z3_ast = Z3_mk_unsigned_int64(selff.z3_context, value, sort);
+                    Z3_inc_ref(selff.z3_context, z3_ast);
+                    return selff.insert_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, self.clone());
+                }
+            };
+
+            let z3_ast = Z3_mk_bvmul(selff.z3_context, s1.try_borrow().unwrap().z3_ast, s2.try_borrow().unwrap().z3_ast);
+            Z3_inc_ref(selff.z3_context, z3_ast);
+            selff.insert_active(
+                ActiveExpression::BVMultiplyExpression(BVMultiplyExpression {
+                    s1: s1.clone(),
+                    s2: s2.clone(),
+                    width,
+                }),
+                z3_ast,
+                id,
+                self.clone(),
+            )
+        }
+    }
+
+    pub fn new_bv_or(&self, s1: ActiveValue, s2: ActiveValue, width: u32) -> ActiveValue {
+        unsafe {
+            let mut selff = self.inner.try_borrow_mut().unwrap();
+            let s1_inner = s1.try_borrow().unwrap();
+            let s2_inner = s2.try_borrow().unwrap();
+            assert!(Rc::ptr_eq(&s1_inner.scfia.inner, &self.inner));
+            let id = selff.next_symbol_id();
+            if let ActiveExpression::BVConcrete(s1) = &s1_inner.expression {
+                if let ActiveExpression::BVConcrete(s2) = &s2_inner.expression {
+                    let value = s1.value | s2.value;
+                    let sort = Z3_mk_bv_sort(selff.z3_context, width);
+                    let z3_ast = Z3_mk_unsigned_int64(selff.z3_context, value, sort);
+                    Z3_inc_ref(selff.z3_context, z3_ast);
+                    return selff.insert_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, self.clone());
+                }
+            };
+
+            let z3_ast = Z3_mk_bvor(selff.z3_context, s1.try_borrow().unwrap().z3_ast, s2.try_borrow().unwrap().z3_ast);
+            Z3_inc_ref(selff.z3_context, z3_ast);
+            selff.insert_active(
+                ActiveExpression::BVOrExpression(BVOrExpression {
+                    s1: s1.clone(),
+                    s2: s2.clone(),
+                    width,
+                }),
+                z3_ast,
+                id,
+                self.clone(),
+            )
+        }
+    }
+
+    pub fn new_bv_sign_extend(&self, s1: ActiveValue, input_width: u32, output_width: u32) -> ActiveValue {
+        unsafe {
+            let mut selff = self.inner.try_borrow_mut().unwrap();
+            let s1_inner = s1.try_borrow().unwrap();
+            assert!(Rc::ptr_eq(&s1_inner.scfia.inner, &self.inner));
+            let id = selff.next_symbol_id();
+            if let ActiveExpression::BVConcrete(s1) = &s1_inner.expression {
+                // https://graphics.stanford.edu/~seander/bithacks.html#VariableSignExtend
+                let m: u64 = 1 << (s1.width - 1);
+                let x = s1.value & ((1 << s1.width) - 1);
+                let value = (x ^ m).overflowing_sub(m).0;
+                let sort = Z3_mk_bv_sort(selff.z3_context, output_width);
+                let z3_ast = Z3_mk_unsigned_int64(selff.z3_context, value, sort);
+                Z3_inc_ref(selff.z3_context, z3_ast);
+                return selff.insert_active(
+                    ActiveExpression::BVConcrete(BVConcrete { value, width: output_width }),
+                    z3_ast,
+                    id,
+                    self.clone(),
+                );
+            };
+
+            let z3_ast = Z3_mk_sign_ext(selff.z3_context, output_width - input_width, s1.try_borrow().unwrap().z3_ast);
+            Z3_inc_ref(selff.z3_context, z3_ast);
+            selff.insert_active(
+                ActiveExpression::BVSignExtendExpression(BVSignExtendExpression {
+                    s1: s1.clone(),
+                    width: output_width,
+                }),
+                z3_ast,
+                id,
+                self.clone(),
+            )
+        }
+    }
+
+    pub fn new_bv_slice(&self, s1: ActiveValue, high: u32, low: u32) -> ActiveValue {
+        unsafe {
+            let mut selff = self.inner.try_borrow_mut().unwrap();
+            let s1_inner = s1.try_borrow().unwrap();
+            assert!(Rc::ptr_eq(&s1_inner.scfia.inner, &self.inner));
+            let id = selff.next_symbol_id();
+            let width = high - low + 1;
+            if let ActiveExpression::BVConcrete(s1) = &s1_inner.expression {
+                let shifted = s1.value >> low;
+                let mask = (1 << width) - 1;
+                let value = shifted & mask;
+                let sort = Z3_mk_bv_sort(selff.z3_context, width);
+                let z3_ast = Z3_mk_unsigned_int64(selff.z3_context, value, sort);
+                Z3_inc_ref(selff.z3_context, z3_ast);
+                return selff.insert_active(ActiveExpression::BVConcrete(BVConcrete { value, width: width }), z3_ast, id, self.clone());
+            };
+
+            let z3_ast = Z3_mk_extract(selff.z3_context, high, low, s1.try_borrow().unwrap().z3_ast);
+            Z3_inc_ref(selff.z3_context, z3_ast);
+            selff.insert_active(
+                ActiveExpression::BVSliceExpression(BVSliceExpression {
+                    s1: s1.clone(),
+                    width: width,
+                    high,
+                    low,
+                }),
+                z3_ast,
+                id,
+                self.clone(),
+            )
+        }
+    }
+
+    pub fn new_bv_sll(&self, s1: ActiveValue, s2: ActiveValue, width: u32, shamt_width: u32) -> ActiveValue {
+        unsafe {
+            let mut selff = self.inner.try_borrow_mut().unwrap();
+            let s1_inner = s1.try_borrow().unwrap();
+            let s2_inner = s2.try_borrow().unwrap();
+            assert!(Rc::ptr_eq(&s1_inner.scfia.inner, &self.inner));
+            let id = selff.next_symbol_id();
+            if let ActiveExpression::BVConcrete(s1) = &s1_inner.expression {
+                if let ActiveExpression::BVConcrete(s2) = &s2_inner.expression {
+                    let value = s1.value << s2.value;
+                    let sort = Z3_mk_bv_sort(selff.z3_context, width);
+                    let z3_ast = Z3_mk_unsigned_int64(selff.z3_context, value, sort);
+                    Z3_inc_ref(selff.z3_context, z3_ast);
+                    return selff.insert_active(ActiveExpression::BVConcrete(BVConcrete { value, width: width }), z3_ast, id, self.clone());
+                }
+            };
+
+            let shamt_ast = if width == shamt_width {
+                let ast = Z3_mk_zero_ext(selff.z3_context, width - shamt_width, s2_inner.z3_ast);
+                Z3_inc_ref(selff.z3_context, ast); //TODO decrement secondary ASTs
+                Some(ast)
+            } else {
+                None
+            };
+
+            let z3_ast = Z3_mk_bvshl(selff.z3_context, s1_inner.z3_ast, shamt_ast.unwrap_or_else(|| s2_inner.z3_ast));
+            Z3_inc_ref(selff.z3_context, z3_ast);
+            selff.insert_active(
+                ActiveExpression::BVSllExpression(BVSllExpression {
+                    s1: s1.clone(),
+                    s2: s2.clone(),
+                    width,
+                    shamt_width,
+                }),
+                z3_ast,
+                id,
+                self.clone(),
+            )
+        }
+    }
+
+    pub fn new_bv_srl(&self, s1: ActiveValue, s2: ActiveValue, width: u32, shamt_width: u32) -> ActiveValue {
+        unsafe {
+            let mut selff = self.inner.try_borrow_mut().unwrap();
+            let s1_inner = s1.try_borrow().unwrap();
+            let s2_inner = s2.try_borrow().unwrap();
+            assert!(Rc::ptr_eq(&s1_inner.scfia.inner, &self.inner));
+            let id = selff.next_symbol_id();
+            if let ActiveExpression::BVConcrete(s1) = &s1_inner.expression {
+                if let ActiveExpression::BVConcrete(s2) = &s2_inner.expression {
+                    let value = s1.value >> s2.value;
+                    let sort = Z3_mk_bv_sort(selff.z3_context, width);
+                    let z3_ast = Z3_mk_unsigned_int64(selff.z3_context, value, sort);
+                    Z3_inc_ref(selff.z3_context, z3_ast);
+                    return selff.insert_active(ActiveExpression::BVConcrete(BVConcrete { value, width: width }), z3_ast, id, self.clone());
+                }
+            };
+
+            let shamt_ast = if width == shamt_width {
+                let ast = Z3_mk_zero_ext(selff.z3_context, width - shamt_width, s2_inner.z3_ast);
+                Z3_inc_ref(selff.z3_context, ast); //TODO decrement secondary ASTs
+                Some(ast)
+            } else {
+                None
+            };
+
+            let z3_ast = Z3_mk_bvlshr(selff.z3_context, s1_inner.z3_ast, shamt_ast.unwrap_or_else(|| s2_inner.z3_ast));
+            Z3_inc_ref(selff.z3_context, z3_ast);
+            selff.insert_active(
+                ActiveExpression::BVSllExpression(BVSllExpression {
+                    s1: s1.clone(),
+                    s2: s2.clone(),
+                    width,
+                    shamt_width,
+                }),
+                z3_ast,
+                id,
+                self.clone(),
+            )
+        }
+    }
+
+    pub fn new_bv_sub(&self, s1: ActiveValue, s2: ActiveValue, width: u32) -> ActiveValue {
+        unsafe {
+            let mut selff = self.inner.try_borrow_mut().unwrap();
+            let s1_inner = s1.try_borrow().unwrap();
+            let s2_inner = s2.try_borrow().unwrap();
+            assert!(Rc::ptr_eq(&s1_inner.scfia.inner, &self.inner));
+            let id = selff.next_symbol_id();
+            if let ActiveExpression::BVConcrete(s1) = &s1_inner.expression {
+                if let ActiveExpression::BVConcrete(s2) = &s2_inner.expression {
+                    // TODO check
+                    let one: u64 = 1;
+                    let mask = one.rotate_left(s2.width).overflowing_sub(1).0;
+                    let sum = s1.value.overflowing_sub(s2.value).0;
+                    let value = mask & sum;
+                    let sort = Z3_mk_bv_sort(selff.z3_context, width);
+                    let z3_ast = Z3_mk_unsigned_int64(selff.z3_context, value, sort);
+                    Z3_inc_ref(selff.z3_context, z3_ast);
+                    return selff.insert_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, self.clone());
+                }
+            };
+
+            let z3_ast = Z3_mk_bvsub(selff.z3_context, s1.try_borrow().unwrap().z3_ast, s2.try_borrow().unwrap().z3_ast);
+            Z3_inc_ref(selff.z3_context, z3_ast);
+            selff.insert_active(
+                ActiveExpression::BVSubExpression(BVSubExpression {
+                    s1: s1.clone(),
+                    s2: s2.clone(),
+                    width,
+                }),
+                z3_ast,
+                id,
+                self.clone(),
+            )
+        }
+    }
+
+    pub fn new_bv_symbol(&self, width: u32) -> ActiveValue {
+        unsafe {
+            let mut selff = self.inner.try_borrow_mut().unwrap();
+            let z3_ast = Z3_mk_fresh_const(selff.z3_context, 0 as Z3_string, Z3_mk_bv_sort(selff.z3_context, width));
+            Z3_inc_ref(selff.z3_context, z3_ast);
+            let id = selff.next_symbol_id();
+
+            selff.insert_active(ActiveExpression::BVSymbol(BVSymbol { width }), z3_ast, id, self.clone())
+        }
+    }
+
+    pub fn new_bv_unsigned_remainder(&self, s1: ActiveValue, s2: ActiveValue, width: u32) -> ActiveValue {
+        unsafe {
+            let mut selff = self.inner.try_borrow_mut().unwrap();
+            let s1_inner = s1.try_borrow().unwrap();
+            let s2_inner = s2.try_borrow().unwrap();
+            assert!(Rc::ptr_eq(&s1_inner.scfia.inner, &self.inner));
+            let id = selff.next_symbol_id();
+            if let ActiveExpression::BVConcrete(s1) = &s1_inner.expression {
+                if let ActiveExpression::BVConcrete(s2) = &s2_inner.expression {
+                    // TODO check
+                    let one: u64 = 1;
+                    let mask = one.rotate_left(s2.width).overflowing_sub(1).0;
+                    let remainder = s1.value % s2.value;
+                    let value = mask & remainder;
+                    let sort = Z3_mk_bv_sort(selff.z3_context, width);
+                    let z3_ast = Z3_mk_unsigned_int64(selff.z3_context, value, sort);
+                    Z3_inc_ref(selff.z3_context, z3_ast);
+                    return selff.insert_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, self.clone());
+                }
+            };
+
+            let z3_ast = Z3_mk_bvurem(selff.z3_context, s1.try_borrow().unwrap().z3_ast, s2.try_borrow().unwrap().z3_ast);
+            Z3_inc_ref(selff.z3_context, z3_ast);
+            selff.insert_active(
+                ActiveExpression::BVUnsignedRemainderExpression(BVUnsignedRemainderExpression {
+                    s1: s1.clone(),
+                    s2: s2.clone(),
+                    width,
+                }),
+                z3_ast,
+                id,
+                self.clone(),
+            )
+        }
+    }
+
+    pub fn new_bv_xor(&self, s1: ActiveValue, s2: ActiveValue, width: u32) -> ActiveValue {
+        unsafe {
+            let mut selff = self.inner.try_borrow_mut().unwrap();
+            let s1_inner = s1.try_borrow().unwrap();
+            let s2_inner = s2.try_borrow().unwrap();
+            assert!(Rc::ptr_eq(&s1_inner.scfia.inner, &self.inner));
+            let id = selff.next_symbol_id();
+            if let ActiveExpression::BVConcrete(s1) = &s1_inner.expression {
+                if let ActiveExpression::BVConcrete(s2) = &s2_inner.expression {
+                    // TODO check
+                    let value = s1.value ^ s2.value;
+                    let sort = Z3_mk_bv_sort(selff.z3_context, width);
+                    let z3_ast = Z3_mk_unsigned_int64(selff.z3_context, value, sort);
+                    Z3_inc_ref(selff.z3_context, z3_ast);
+                    return selff.insert_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, self.clone());
+                }
+            };
+
+            let z3_ast = Z3_mk_bvxor(selff.z3_context, s1.try_borrow().unwrap().z3_ast, s2.try_borrow().unwrap().z3_ast);
+            Z3_inc_ref(selff.z3_context, z3_ast);
+            selff.insert_active(
+                ActiveExpression::BVXorExpression(BVXorExpression {
                     s1: s1.clone(),
                     s2: s2.clone(),
                     width,
@@ -316,6 +803,138 @@ impl Scfia {
                 value.id,
                 self.clone(),
             ),
+            ActiveExpression::BoolSignedLessThanExpression(e) => selff.insert_retired(
+                RetiredExpression::BoolSignedLessThanExpression(RetiredBoolSignedLessThanExpression {
+                    s1: Rc::downgrade(&e.s1),
+                    s2: Rc::downgrade(&e.s2),
+                    is_assert: e.is_assert,
+                }),
+                value.z3_ast,
+                value.id,
+                self.clone(),
+            ),
+            ActiveExpression::BoolUnsignedLessThanExpression(e) => selff.insert_retired(
+                RetiredExpression::BoolUnsignedLessThanExpression(RetiredBoolUnsignedLessThanExpression {
+                    s1: Rc::downgrade(&e.s1),
+                    s2: Rc::downgrade(&e.s2),
+                    is_assert: e.is_assert,
+                }),
+                value.z3_ast,
+                value.id,
+                self.clone(),
+            ),
+            ActiveExpression::BVAndExpression(e) => selff.insert_retired(
+                RetiredExpression::BVAndExpression(RetiredBVAndExpression {
+                    s1: Rc::downgrade(&e.s1),
+                    s2: Rc::downgrade(&e.s2),
+                    width: e.width,
+                }),
+                value.z3_ast,
+                value.id,
+                self.clone(),
+            ),
+            ActiveExpression::BVConcatExpression(e) => selff.insert_retired(
+                RetiredExpression::BVConcatExpression(RetiredBVConcatExpression {
+                    s1: Rc::downgrade(&e.s1),
+                    s2: Rc::downgrade(&e.s2),
+                    width: e.width,
+                }),
+                value.z3_ast,
+                value.id,
+                self.clone(),
+            ),
+            ActiveExpression::BVMultiplyExpression(e) => selff.insert_retired(
+                RetiredExpression::BVMultiplyExpression(RetiredBVMultiplyExpression {
+                    s1: Rc::downgrade(&e.s1),
+                    s2: Rc::downgrade(&e.s2),
+                    width: e.width,
+                }),
+                value.z3_ast,
+                value.id,
+                self.clone(),
+            ),
+            ActiveExpression::BVOrExpression(e) => selff.insert_retired(
+                RetiredExpression::BVOrExpression(RetiredBVOrExpression {
+                    s1: Rc::downgrade(&e.s1),
+                    s2: Rc::downgrade(&e.s2),
+                    width: e.width,
+                }),
+                value.z3_ast,
+                value.id,
+                self.clone(),
+            ),
+            ActiveExpression::BVSignExtendExpression(e) => selff.insert_retired(
+                RetiredExpression::BVSignExtendExpression(RetiredBVSignExtendExpression {
+                    s1: Rc::downgrade(&e.s1),
+                    width: e.width,
+                }),
+                value.z3_ast,
+                value.id,
+                self.clone(),
+            ),
+            ActiveExpression::BVSliceExpression(e) => selff.insert_retired(
+                RetiredExpression::BVSliceExpression(RetiredBVSliceExpression {
+                    s1: Rc::downgrade(&e.s1),
+                    width: e.width,
+                    high: e.width,
+                    low: e.width,
+                }),
+                value.z3_ast,
+                value.id,
+                self.clone(),
+            ),
+            ActiveExpression::BVSllExpression(e) => selff.insert_retired(
+                RetiredExpression::BVSllExpression(RetiredBVSllExpression {
+                    s1: Rc::downgrade(&e.s1),
+                    s2: Rc::downgrade(&e.s2),
+                    width: e.width,
+                    shamt: e.shamt_width,
+                }),
+                value.z3_ast,
+                value.id,
+                self.clone(),
+            ),
+            ActiveExpression::BVSrlExpression(e) => selff.insert_retired(
+                RetiredExpression::BVSrlExpression(RetiredBVSrlExpression {
+                    s1: Rc::downgrade(&e.s1),
+                    s2: Rc::downgrade(&e.s2),
+                    width: e.width,
+                    shamt: e.shamt,
+                }),
+                value.z3_ast,
+                value.id,
+                self.clone(),
+            ),
+            ActiveExpression::BVSubExpression(e) => selff.insert_retired(
+                RetiredExpression::BVSubExpression(RetiredBVSubExpression {
+                    s1: Rc::downgrade(&e.s1),
+                    s2: Rc::downgrade(&e.s2),
+                    width: e.width,
+                }),
+                value.z3_ast,
+                value.id,
+                self.clone(),
+            ),
+            ActiveExpression::BVUnsignedRemainderExpression(e) => selff.insert_retired(
+                RetiredExpression::BVXorExpression(RetiredBVXorExpression {
+                    s1: Rc::downgrade(&e.s1),
+                    s2: Rc::downgrade(&e.s2),
+                    width: e.width,
+                }),
+                value.z3_ast,
+                value.id,
+                self.clone(),
+            ),
+            ActiveExpression::BVXorExpression(e) => selff.insert_retired(
+                RetiredExpression::BVXorExpression(RetiredBVXorExpression {
+                    s1: Rc::downgrade(&e.s1),
+                    s2: Rc::downgrade(&e.s2),
+                    width: e.width,
+                }),
+                value.z3_ast,
+                value.id,
+                self.clone(),
+            ),
         };
 
         // Heirs are parents and discovered symbols
@@ -369,9 +988,15 @@ impl Scfia {
                     e.is_assert = true;
                     Z3_solver_assert(selff.z3_context, selff.z3_solver, value.z3_ast);
                 }
-                ActiveExpression::BVConcrete(_) => {}
-                ActiveExpression::BVSymbol(_) => {}
-                ActiveExpression::BVAddExpression(_) => {}
+                ActiveExpression::BoolSignedLessThanExpression(e) => {
+                    e.is_assert = true;
+                    Z3_solver_assert(selff.z3_context, selff.z3_solver, value.z3_ast);
+                }
+                ActiveExpression::BoolUnsignedLessThanExpression(e) => {
+                    e.is_assert = true;
+                    Z3_solver_assert(selff.z3_context, selff.z3_solver, value.z3_ast);
+                }
+                _ => panic!(),
             }
         }
     }
