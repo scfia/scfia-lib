@@ -83,24 +83,24 @@ use crate::values::bv_sub_expression::BVSubExpression;
 use crate::values::bv_symbol::BVSymbol;
 use crate::values::bv_unsigned_remainder_expression::BVUnsignedRemainderExpression;
 use crate::values::bv_xor_expression::BVXorExpression;
-use crate::values::retired_bool_concrete::RetiredBoolConcrete;
-use crate::values::retired_bool_eq_expression::RetiredBoolEqExpression;
-use crate::values::retired_bool_not_expresssion::RetiredBoolNotExpression;
-use crate::values::retired_bool_signed_less_than_expression::RetiredBoolSignedLessThanExpression;
-use crate::values::retired_bool_unsigned_less_than_expression::RetiredBoolUnsignedLessThanExpression;
-use crate::values::retired_bv_add_expression::RetiredBVAddExpression;
-use crate::values::retired_bv_and_expression::RetiredBVAndExpression;
-use crate::values::retired_bv_concat_expression::RetiredBVConcatExpression;
-use crate::values::retired_bv_concrete::RetiredBVConcrete;
-use crate::values::retired_bv_multiply_expression::RetiredBVMultiplyExpression;
-use crate::values::retired_bv_or_expression::RetiredBVOrExpression;
-use crate::values::retired_bv_sign_extend_expression::RetiredBVSignExtendExpression;
-use crate::values::retired_bv_slice_expression::RetiredBVSliceExpression;
-use crate::values::retired_bv_sll_expression::RetiredBVSllExpression;
-use crate::values::retired_bv_srl_expression::RetiredBVSrlExpression;
-use crate::values::retired_bv_sub_expression::RetiredBVSubExpression;
-use crate::values::retired_bv_symbol::RetiredBVSymbol;
-use crate::values::retired_bv_xor_expression::RetiredBVXorExpression;
+use crate::values::bool_concrete::RetiredBoolConcrete;
+use crate::values::bool_eq_expression::RetiredBoolEqExpression;
+use crate::values::bool_not_expresssion::RetiredBoolNotExpression;
+use crate::values::bool_signed_less_than_expression::RetiredBoolSignedLessThanExpression;
+use crate::values::bool_unsigned_less_than_expression::RetiredBoolUnsignedLessThanExpression;
+use crate::values::bv_add_expression::RetiredBVAddExpression;
+use crate::values::bv_and_expression::RetiredBVAndExpression;
+use crate::values::bv_concat_expression::RetiredBVConcatExpression;
+use crate::values::bv_concrete::RetiredBVConcrete;
+use crate::values::bv_multiply_expression::RetiredBVMultiplyExpression;
+use crate::values::bv_or_expression::RetiredBVOrExpression;
+use crate::values::bv_sign_extend_expression::RetiredBVSignExtendExpression;
+use crate::values::bv_slice_expression::RetiredBVSliceExpression;
+use crate::values::bv_sll_expression::RetiredBVSllExpression;
+use crate::values::bv_srl_expression::RetiredBVSrlExpression;
+use crate::values::bv_sub_expression::RetiredBVSubExpression;
+use crate::values::bv_symbol::RetiredBVSymbol;
+use crate::values::bv_xor_expression::RetiredBVXorExpression;
 use crate::values::retired_value::RetiredExpression;
 use crate::values::retired_value::RetiredValue;
 use crate::values::retired_value::RetiredValueInner;
@@ -403,6 +403,7 @@ impl Scfia {
 
     pub fn new_bv_concrete(&self, value: u64, width: u32) -> ActiveValue {
         unsafe {
+            //TODO assert value sticking to the width mask
             let mut selff = self.inner.try_borrow_mut().unwrap();
             let sort = Z3_mk_bv_sort(selff.z3_context, width);
             let z3_ast = Z3_mk_unsigned_int64(selff.z3_context, value, sort);
@@ -559,7 +560,9 @@ impl Scfia {
             let id = selff.next_symbol_id();
             if let ActiveExpression::BVConcrete(s1) = &s1_inner.expression {
                 if let ActiveExpression::BVConcrete(s2) = &s2_inner.expression {
-                    let value = s1.value << s2.value;
+                    let one: u64 = 1;
+                    let mask = one.rotate_left(s2.width).overflowing_sub(1).0;
+                    let value = (s1.value << s2.value) & mask;
                     let sort = Z3_mk_bv_sort(selff.z3_context, width);
                     let z3_ast = Z3_mk_unsigned_int64(selff.z3_context, value, sort);
                     Z3_inc_ref(selff.z3_context, z3_ast);
@@ -600,7 +603,9 @@ impl Scfia {
             let id = selff.next_symbol_id();
             if let ActiveExpression::BVConcrete(s1) = &s1_inner.expression {
                 if let ActiveExpression::BVConcrete(s2) = &s2_inner.expression {
-                    let value = s1.value >> s2.value;
+                    let one: u64 = 1;
+                    let mask = one.rotate_left(s2.width).overflowing_sub(1).0;
+                    let value = (s1.value >> s2.value) & mask;
                     let sort = Z3_mk_bv_sort(selff.z3_context, width);
                     let z3_ast = Z3_mk_unsigned_int64(selff.z3_context, value, sort);
                     Z3_inc_ref(selff.z3_context, z3_ast);

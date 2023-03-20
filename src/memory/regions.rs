@@ -24,6 +24,14 @@ pub struct SymbolicVolatileMemoryRegion {
 }
 
 impl StableMemoryRegion {
+    pub fn new(start_address: u64, length: u64) -> Self {
+        StableMemoryRegion {
+            memory: BTreeMap::default(),
+            start_address,
+            length,
+        }
+    }
+
     pub(crate) fn read(&self, address: u64, width: u32, scfia: Scfia) -> ActiveValue {
         assert_eq!(width % 8, 0);
         let bytes = width / 8;
@@ -42,7 +50,7 @@ impl StableMemoryRegion {
         // Little endian
         while !byte_values.is_empty() {
             let rhs = byte_values.pop_front().unwrap();
-            value = scfia.new_bv_concat(rhs, value, width - (byte_values.len() * 8) as u32 + 8);
+            value = scfia.new_bv_concat(rhs, value, width - (byte_values.len() * 8) as u32);
         }
 
         value

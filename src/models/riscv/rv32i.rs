@@ -1,6 +1,8 @@
 #![allow(clippy::all)]
 #![allow(non_snake_case)]
 #![allow(unused)]
+use log::warn;
+
 use crate::{memory::Memory, scfia::Scfia, values::active_value::ActiveValue, SymbolicHints};
 
 pub struct RV32i {

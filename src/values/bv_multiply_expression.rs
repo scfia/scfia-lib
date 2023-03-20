@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use super::active_value::ActiveValue;
+use super::active_value::{ActiveValue, ActiveValueWeak};
 
 #[derive(Debug)]
 pub struct BVMultiplyExpression {
@@ -8,6 +8,19 @@ pub struct BVMultiplyExpression {
     pub s2: ActiveValue,
     pub width: u32,
 }
+
+pub struct RetiredBVMultiplyExpression {
+    pub s1: ActiveValueWeak,
+    pub s2: ActiveValueWeak,
+    pub width: u32,
+}
+
+impl Debug for RetiredBVMultiplyExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("RetiredBVMultiplyExpression)")
+    }
+}
+
 
 #[cfg(test)]
 mod tests {

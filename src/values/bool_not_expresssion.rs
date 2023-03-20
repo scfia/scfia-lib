@@ -1,9 +1,14 @@
 use std::fmt::Debug;
 
-use super::active_value::ActiveValue;
+use super::active_value::{ActiveValue, ActiveValueWeak};
 
 pub struct BoolNotExpression {
     pub s1: ActiveValue,
+    pub is_assert: bool,
+}
+
+pub struct RetiredBoolNotExpression {
+    pub s1: ActiveValueWeak,
     pub is_assert: bool,
 }
 
@@ -12,6 +17,12 @@ impl Debug for BoolNotExpression {
         f.write_str("(!")?;
         self.s1.try_borrow().unwrap().fmt(f)?;
         f.write_str(")")
+    }
+}
+
+impl Debug for RetiredBoolNotExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("(!x)")
     }
 }
 

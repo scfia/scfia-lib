@@ -1,10 +1,16 @@
 use std::fmt::Debug;
 
-use super::active_value::ActiveValue;
+use super::active_value::{ActiveValue, ActiveValueWeak};
 
 pub struct BoolEqExpression {
     pub s1: ActiveValue,
     pub s2: ActiveValue,
+    pub is_assert: bool,
+}
+
+pub struct RetiredBoolEqExpression {
+    pub s1: ActiveValueWeak,
+    pub s2: ActiveValueWeak,
     pub is_assert: bool,
 }
 
@@ -15,6 +21,12 @@ impl Debug for BoolEqExpression {
         f.write_str(" == ")?;
         self.s2.try_borrow().unwrap().fmt(f)?;
         f.write_str(")")
+    }
+}
+
+impl Debug for RetiredBoolEqExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("RetiredBoolEqExpression")
     }
 }
 

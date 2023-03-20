@@ -1,25 +1,14 @@
 mod constants;
 
-/*
-
-use scfia_lib::expressions::bool_less_than_signed_expression::BoolLessThanSignedExpression;
-use scfia_lib::expressions::bool_less_than_uint_expression::BoolLessThanUIntExpression;
-use scfia_lib::memory::symbolic_volatile_memory_region::SymbolicVolatileMemoryRegion32;
-use scfia_lib::SymbolicHints;
-use std::collections::{BTreeSet, HashSet};
 use std::time::Instant;
-use std::{fs, ptr};
+use std::{fs};
 
-use scfia_lib::expressions::bool_eq_expression::BoolEqExpression;
-use scfia_lib::expressions::bv_and_expression::BVAndExpression;
-use scfia_lib::expressions::bv_sub_expression::BVSubExpression;
-use scfia_lib::memory::stable_memory_region32::StableMemoryRegion32;
-use scfia_lib::memory::volatile_memory_region::VolatileMemoryRegion32;
-use scfia_lib::memory::MemoryRegion32;
-use scfia_lib::models::riscv::rv32i::RV32iSystemState;
-use scfia_lib::values::bit_vector_symbol::BitVectorSymbol;
-use scfia_lib::values::ActiveValueInner;
-use scfia_lib::{memory::memory32::Memory32, models::riscv::rv32i, values::bit_vector_concrete::BitVectorConcrete, ScfiaInner};
+use log::{info, debug, LevelFilter, warn, trace};
+use scfia_lib::memory::Memory;
+use scfia_lib::memory::regions::{StableMemoryRegion, VolatileMemoryRegion};
+use scfia_lib::models::riscv::rv32i::RV32i;
+use scfia_lib::scfia::Scfia;
+use scfia_lib::{models::riscv::rv32i};
 use xmas_elf::program::ProgramHeader::Ph32;
 use xmas_elf::{program, ElfFile};
 use z3_sys::{
@@ -34,256 +23,172 @@ use crate::rv32im::constants::{
     INGRESS_RECEIVEQUEUE_DRIVER_POSITIONS, INGRESS_SENDQUEUE_DRIVER_POSITIONS, START_OF_MAIN_LOOP,
 };
 
-fn create_ss() -> RV32iSystemState {
-    let binary_blob = fs::read("./tests/rv32i/data/simple_router_risc_v").unwrap();
-    let elf = ElfFile::new(&binary_blob).unwrap();
-
-    let mut stdlib = ScfiaInner::new("0".to_string());
-    let mut memory = Memory32::new();
-
-    for program_header in elf.program_iter() {
-        if let Ph32(ph32) = program_header {
-            match program_header.get_type().unwrap() {
-                program::Type::Load => {
-                    let mut i = 0;
-                    let mut stable_region = StableMemoryRegion32::new(ph32.virtual_addr as u32, ph32.mem_size as u32);
-
-                    for b in ph32.raw_data(&elf) {
-                        stable_region.write(
-                            ph32.virtual_addr as u32 + i,
-                            BitVectorConcrete::new(*b as u64, 8, &mut stdlib, &mut None),
-                            8,
-                            &mut stdlib,
-                            &mut None,
-                        );
-                        i += 1;
-                    }
-
-                    memory.stable_memory_regions.push(stable_region);
-                }
-                x => println!("[WARNING] ignoring section type {:?}", x),
-            }
-        }
-    }
-
-    memory.volatile_memory_regions.push(VolatileMemoryRegion32 {
-        start_address: 0x0a003e00,
-        length: 200,
-    });
-
-    memory.volatile_memory_regions.push(VolatileMemoryRegion32 {
-        start_address: 0x0a003c00,
-        length: 200,
-    });
-
-    let mut rv32i_system_state = RV32iSystemState {
-        system_state: rv32i::SystemState {
-            x0: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x1: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x2: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x3: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x4: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x5: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x6: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x7: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x8: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x9: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x10: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x11: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x12: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x13: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x14: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x15: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x16: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x17: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x18: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x19: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x20: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x21: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x22: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x23: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x24: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x25: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x26: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x27: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x28: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x29: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x30: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x31: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            pc: BitVectorConcrete::new(0x00000004, 32, &mut stdlib, &mut None),
-        },
-        memory,
-        stdlib,
-    };
-
-    rv32i_system_state
-}
 
 #[test]
 fn test_system_state() {
+    simple_logger::SimpleLogger::new().with_level(LevelFilter::Debug).env().init().unwrap();
     let binary_blob = fs::read("./tests/rv32im/data/simple_router_risc_v").unwrap();
     let elf = ElfFile::new(&binary_blob).unwrap();
 
-    let mut stdlib = ScfiaInner::new("0".to_string());
-    let mut memory = Memory32::new();
+    let scfia = Scfia::default();
+    let mut memory = Memory::default();
 
     for program_header in elf.program_iter() {
         if let Ph32(ph32) = program_header {
             match program_header.get_type().unwrap() {
                 program::Type::Load => {
-                    println!("{:?}", program_header);
+                    trace!("{:?}", program_header);
                     let mut i = 0;
-                    let mut stable_region = StableMemoryRegion32::new(ph32.virtual_addr as u32, ph32.mem_size as u32);
+                    let stable_region = StableMemoryRegion::new(ph32.virtual_addr as u64, ph32.mem_size as u64);
+                    memory.stables.push(stable_region);
 
                     for b in ph32.raw_data(&elf) {
-                        stable_region.write(
-                            ph32.virtual_addr as u32 + i,
-                            BitVectorConcrete::new(*b as u64, 8, &mut stdlib, &mut None),
+                        memory.write(
+                            scfia.new_bv_concrete(ph32.virtual_addr as u64 + i, 8),
+                            scfia.new_bv_concrete(*b as u64, 8),
                             8,
-                            &mut stdlib,
+                            scfia.clone(),
                             &mut None,
                         );
                         i += 1;
                     }
-
-                    memory.stable_memory_regions.push(stable_region);
                 }
-                x => println!("[WARNING] ignoring section type {:?}", x),
+                x => warn!("Ignoring section type {:?}", x),
             }
         }
     }
 
     // ingress nic mmio register
-    memory.volatile_memory_regions.push(VolatileMemoryRegion32 {
+    memory.volatiles.push(VolatileMemoryRegion {
         start_address: 0x0a003e00,
         length: 200,
     });
 
     // egress nic mmio register
-    memory.volatile_memory_regions.push(VolatileMemoryRegion32 {
+    memory.volatiles.push(VolatileMemoryRegion {
         start_address: 0x0a003c00,
         length: 200,
     });
 
     // ingress nic receivequeue driver area
-    memory.volatile_memory_regions.push(VolatileMemoryRegion32 {
+    memory.volatiles.push(VolatileMemoryRegion {
         start_address: 0x46004000,
         length: 0x1000,
     });
 
     // ingress nic receivequeue device area
-    memory.volatile_memory_regions.push(VolatileMemoryRegion32 {
+    memory.volatiles.push(VolatileMemoryRegion {
         start_address: 0x46005000,
         length: 0x3000,
     });
 
     // ingress nic receivequeue buffers
-    memory.volatile_memory_regions.push(VolatileMemoryRegion32 {
+    memory.volatiles.push(VolatileMemoryRegion {
         start_address: 0x46008000,
         length: 0x400000,
     });
 
     // ingress nic sendqueue driver area
-    memory.volatile_memory_regions.push(VolatileMemoryRegion32 {
+    memory.volatiles.push(VolatileMemoryRegion {
         start_address: 0x4640c000,
         length: 0x1000,
     });
 
     // ingress nic sendqueue device area
-    memory.volatile_memory_regions.push(VolatileMemoryRegion32 {
+    memory.volatiles.push(VolatileMemoryRegion {
         start_address: 0x4640d000,
         length: 0x3000,
     });
 
     // ingress nic sendqueue buffers
-    memory.volatile_memory_regions.push(VolatileMemoryRegion32 {
+    memory.volatiles.push(VolatileMemoryRegion {
         start_address: 0x46410000,
         length: 0x400000,
     });
 
     // egress nic receivequeue driver area
-    memory.volatile_memory_regions.push(VolatileMemoryRegion32 {
+    memory.volatiles.push(VolatileMemoryRegion {
         start_address: 0x46814000,
         length: 0x1000,
     });
 
     // egress nic receivequeue device area
-    memory.volatile_memory_regions.push(VolatileMemoryRegion32 {
+    memory.volatiles.push(VolatileMemoryRegion {
         start_address: 0x46815000,
         length: 0x3000,
     });
 
     // egress nic receivequeue buffers
-    memory.volatile_memory_regions.push(VolatileMemoryRegion32 {
+    memory.volatiles.push(VolatileMemoryRegion {
         start_address: 0x46818000,
         length: 0x400000,
     });
 
     // egress nic sendqueue driver area
-    memory.volatile_memory_regions.push(VolatileMemoryRegion32 {
+    memory.volatiles.push(VolatileMemoryRegion {
         start_address: 0x46c1c000,
         length: 0x1000,
     });
 
     // egress nic sendqueue device area
-    memory.volatile_memory_regions.push(VolatileMemoryRegion32 {
+    memory.volatiles.push(VolatileMemoryRegion {
         start_address: 0x46c1d000,
         length: 0x3000,
     });
 
     // egress nic sendqueue buffers
-    memory.volatile_memory_regions.push(VolatileMemoryRegion32 {
+    memory.volatiles.push(VolatileMemoryRegion {
         start_address: 0x46c20000,
         length: 0x400000,
     });
 
-    let mut rv32i_system_state = RV32iSystemState {
-        system_state: rv32i::SystemState {
-            x0: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x1: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x2: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x3: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x4: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x5: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x6: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x7: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x8: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x9: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x10: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x11: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x12: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x13: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x14: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x15: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x16: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x17: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x18: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x19: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x20: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x21: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x22: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x23: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x24: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x25: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x26: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x27: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x28: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x29: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x30: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            x31: BitVectorConcrete::new(0b0, 32, &mut stdlib, &mut None),
-            pc: BitVectorConcrete::new(0x4f4, 32, &mut stdlib, &mut None),
+    let mut rv32i_system_state = RV32i {
+        state: rv32i::SystemState {
+            x0: scfia.new_bv_concrete(0b0, 32),
+            x1: scfia.new_bv_concrete(0b0, 32),
+            x2: scfia.new_bv_concrete(0b0, 32),
+            x3: scfia.new_bv_concrete(0b0, 32),
+            x4: scfia.new_bv_concrete(0b0, 32),
+            x5: scfia.new_bv_concrete(0b0, 32),
+            x6: scfia.new_bv_concrete(0b0, 32),
+            x7: scfia.new_bv_concrete(0b0, 32),
+            x8: scfia.new_bv_concrete(0b0, 32),
+            x9: scfia.new_bv_concrete(0b0, 32),
+            x10: scfia.new_bv_concrete(0b0, 32),
+            x11: scfia.new_bv_concrete(0b0, 32),
+            x12: scfia.new_bv_concrete(0b0, 32),
+            x13: scfia.new_bv_concrete(0b0, 32),
+            x14: scfia.new_bv_concrete(0b0, 32),
+            x15: scfia.new_bv_concrete(0b0, 32),
+            x16: scfia.new_bv_concrete(0b0, 32),
+            x17: scfia.new_bv_concrete(0b0, 32),
+            x18: scfia.new_bv_concrete(0b0, 32),
+            x19: scfia.new_bv_concrete(0b0, 32),
+            x20: scfia.new_bv_concrete(0b0, 32),
+            x21: scfia.new_bv_concrete(0b0, 32),
+            x22: scfia.new_bv_concrete(0b0, 32),
+            x23: scfia.new_bv_concrete(0b0, 32),
+            x24: scfia.new_bv_concrete(0b0, 32),
+            x25: scfia.new_bv_concrete(0b0, 32),
+            x26: scfia.new_bv_concrete(0b0, 32),
+            x27: scfia.new_bv_concrete(0b0, 32),
+            x28: scfia.new_bv_concrete(0b0, 32),
+            x29: scfia.new_bv_concrete(0b0, 32),
+            x30: scfia.new_bv_concrete(0b0, 32),
+            x31: scfia.new_bv_concrete(0b0, 32),
+            pc: scfia.new_bv_concrete(0x4f4, 32),
         },
         memory,
-        stdlib,
+        scfia,
     };
 
-    let begin = Instant::now();
-    println!("### Stepping until NIC1 receivequeue queue_pfn check");
-    while rv32i_system_state.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x24 {
-        print!("({}ms) ", begin.elapsed().as_millis());
+    info!("Stepping until NIC1 receivequeue queue_pfn check");
+    while rv32i_system_state.state.pc.try_borrow().unwrap().try_as_concrete_bv().unwrap() != 0x24 {
+        debug!("Executing 0x{:x}", rv32i_system_state.state.pc.try_borrow().unwrap().try_as_concrete_bv().unwrap());
         rv32i_system_state.step(None);
     }
 
+    /*
     let mut successors = rv32i_system_state.step_forking();
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
@@ -554,7 +459,7 @@ fn test_system_state() {
     continuing.system_state.x14 = BitVectorConcrete::new(*monomorphizing_candidates.iter().next().unwrap(), 32, &mut continuing.stdlib, &mut None);
 
     println!("[{}s] ### Creating symbolic volatile memory regions", begin.elapsed().as_millis());
-    let base_symbol = BitVectorSymbol::new(None, 32, Some("SymbolicVolatileMemoryRegion32Base".into()), &mut continuing.stdlib, &mut None);
+    let base_symbol = BitVectorSymbol::new(None, 32, Some("SymbolicVolatileMemoryRegionBase".into()), &mut continuing.stdlib, &mut None);
     {
         let base_symbol_and_expr = BVAndExpression::new(
             base_symbol.clone(),
@@ -582,7 +487,7 @@ fn test_system_state() {
         expr.try_borrow_mut().unwrap().assert(&mut continuing.stdlib);
     }
 
-    let sym_region = SymbolicVolatileMemoryRegion32 {
+    let sym_region = SymbolicVolatileMemoryRegion {
         base_symbol: base_symbol,
         length: 4096,
     };
@@ -615,7 +520,7 @@ fn test_system_state() {
             &mut None,
         );
     }
-    continuing.memory.symbolic_volatile_memory_regions.push(sym_region);
+    continuing.memory.symbolic_volatiles.push(sym_region);
 
     println!("[{}s] ### Stepping until ethertype ipv4 check", begin.elapsed().as_millis());
     while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x73c {
@@ -741,6 +646,5 @@ fn test_system_state() {
             continuing.step(None);
         }
     }
+    */
 }
-
- */
