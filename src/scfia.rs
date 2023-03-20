@@ -115,8 +115,8 @@ pub struct ScfiaInner {
     next_symbol_id: u64,
     active_symbols: BTreeMap<u64, ActiveValueWeak>,
     retired_symbols: BTreeMap<u64, RetiredValueWeak>,
-    z3_context: Z3_context,
-    z3_solver: Z3_solver,
+    pub(crate) z3_context: Z3_context,
+    pub(crate) z3_solver: Z3_solver,
 }
 
 impl Scfia {

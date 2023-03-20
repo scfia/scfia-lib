@@ -1,31 +1,17 @@
 # scfia-lib
 
-## API Brainstorming
+## API Concepts
 
-- Symbols SHOULD be accessible via their ids later
-	- this makes adding constraints and comparing states (that share symbols) easier
-    -> HashMap/BTree within $struct
-- Struct Hierarchy:
-    - `RV32I`
-        - `SystemState`
-			- ActiveValue as struct member
-			- implements `step` and `reset`
-				- both may create new symbols and permutate memory
-				-> need access to `Memory` and `SymbolManager`
-					- mutable borrows could suffice
-        - `Memory`
-			- implements `read` and `write`
-			- may yield fresh symbols (if volatile regions are read)
-			- may combine or split symbols (if partial symbols are read)
-			-> needs access to `SymbolManager`
-				- mutable borrow could suffice
-        - `SymbolManager`
-			- manages symbol ids
-			- manages z3 context
-- Symbols need to be refcounted, either manually or by Rc<...>
-	- Proposal 1:
-		- `active_values: HashMap<u64, Weak<RefCell<ActiveValue>>>` in `SymbolManager`
-		- `retired_values: HashMap<u64, Weak<RefCell<RetiredValue>>>` in `SymbolManager`
-		- Refcounting is done by Rc
+- Scfia maintains weakrefs to all (active and retired) symbols
+- Retiring and dropping is triggered by the respective `Drop` handlers
 
-
+## Brainstorming
+- tranformation function derivation will need to record changes to state and memory
+	- can we use it to handle forks?
+	- intercept all writes to struct members and memory cells
+	- intercept all reads from struct members and memory, deliver unflushed write if exists
+	- commit non-forks by applying all pending writes
+	- handle forks by cloning the uncommi
+	-> recording should be optional
+	- derive transformation from pending writes
+- allow arbitrary numberic types with `<T: Add + Sub + Ord + ...>`?
