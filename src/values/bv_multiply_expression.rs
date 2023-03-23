@@ -21,7 +21,6 @@ impl Debug for RetiredBVMultiplyExpression {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use crate::scfia::Scfia;

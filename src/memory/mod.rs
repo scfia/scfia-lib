@@ -8,9 +8,7 @@ use z3_sys::{
 
 use crate::{
     scfia::Scfia,
-    values::{
-        active_value::{ActiveExpression, ActiveValue, ActiveValueInner},
-    },
+    values::active_value::{ActiveExpression, ActiveValue, ActiveValueInner},
     SymbolicHints,
 };
 
@@ -143,6 +141,27 @@ impl Memory {
                 trace!("Volatile region 0x{:x} ignoring write", region.start_address);
                 return;
             }
+        }
+
+        panic!("{:?}", address)
+    }
+
+    pub(crate) fn clone_to(&self, cloned_scfia: Scfia) -> Memory {
+        let mut cloned_stables = vec![];
+        let mut symbolic_volatiles = vec![];
+
+        for stable in &self.stables {
+            cloned_stables.push(stable.clone_to(cloned_scfia.clone()))
+        }
+
+        for symbolic_volatile in &self.symbolic_volatiles {
+            symbolic_volatiles.push(symbolic_volatile.clone_to(cloned_scfia.clone()))
+        }
+
+        Memory {
+            stables: cloned_stables,
+            volatiles: self.volatiles.clone(),
+            symbolic_volatiles: symbolic_volatiles,
         }
     }
 }

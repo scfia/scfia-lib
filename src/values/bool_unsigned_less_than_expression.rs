@@ -21,7 +21,6 @@ impl Debug for RetiredBoolUnsignedLessThanExpression {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use crate::scfia::Scfia;

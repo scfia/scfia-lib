@@ -5,9 +5,10 @@ use std::{
     rc::{Rc, Weak},
 };
 
+use log::{trace, warn};
 use z3_sys::Z3_ast;
 
-use crate::scfia::Scfia;
+use crate::scfia::{Scfia, ScfiaInner};
 
 use super::bool_concrete::BoolConcrete;
 use super::bool_eq_expression::BoolEqExpression;
@@ -130,6 +131,31 @@ impl ActiveExpression {
                 dest.push(e.s1.clone());
                 dest.push(e.s2.clone());
             }
+        }
+    }
+
+    pub(crate) fn clone_to(&self, own_scfia: &ScfiaInner, cloned_scfia: &mut ScfiaInner, cloned_scfia_rc: Scfia, id: u64) -> ActiveValue {
+        trace!("cloning {:x}", id);
+        match self {
+            ActiveExpression::BoolConcrete(e) => cloned_scfia.new_bool_concrete(cloned_scfia_rc, e.value, Some(id)),
+            ActiveExpression::BoolEqExpression(_) => todo!(),
+            ActiveExpression::BoolNotExpression(_) => todo!(),
+            ActiveExpression::BoolSignedLessThanExpression(_) => todo!(),
+            ActiveExpression::BoolUnsignedLessThanExpression(_) => todo!(),
+            ActiveExpression::BVAddExpression(_) => todo!(),
+            ActiveExpression::BVAndExpression(_) => todo!(),
+            ActiveExpression::BVConcatExpression(_) => todo!(),
+            ActiveExpression::BVConcrete(e) => cloned_scfia.new_bv_concrete(cloned_scfia_rc, e.value, e.width, Some(id)),
+            ActiveExpression::BVMultiplyExpression(_) => todo!(),
+            ActiveExpression::BVOrExpression(_) => todo!(),
+            ActiveExpression::BVSignExtendExpression(_) => todo!(),
+            ActiveExpression::BVSliceExpression(_) => todo!(),
+            ActiveExpression::BVSllExpression(_) => todo!(),
+            ActiveExpression::BVSrlExpression(_) => todo!(),
+            ActiveExpression::BVSubExpression(_) => todo!(),
+            ActiveExpression::BVSymbol(e) => cloned_scfia.new_bv_symbol(cloned_scfia_rc, e.width, Some(id)),
+            ActiveExpression::BVUnsignedRemainderExpression(_) => todo!(),
+            ActiveExpression::BVXorExpression(_) => todo!(),
         }
     }
 }

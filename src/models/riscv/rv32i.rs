@@ -1,9 +1,16 @@
 #![allow(clippy::all)]
 #![allow(non_snake_case)]
 #![allow(unused)]
+use std::collections::BTreeMap;
+
 use log::warn;
 
-use crate::{memory::Memory, scfia::Scfia, values::active_value::ActiveValue, SymbolicHints};
+use crate::{
+    memory::Memory,
+    scfia::{Scfia, ScfiaInner},
+    values::active_value::ActiveValue,
+    SymbolicHints,
+};
 
 pub struct RV32i {
     pub state: SystemState,
@@ -11,10 +18,57 @@ pub struct RV32i {
     pub scfia: Scfia,
 }
 
+pub struct StepContext {
+    write_cache: Option<RV32iWriteCache>,
+    fork_symbol: Option<ActiveValue>,
+}
+
+pub struct RV32iWriteCache {
+    pub x0: Option<ActiveValue>,
+}
+
 impl RV32i {
     pub fn step(&mut self, mut hints: Option<SymbolicHints>) {
         unsafe {
-            _step(&mut self.state, &mut self.memory, self.scfia.clone(), &mut hints);
+            let mut step_context = StepContext {
+                write_cache: None,
+                fork_symbol: None,
+            };
+            _step(&mut self.state, &mut self.memory, self.scfia.clone(), &mut hints, &mut step_context);
+        }
+    }
+
+    pub fn step_forking(model: RV32i, mut hints: Option<SymbolicHints>) -> Vec<RV32i> {
+        unsafe {
+            let mut states = vec![model];
+            let mut results = vec![];
+
+            while let Some(mut model) = states.pop() {
+                // When a condition can be true and false, and a write cache is pr
+                let mut step_context = StepContext {
+                    write_cache: todo!(),
+                    fork_symbol: todo!(),
+                };
+                _step(&mut model.state, &mut model.memory, model.scfia.clone(), &mut hints, &mut step_context);
+                // TODO apply write cache to model
+                results.push(model)
+            }
+
+            results
+        }
+    }
+
+    pub fn clone_model(&self) -> RV32i {
+        unsafe {
+            let own_scfia = self.scfia.inner.try_borrow().unwrap();
+            let (cloned_scfia, cloned_active_symbols) = own_scfia.clone();
+            let cloned_memory = self.memory.clone_to(cloned_scfia);
+
+            RV32i {
+                memory: cloned_memory,
+                state: todo!(),
+                scfia: cloned_scfia,
+            }
         }
     }
 }
@@ -104,7 +158,7 @@ pub unsafe fn _test(state: *mut SystemState, memory: &mut Memory, scfia: Scfia, 
     (*state).x3 = scfia.new_bv_add(_sum(state, memory, scfia.clone(), hints), _sum(state, memory, scfia.clone(), hints), 32);
 }
 
-pub unsafe fn _step(state: *mut SystemState, memory: &mut Memory, scfia: Scfia, hints: &mut Option<SymbolicHints>) {
+pub unsafe fn _step(state: *mut SystemState, memory: &mut Memory, scfia: Scfia, hints: &mut Option<SymbolicHints>, write_cache: &mut StepContext) {
     let instruction_32: ActiveValue = memory.read((*state).pc.clone(), 32, scfia.clone(), hints);
     let opcode: ActiveValue = scfia.new_bv_slice(instruction_32.clone(), 6, 0);
     if scfia.check_condition(scfia.new_bool_eq(opcode.clone(), scfia.new_bv_concrete(0b11, 7))) {

@@ -15,3 +15,12 @@
 	-> recording should be optional
 	- derive transformation from pending writes
 - allow arbitrary numberic types with `<T: Add + Sub + Ord + ...>`?
+
+## Write Buffer
+- have write buffer in step context
+- struct access/memory access writes to WB, reads from WB with priority
+- fork
+	- asserts WB is present
+	- clones the current state and WB
+	- schedules continuation with clone, and an assert other the negated fork symbol
+	- apply WB

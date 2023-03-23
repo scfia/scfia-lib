@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, VecDeque};
 
-use log::warn;
+use log::{trace, warn};
 
 use crate::{scfia::Scfia, values::active_value::ActiveValue};
 
@@ -11,7 +11,7 @@ pub struct StableMemoryRegion {
     pub length: u64,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct VolatileMemoryRegion {
     pub start_address: u64,
     pub length: u64,
@@ -21,6 +21,22 @@ pub struct VolatileMemoryRegion {
 pub struct SymbolicVolatileMemoryRegion {
     pub base_symbol: ActiveValue,
     pub length: u64,
+}
+impl SymbolicVolatileMemoryRegion {
+    pub(crate) fn clone_to(&self, cloned_scfia: Scfia) -> SymbolicVolatileMemoryRegion {
+        SymbolicVolatileMemoryRegion {
+            base_symbol: cloned_scfia
+                .inner
+                .try_borrow_mut()
+                .unwrap()
+                .active_symbols
+                .get(&self.base_symbol.try_borrow().unwrap().id)
+                .unwrap()
+                .upgrade()
+                .unwrap(),
+            length: self.length,
+        }
+    }
 }
 
 impl StableMemoryRegion {
@@ -60,7 +76,35 @@ impl StableMemoryRegion {
         let bytes = width / 8;
         for byte in 0..bytes {
             let v = scfia.new_bv_slice(value.clone(), (byte * 8) + 7, byte * 8);
+            trace!("*{:x} = {:?}", address, v);
             self.memory.insert(address + byte as u64, v);
         }
+    }
+
+    pub(crate) fn clone_to(&self, cloned_scfia: Scfia) -> StableMemoryRegion {
+        let mut clone = StableMemoryRegion {
+            length: self.length,
+            memory: BTreeMap::new(),
+            start_address: self.start_address,
+        };
+
+        for (offset, value) in &self.memory {
+            trace!("memcloning {:?}", value);
+            clone.memory.insert(
+                *offset,
+                cloned_scfia
+                    .inner
+                    .try_borrow_mut()
+                    .unwrap()
+                    .active_symbols
+                    .get(&value.try_borrow().unwrap().id)
+                    .unwrap()
+                    .upgrade()
+                    .unwrap()
+                    .clone(),
+            );
+        }
+
+        clone
     }
 }

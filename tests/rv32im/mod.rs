@@ -1,14 +1,14 @@
 mod constants;
 
+use std::fs;
 use std::time::Instant;
-use std::{fs};
 
-use log::{info, debug, LevelFilter, warn, trace};
-use scfia_lib::memory::Memory;
+use log::{debug, info, trace, warn, LevelFilter};
 use scfia_lib::memory::regions::{StableMemoryRegion, VolatileMemoryRegion};
+use scfia_lib::memory::Memory;
+use scfia_lib::models::riscv::rv32i;
 use scfia_lib::models::riscv::rv32i::RV32i;
 use scfia_lib::scfia::Scfia;
-use scfia_lib::{models::riscv::rv32i};
 use xmas_elf::program::ProgramHeader::Ph32;
 use xmas_elf::{program, ElfFile};
 use z3_sys::{
@@ -23,10 +23,9 @@ use crate::rv32im::constants::{
     INGRESS_RECEIVEQUEUE_DRIVER_POSITIONS, INGRESS_SENDQUEUE_DRIVER_POSITIONS, START_OF_MAIN_LOOP,
 };
 
-
 #[test]
 fn test_system_state() {
-    simple_logger::SimpleLogger::new().with_level(LevelFilter::Debug).env().init().unwrap();
+    simple_logger::SimpleLogger::new().with_level(LevelFilter::Trace).env().init().unwrap();
     let binary_blob = fs::read("./tests/rv32im/data/simple_router_risc_v").unwrap();
     let elf = ElfFile::new(&binary_blob).unwrap();
 
@@ -184,9 +183,14 @@ fn test_system_state() {
 
     info!("Stepping until NIC1 receivequeue queue_pfn check");
     while rv32i_system_state.state.pc.try_borrow().unwrap().try_as_concrete_bv().unwrap() != 0x24 {
-        debug!("Executing 0x{:x}", rv32i_system_state.state.pc.try_borrow().unwrap().try_as_concrete_bv().unwrap());
+        debug!(
+            "Executing 0x{:x}",
+            rv32i_system_state.state.pc.try_borrow().unwrap().try_as_concrete_bv().unwrap()
+        );
         rv32i_system_state.step(None);
     }
+
+    rv32i_system_state.clone_model();
 
     /*
     let mut successors = rv32i_system_state.step_forking();
