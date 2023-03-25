@@ -25,7 +25,7 @@ use crate::rv32im::constants::{
 
 #[test]
 fn test_system_state() {
-    simple_logger::SimpleLogger::new().with_level(LevelFilter::Trace).env().init().unwrap();
+    simple_logger::SimpleLogger::new().with_level(LevelFilter::Debug).env().init().unwrap();
     let binary_blob = fs::read("./tests/rv32im/data/simple_router_risc_v").unwrap();
     let elf = ElfFile::new(&binary_blob).unwrap();
 

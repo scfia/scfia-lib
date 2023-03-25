@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, VecDeque};
 
-use log::{trace, warn};
+use log::{debug, trace, warn};
 
-use crate::{scfia::Scfia, values::active_value::ActiveValue};
+use crate::{scfia::Scfia, values::active_value::ActiveValue, StepContext};
 
 #[derive(Debug)]
 pub struct StableMemoryRegion {
@@ -76,7 +76,7 @@ impl StableMemoryRegion {
         let bytes = width / 8;
         for byte in 0..bytes {
             let v = scfia.new_bv_slice(value.clone(), (byte * 8) + 7, byte * 8);
-            trace!("*{:x} = {:?}", address, v);
+            debug!("*{:x} = {:?}", address, v);
             self.memory.insert(address + byte as u64, v);
         }
     }

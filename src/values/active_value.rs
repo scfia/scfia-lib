@@ -135,7 +135,7 @@ impl ActiveExpression {
     }
 
     pub(crate) fn clone_to(&self, own_scfia: &ScfiaInner, cloned_scfia: &mut ScfiaInner, cloned_scfia_rc: Scfia, id: u64) -> ActiveValue {
-        trace!("cloning {:x}", id);
+        trace!("cloning {:?}", self);
         match self {
             ActiveExpression::BoolConcrete(e) => cloned_scfia.new_bool_concrete(cloned_scfia_rc, e.value, Some(id)),
             ActiveExpression::BoolEqExpression(_) => todo!(),

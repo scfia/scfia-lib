@@ -16,7 +16,7 @@
 	- derive transformation from pending writes
 - allow arbitrary numberic types with `<T: Add + Sub + Ord + ...>`?
 
-## Write Buffer
+### Write Buffer
 - have write buffer in step context
 - struct access/memory access writes to WB, reads from WB with priority
 - fork
@@ -24,3 +24,12 @@
 	- clones the current state and WB
 	- schedules continuation with clone, and an assert other the negated fork symbol
 	- apply WB
+
+## Problems
+- Value drop handlers need mutable access to scfia
+- scfia must be pinned or RCed, otherwise the value's pointer to scfia might be invalid
+- if we use RCed scfia:
+	- Value drops must not happen while scfia is mutborrowed
+	- we could enforce that by
+		- passing only &values
+		- returning all create values

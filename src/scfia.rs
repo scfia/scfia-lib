@@ -133,6 +133,11 @@ impl Scfia {
         }
     }
 
+    pub fn try_get_active_value(&self, id: u64) -> Option<ActiveValue> {
+        let selff = self.inner.try_borrow_mut().unwrap();
+        selff.active_symbols.get(&id).map_or(None, |e| Some(e.upgrade().unwrap().clone()))
+    }
+
     pub fn check_condition(&self, value: ActiveValue) -> bool {
         unsafe {
             if let ActiveExpression::BoolConcrete(e) = &value.try_borrow().unwrap().expression {
@@ -1081,7 +1086,6 @@ impl ScfiaInner {
             let id = if let Some(id) = id { id } else { self.next_symbol_id() };
             let z3_ast = Z3_mk_fresh_const(self.z3_context, 0 as Z3_string, Z3_mk_bv_sort(self.z3_context, width));
             Z3_inc_ref(self.z3_context, z3_ast);
-            let id = self.next_symbol_id();
 
             self.insert_active(ActiveExpression::BVSymbol(BVSymbol { width }), z3_ast, id, self_rc)
         }
@@ -1182,7 +1186,7 @@ impl ScfiaInner {
         value
     }
 
-    pub fn clone(&self) -> (Scfia, BTreeMap<u64, ActiveValue>) {
+    pub fn clone_symbols(&self) -> (Scfia, BTreeMap<u64, ActiveValue>) {
         unsafe {
             let z3_config = Z3_mk_config();
             let z3_context = Z3_mk_context_rc(z3_config);
@@ -1217,13 +1221,14 @@ impl ScfiaInner {
                             let next_active_ref = next_active_ref.try_borrow().unwrap();
                             let cloned_active = next_active_ref
                                 .expression
-                                .clone_to(&self, &mut cloned_scfia, cloned_scfia_rc.clone(), *next_active.0);
+                                .clone_to(self, &mut cloned_scfia, cloned_scfia_rc.clone(), *next_active.0);
                             cloned_actives.insert(*next_active.0, cloned_active);
                             next_active_option = active_iter.next();
                         } else {
                             // Take retired
                             trace!("Cloning retired {:?}", next_retired.1.upgrade());
                             next_retired_option = retired_iter.next();
+                            todo!()
                         }
                     } else {
                         // Take active
@@ -1232,7 +1237,7 @@ impl ScfiaInner {
                         let next_active_ref = next_active_ref.try_borrow().unwrap();
                         let cloned_active = next_active_ref
                             .expression
-                            .clone_to(&self, &mut cloned_scfia, cloned_scfia_rc.clone(), *next_active.0);
+                            .clone_to(self, &mut cloned_scfia, cloned_scfia_rc.clone(), *next_active.0);
                         cloned_actives.insert(*next_active.0, cloned_active);
                         next_active_option = active_iter.next();
                     }
@@ -1240,6 +1245,7 @@ impl ScfiaInner {
                     // Take retired
                     trace!("Cloning retired {:?}", next_retired.1.upgrade());
                     next_retired_option = retired_iter.next();
+                    todo!()
                 } else {
                     break;
                 }

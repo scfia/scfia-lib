@@ -9,7 +9,7 @@ use z3_sys::{
 use crate::{
     scfia::Scfia,
     values::active_value::{ActiveExpression, ActiveValue, ActiveValueInner},
-    SymbolicHints,
+    StepContext, SymbolicHints,
 };
 
 use self::regions::{StableMemoryRegion, SymbolicVolatileMemoryRegion, VolatileMemoryRegion};
@@ -38,12 +38,12 @@ impl Memory {
         }
     }
 
-    pub fn write(&mut self, address: ActiveValue, value: ActiveValue, width: u32, scfia: Scfia, _hints: &mut Option<SymbolicHints>) {
+    pub fn write(&mut self, address: ActiveValue, value: ActiveValue, width: u32, scfia: Scfia, hints: &mut Option<SymbolicHints>) {
         let address_inner = address.try_borrow().unwrap();
         if let ActiveExpression::BVConcrete(e) = &address_inner.expression {
             self.write_concrete(e.value, value, width, scfia)
         } else {
-            self.write_symbolic(&address_inner, value, width, scfia)
+            self.write_symbolic(&address_inner, value, width)
         }
     }
 
@@ -82,7 +82,7 @@ impl Memory {
                 Z3_dec_ref(z3_context, assumption);
             }
             // Check for unamimous read
-            let mut candidates = if let Some(hints) = hints { hints.hints.pop().unwrap() } else { vec![] };
+            let mut candidates = if let Some(hints) = hints { (*hints).hints.pop().unwrap() } else { vec![] };
             scfia.monomorphize_active(address, &mut candidates);
             let unanimous_address = candidates.windows(2).all(|w| w[0] == w[1]);
             assert!(!candidates.is_empty());
@@ -111,7 +111,7 @@ impl Memory {
         }
     }
 
-    fn write_symbolic(&mut self, _address: &ActiveValueInner, _value: ActiveValue, _width: u32, _scfia: Scfia) {
+    fn write_symbolic(&mut self, _address: &ActiveValueInner, _value: ActiveValue, _width: u32) {
         todo!()
     }
 
@@ -133,7 +133,7 @@ impl Memory {
     fn write_concrete(&mut self, address: u64, value: ActiveValue, width: u32, scfia: Scfia) {
         for region in &mut self.stables {
             if address >= region.start_address && address < region.start_address + region.length {
-                return region.write(address, value, width, scfia);
+                return region.write(address, value, width, scfia.clone());
             }
         }
         for region in &self.volatiles {
@@ -161,7 +161,7 @@ impl Memory {
         Memory {
             stables: cloned_stables,
             volatiles: self.volatiles.clone(),
-            symbolic_volatiles: symbolic_volatiles,
+            symbolic_volatiles,
         }
     }
 }
