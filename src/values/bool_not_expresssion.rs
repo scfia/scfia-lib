@@ -35,20 +35,20 @@ mod tests {
     fn test_concrete_not() {
         simple_logger::SimpleLogger::new().env().init();
         let scfia = Scfia::new();
-        let s1 = scfia.new_bv_concrete(2, 32);
-        let s2 = scfia.new_bv_concrete(2, 32);
-        let eq = scfia.new_bool_eq(s1, s2);
-        let not = scfia.new_bool_not(eq);
+        let s1 = scfia.new_bv_concrete(2, 32, &mut None);
+        let s2 = scfia.new_bv_concrete(2, 32, &mut None);
+        let eq = scfia.new_bool_eq(s1, s2, &mut None);
+        let not = scfia.new_bool_not(eq, &mut None);
         assert!(!not.try_borrow().unwrap().try_as_concrete_bool().unwrap());
-        assert!(!scfia.check_condition(not));
+        assert!(!scfia.check_condition(not, &mut None));
 
         let scfia = Scfia::new();
-        let s1 = scfia.new_bv_concrete(1, 32);
-        let s2 = scfia.new_bv_concrete(2, 32);
-        let eq = scfia.new_bool_eq(s1, s2);
-        let not = scfia.new_bool_not(eq);
+        let s1 = scfia.new_bv_concrete(1, 32, &mut None);
+        let s2 = scfia.new_bv_concrete(2, 32, &mut None);
+        let eq = scfia.new_bool_eq(s1, s2, &mut None);
+        let not = scfia.new_bool_not(eq, &mut None);
         assert!(not.try_borrow().unwrap().try_as_concrete_bool().unwrap());
-        assert!(scfia.check_condition(not));
+        assert!(scfia.check_condition(not, &mut None));
     }
 
     #[test]
@@ -56,13 +56,13 @@ mod tests {
     fn test_symbolic_not() {
         simple_logger::SimpleLogger::new().env().init();
         let scfia = Scfia::new();
-        let s1 = scfia.new_bv_concrete(42, 32);
-        let s2 = scfia.new_bv_symbol(32);
-        let eq = scfia.new_bool_eq(s1, s2.clone());
-        let not = scfia.new_bool_not(eq.clone());
+        let s1 = scfia.new_bv_concrete(42, 32, &mut None);
+        let s2 = scfia.new_bv_symbol(32, &mut None);
+        let eq = scfia.new_bool_eq(s1, s2.clone(), &mut None);
+        let not = scfia.new_bool_not(eq.clone(), &mut None);
         not.try_borrow_mut().unwrap().assert();
         // TODO better test
-        assert!(scfia.check_condition(not));
-        assert!(!scfia.check_condition(eq));
+        assert!(scfia.check_condition(not, &mut None));
+        assert!(!scfia.check_condition(eq, &mut None));
     }
 }

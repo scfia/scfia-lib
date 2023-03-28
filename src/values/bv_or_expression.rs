@@ -30,9 +30,9 @@ mod tests {
     fn test_concrete_or() {
         simple_logger::SimpleLogger::new().env().init();
         let scfia = Scfia::new();
-        let s1 = scfia.new_bv_concrete(1, 32);
-        let s2 = scfia.new_bv_concrete(2, 32);
-        let or = scfia.new_bv_or(s1, s2, 32);
+        let s1 = scfia.new_bv_concrete(1, 32, &mut None);
+        let s2 = scfia.new_bv_concrete(2, 32, &mut None);
+        let or = scfia.new_bv_or(s1, s2, 32, &mut None);
         assert_eq!(or.try_borrow().unwrap().try_as_concrete_bv().unwrap(), 3);
     }
 
@@ -41,9 +41,9 @@ mod tests {
     fn test_symbol_or() {
         simple_logger::SimpleLogger::new().env().init();
         let scfia = Scfia::new();
-        let s1 = scfia.new_bv_concrete(u32::MAX as u64 - 1, 32);
-        let s2 = scfia.new_bv_symbol(32);
-        let or = scfia.new_bv_or(s1, s2, 32);
+        let s1 = scfia.new_bv_concrete(u32::MAX as u64 - 1, 32, &mut None);
+        let s2 = scfia.new_bv_symbol(32, &mut None);
+        let or = scfia.new_bv_or(s1, s2, 32, &mut None);
         let mut candidates = vec![u32::MAX as u64 - 1, u32::MAX as u64];
         or.try_borrow().unwrap().monomorphize(&mut candidates);
         assert_eq!(candidates.len(), 2)

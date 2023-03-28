@@ -30,9 +30,9 @@ mod tests {
     fn test_concrete() {
         simple_logger::SimpleLogger::new().env().init();
         let scfia = Scfia::new();
-        let s1 = scfia.new_bv_concrete(110, 32);
-        let s2 = scfia.new_bv_concrete(100, 30);
-        let unsigned_remainder = scfia.new_bv_unsigned_remainder(s1, s2, 32);
+        let s1 = scfia.new_bv_concrete(110, 32, &mut None);
+        let s2 = scfia.new_bv_concrete(100, 30, &mut None);
+        let unsigned_remainder = scfia.new_bv_unsigned_remainder(s1, s2, 32, &mut None);
         assert_eq!(unsigned_remainder.try_borrow().unwrap().try_as_concrete_bv().unwrap(), 10);
     }
     //TODO test

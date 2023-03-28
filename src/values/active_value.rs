@@ -137,7 +137,7 @@ impl ActiveExpression {
     pub(crate) fn clone_to(&self, own_scfia: &ScfiaInner, cloned_scfia: &mut ScfiaInner, cloned_scfia_rc: Scfia, id: u64) -> ActiveValue {
         trace!("cloning {:?}", self);
         match self {
-            ActiveExpression::BoolConcrete(e) => cloned_scfia.new_bool_concrete(cloned_scfia_rc, e.value, Some(id)),
+            ActiveExpression::BoolConcrete(e) => cloned_scfia.new_bool_concrete(cloned_scfia_rc, e.value, Some(id), &mut None),
             ActiveExpression::BoolEqExpression(_) => todo!(),
             ActiveExpression::BoolNotExpression(_) => todo!(),
             ActiveExpression::BoolSignedLessThanExpression(_) => todo!(),
@@ -145,7 +145,7 @@ impl ActiveExpression {
             ActiveExpression::BVAddExpression(_) => todo!(),
             ActiveExpression::BVAndExpression(_) => todo!(),
             ActiveExpression::BVConcatExpression(_) => todo!(),
-            ActiveExpression::BVConcrete(e) => cloned_scfia.new_bv_concrete(cloned_scfia_rc, e.value, e.width, Some(id)),
+            ActiveExpression::BVConcrete(e) => cloned_scfia.new_bv_concrete(cloned_scfia_rc, e.value, e.width, Some(id), &mut None),
             ActiveExpression::BVMultiplyExpression(_) => todo!(),
             ActiveExpression::BVOrExpression(_) => todo!(),
             ActiveExpression::BVSignExtendExpression(_) => todo!(),
@@ -153,7 +153,7 @@ impl ActiveExpression {
             ActiveExpression::BVSllExpression(_) => todo!(),
             ActiveExpression::BVSrlExpression(_) => todo!(),
             ActiveExpression::BVSubExpression(_) => todo!(),
-            ActiveExpression::BVSymbol(e) => cloned_scfia.new_bv_symbol(cloned_scfia_rc, e.width, Some(id)),
+            ActiveExpression::BVSymbol(e) => cloned_scfia.new_bv_symbol(cloned_scfia_rc, e.width, Some(id), &mut None),
             ActiveExpression::BVUnsignedRemainderExpression(_) => todo!(),
             ActiveExpression::BVXorExpression(_) => todo!(),
         }

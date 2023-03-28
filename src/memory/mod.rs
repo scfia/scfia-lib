@@ -9,7 +9,7 @@ use z3_sys::{
 use crate::{
     scfia::Scfia,
     values::active_value::{ActiveExpression, ActiveValue, ActiveValueInner},
-    StepContext, SymbolicHints,
+    ForkSink, StepContext, SymbolicHints,
 };
 
 use self::regions::{StableMemoryRegion, SymbolicVolatileMemoryRegion, VolatileMemoryRegion};
@@ -29,25 +29,40 @@ impl Memory {
         }
     }
 
-    pub fn read(&mut self, address: ActiveValue, width: u32, scfia: Scfia, hints: &mut Option<SymbolicHints>) -> ActiveValue {
+    pub fn read(&mut self, address: ActiveValue, width: u32, scfia: Scfia, hints: &mut Option<SymbolicHints>, fork_sink: &mut Option<ForkSink>) -> ActiveValue {
         let address_inner = address.try_borrow().unwrap();
         if let ActiveExpression::BVConcrete(e) = &address_inner.expression {
-            self.read_concrete(e.value, width, scfia)
+            self.read_concrete(e.value, width, scfia, fork_sink)
         } else {
-            self.read_symbolic(&address_inner, width, scfia, hints)
+            self.read_symbolic(&address_inner, width, scfia, hints, fork_sink)
         }
     }
 
-    pub fn write(&mut self, address: ActiveValue, value: ActiveValue, width: u32, scfia: Scfia, hints: &mut Option<SymbolicHints>) {
+    pub fn write(
+        &mut self,
+        address: ActiveValue,
+        value: ActiveValue,
+        width: u32,
+        scfia: Scfia,
+        hints: &mut Option<SymbolicHints>,
+        fork_sink: &mut Option<ForkSink>,
+    ) {
         let address_inner = address.try_borrow().unwrap();
         if let ActiveExpression::BVConcrete(e) = &address_inner.expression {
-            self.write_concrete(e.value, value, width, scfia)
+            self.write_concrete(e.value, value, width, scfia, fork_sink)
         } else {
             self.write_symbolic(&address_inner, value, width)
         }
     }
 
-    fn read_symbolic(&mut self, address: &ActiveValueInner, width: u32, scfia: Scfia, hints: &mut Option<SymbolicHints>) -> ActiveValue {
+    fn read_symbolic(
+        &mut self,
+        address: &ActiveValueInner,
+        width: u32,
+        scfia: Scfia,
+        hints: &mut Option<SymbolicHints>,
+        fork_sink: &mut Option<ForkSink>,
+    ) -> ActiveValue {
         unsafe {
             // Symbolic reads can be symbolic volatile region reads or unanimous reads
             let z3_context = scfia.inner.try_borrow().unwrap().z3_context;
@@ -74,7 +89,7 @@ impl Memory {
                 if check_result == Z3_L_FALSE {
                     // If the address CAN NOT be outside the symbolic volatile region, we can return a new BVS
                     trace!("Symbolic volatile region returning new symbol");
-                    return scfia.new_bv_symbol(width);
+                    return scfia.new_bv_symbol(width, fork_sink);
                 }
 
                 Z3_dec_ref(z3_context, lt);
@@ -87,13 +102,13 @@ impl Memory {
             let unanimous_address = candidates.windows(2).all(|w| w[0] == w[1]);
             assert!(!candidates.is_empty());
             if unanimous_address {
-                self.read_concrete(candidates[0], width, scfia)
+                self.read_concrete(candidates[0], width, scfia, fork_sink)
             } else {
                 // The addresses are not unanimous, but the values might still be
                 // TODO refcounting for the intermediate refs
-                let value = self.read_concrete(candidates[0], width, scfia.clone());
+                let value = self.read_concrete(candidates[0], width, scfia.clone(), fork_sink);
                 for address in &candidates {
-                    let other_value = self.read_concrete(*address, width, scfia.clone());
+                    let other_value = self.read_concrete(*address, width, scfia.clone(), fork_sink);
                     let assumptions = vec![Z3_mk_not(
                         z3_context,
                         Z3_mk_eq(z3_context, value.try_borrow().unwrap().z3_ast, other_value.try_borrow().unwrap().z3_ast),
@@ -115,25 +130,25 @@ impl Memory {
         todo!()
     }
 
-    fn read_concrete(&mut self, address: u64, width: u32, scfia: Scfia) -> ActiveValue {
+    fn read_concrete(&mut self, address: u64, width: u32, scfia: Scfia, fork_sink: &mut Option<ForkSink>) -> ActiveValue {
         for region in &self.stables {
             if address >= region.start_address && address < region.start_address + region.length {
-                return region.read(address, width, scfia);
+                return region.read(address, width, scfia, fork_sink);
             }
         }
         for region in &self.volatiles {
             if address >= region.start_address && address < region.start_address + region.length {
                 trace!("Volatile region 0x{:x} yielding fresh symbol", region.start_address);
-                return scfia.new_bv_symbol(width);
+                return scfia.new_bv_symbol(width, fork_sink);
             }
         }
         panic!("read_concrete failed to resolve 0x{:x}", address)
     }
 
-    fn write_concrete(&mut self, address: u64, value: ActiveValue, width: u32, scfia: Scfia) {
+    fn write_concrete(&mut self, address: u64, value: ActiveValue, width: u32, scfia: Scfia, fork_sink: &mut Option<ForkSink>) {
         for region in &mut self.stables {
             if address >= region.start_address && address < region.start_address + region.length {
-                return region.write(address, value, width, scfia.clone());
+                return region.write(address, value, width, scfia.clone(), fork_sink);
             }
         }
         for region in &self.volatiles {

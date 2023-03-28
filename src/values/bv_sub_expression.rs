@@ -30,9 +30,9 @@ mod tests {
     fn test_concrete() {
         simple_logger::SimpleLogger::new().env().init();
         let scfia = Scfia::new();
-        let s1 = scfia.new_bv_concrete(42, 32);
-        let s2 = scfia.new_bv_concrete(41, 32);
-        let sub = scfia.new_bv_sub(s1, s2, 32);
+        let s1 = scfia.new_bv_concrete(42, 32, &mut None);
+        let s2 = scfia.new_bv_concrete(41, 32, &mut None);
+        let sub = scfia.new_bv_sub(s1, s2, 32, &mut None);
         assert_eq!(sub.try_borrow().unwrap().try_as_concrete_bv().unwrap(), 1);
     }
     //TODO test

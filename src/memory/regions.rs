@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, VecDeque};
 
 use log::{debug, trace, warn};
 
-use crate::{scfia::Scfia, values::active_value::ActiveValue, StepContext};
+use crate::{scfia::Scfia, values::active_value::ActiveValue, ForkSink, StepContext};
 
 #[derive(Debug)]
 pub struct StableMemoryRegion {
@@ -48,7 +48,7 @@ impl StableMemoryRegion {
         }
     }
 
-    pub(crate) fn read(&self, address: u64, width: u32, scfia: Scfia) -> ActiveValue {
+    pub(crate) fn read(&self, address: u64, width: u32, scfia: Scfia, fork_sink: &mut Option<ForkSink>) -> ActiveValue {
         assert_eq!(width % 8, 0);
         let bytes = width / 8;
         let mut byte_values = VecDeque::new();
@@ -57,7 +57,7 @@ impl StableMemoryRegion {
                 byte_values.push_back(byte.clone());
             } else {
                 warn!("Reading from uninitialized 0x{:x}", address + i as u64);
-                byte_values.push_back(scfia.new_bv_symbol(8))
+                byte_values.push_back(scfia.new_bv_symbol(8, fork_sink))
             }
         }
 
@@ -66,16 +66,16 @@ impl StableMemoryRegion {
         // Little endian
         while !byte_values.is_empty() {
             let rhs = byte_values.pop_front().unwrap();
-            value = scfia.new_bv_concat(rhs, value, width - (byte_values.len() * 8) as u32);
+            value = scfia.new_bv_concat(rhs, value, width - (byte_values.len() * 8) as u32, fork_sink);
         }
 
         value
     }
 
-    pub(crate) fn write(&mut self, address: u64, value: ActiveValue, width: u32, scfia: Scfia) {
+    pub(crate) fn write(&mut self, address: u64, value: ActiveValue, width: u32, scfia: Scfia, fork_sink: &mut Option<ForkSink>) {
         let bytes = width / 8;
         for byte in 0..bytes {
-            let v = scfia.new_bv_slice(value.clone(), (byte * 8) + 7, byte * 8);
+            let v = scfia.new_bv_slice(value.clone(), (byte * 8) + 7, byte * 8, fork_sink);
             debug!("*{:x} = {:?}", address, v);
             self.memory.insert(address + byte as u64, v);
         }

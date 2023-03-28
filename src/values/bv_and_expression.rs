@@ -30,9 +30,9 @@ mod tests {
     fn test_concrete_and() {
         simple_logger::SimpleLogger::new().env().init();
         let scfia = Scfia::new();
-        let s1 = scfia.new_bv_concrete(1, 32);
-        let s2 = scfia.new_bv_concrete(0xffffff, 32);
-        let add = scfia.new_bv_and(s1, s2, 32);
+        let s1 = scfia.new_bv_concrete(1, 32, &mut None);
+        let s2 = scfia.new_bv_concrete(0xffffff, 32, &mut None);
+        let add = scfia.new_bv_and(s1, s2, 32, &mut None);
         assert_eq!(add.try_borrow().unwrap().try_as_concrete_bv().unwrap(), 1);
     }
 
@@ -41,9 +41,9 @@ mod tests {
     fn test_symbol_and() {
         simple_logger::SimpleLogger::new().env().init();
         let scfia = Scfia::new();
-        let s1 = scfia.new_bv_concrete(0, 32);
-        let s2 = scfia.new_bv_symbol(32);
-        let and = scfia.new_bv_and(s1, s2, 32);
+        let s1 = scfia.new_bv_concrete(0, 32, &mut None);
+        let s2 = scfia.new_bv_symbol(32, &mut None);
+        let and = scfia.new_bv_and(s1, s2, 32, &mut None);
         let mut candidates = vec![0];
         and.try_borrow().unwrap().monomorphize(&mut candidates);
         assert_eq!(candidates.len(), 1)
