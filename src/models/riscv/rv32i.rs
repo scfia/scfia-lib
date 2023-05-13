@@ -2,7 +2,7 @@
 #![allow(non_snake_case)]
 #![allow(unused)]
 use log::debug;
-use std::{fmt::Debug, borrow::BorrowMut};
+use std::{borrow::BorrowMut, fmt::Debug};
 
 use crate::{memory::Memory, scfia::Scfia, values::active_value::ActiveValue, GenericForkSink, ScfiaComposition, StepContext, SymbolicHints};
 

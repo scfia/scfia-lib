@@ -158,7 +158,13 @@ impl<SC: ScfiaComposition> ActiveValueInner<SC> {
         self.scfia.clone().assert(self);
     }
 
-    pub(crate) fn clone_to(&self, own_scfia: &ScfiaInner<SC>, cloned_scfia: &mut ScfiaInner<SC>, cloned_scfia_rc: Scfia<SC>, id: Option<u64>) -> ActiveValue<SC> {
+    pub(crate) fn clone_to(
+        &self,
+        own_scfia: &ScfiaInner<SC>,
+        cloned_scfia: &mut ScfiaInner<SC>,
+        cloned_scfia_rc: Scfia<SC>,
+        id: Option<u64>,
+    ) -> ActiveValue<SC> {
         trace!("cloning {:?}", self);
         let cloned_value = match &self.expression {
             ActiveExpression::BoolConcrete(e) => cloned_scfia.new_bool_concrete(cloned_scfia_rc, e.value, id, &mut None),
@@ -184,12 +190,19 @@ impl<SC: ScfiaComposition> ActiveValueInner<SC> {
         let mut cloned_value_inner = cloned_value.borrow_mut();
         // Fix references to inherited RetiredValues
         for inherited_value in &self.inherited_asts {
-            let old = cloned_value_inner.inherited_asts.insert(*inherited_value.0, cloned_scfia.retired_symbols.get(inherited_value.0).unwrap().upgrade().unwrap());
+            todo!("Retired values can be younger, and younger values haven't been cloned yet");
+            let old = cloned_value_inner.inherited_asts.insert(
+                *inherited_value.0,
+                cloned_scfia.retired_symbols.get(inherited_value.0).unwrap().upgrade().unwrap(),
+            );
             debug_assert!(old.is_none());
         }
         // Fix references to discovered values
         for discovered_value in &self.discovered_asts {
-            panic!("welp with recursive clones this would work")
+            if *discovered_value.0 < self.id {
+                // The younger symbol must set the acquaintance
+                todo!()
+            }
         }
         cloned_value.clone()
     }

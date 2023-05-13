@@ -1387,8 +1387,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
                             trace!("Cloning active {:?}", next_active.1.upgrade());
                             let next_active_ref = next_active.1.upgrade().unwrap();
                             let next_active_ref = next_active_ref.try_borrow().unwrap();
-                            let cloned_active = next_active_ref
-                                .clone_to(self, &mut cloned_scfia, cloned_scfia_rc.clone(), Some(*next_active.0));
+                            let cloned_active = next_active_ref.clone_to(self, &mut cloned_scfia, cloned_scfia_rc.clone(), Some(*next_active.0));
                             cloned_actives.insert(*next_active.0, cloned_active);
                             next_active_option = active_iter.next();
                         } else {
@@ -1402,8 +1401,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
                         trace!("Cloning active {:?}", next_active.1.upgrade());
                         let next_active_ref = next_active.1.upgrade().unwrap();
                         let next_active_ref = next_active_ref.try_borrow().unwrap();
-                        let cloned_active = next_active_ref
-                            .clone_to(self, &mut cloned_scfia, cloned_scfia_rc.clone(), Some(*next_active.0));
+                        let cloned_active = next_active_ref.clone_to(self, &mut cloned_scfia, cloned_scfia_rc.clone(), Some(*next_active.0));
                         cloned_actives.insert(*next_active.0, cloned_active);
                         next_active_option = active_iter.next();
                     }
