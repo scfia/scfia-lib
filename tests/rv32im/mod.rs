@@ -191,12 +191,10 @@ fn test_system_state() {
         rv32i_system_state.step(None);
     }
 
-    rv32i_system_state.clone_model();
-
-    /*
-    let mut successors = rv32i_system_state.step_forking();
+    let mut successors = rv32i_system_state.step_forking(None);
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
+    /*
 
     println!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
     while panicking.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x508 {

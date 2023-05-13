@@ -1,6 +1,8 @@
 #![allow(clippy::all)]
 #![allow(non_snake_case)]
 #![allow(unused)]
+use log::debug;
+
 use crate::{memory::Memory, scfia::Scfia, values::active_value::ActiveValue, GenericForkSink, ScfiaComposition, StepContext, SymbolicHints};
 
 pub struct RV32i {
@@ -18,13 +20,19 @@ pub struct RV32iForkSink {
 #[derive(Debug, Clone)]
 pub struct RV32iScfiaComposition {}
 
-impl<SC: ScfiaComposition> GenericForkSink<SC> for RV32iForkSink {
-    fn fork(&self, fork_symbol: ActiveValue<SC>) {
+impl Drop for RV32i {
+    fn drop(&mut self) {
+        debug!("Dropping RV32i")
+    }
+}
+
+impl GenericForkSink<RV32iScfiaComposition> for RV32iForkSink {
+    fn fork(&self, fork_symbol: ActiveValue<RV32iScfiaComposition>) {
         todo!()
     }
 
-    fn push_value(&mut self, value: ActiveValue<SC>) {
-        todo!()
+    fn push_value(&mut self, value: ActiveValue<RV32iScfiaComposition>) {
+        self.new_values_history.push(value)
     }
 }
 impl ScfiaComposition for RV32iScfiaComposition {
@@ -45,27 +53,33 @@ impl RV32i {
         }
     }
 
-    /*
-    pub fn step_forking(model: RV32i, mut hints: Option<SymbolicHints>) -> Vec<RV32i> {
+    pub fn step_forking(&self, mut hints: Option<SymbolicHints>) -> Vec<RV32i> {
         unsafe {
-            let mut states = vec![model];
+            let mut states: Vec<RV32i> = vec![self.clone_model()];
             let mut results = vec![];
 
             while let Some(mut model) = states.pop() {
-                _step(&mut model.state, &mut model.memory, model.scfia.clone(), &mut hints);
-                // TODO apply write cache to model
+                let mut context = StepContext {
+                    memory: &mut model.memory,
+                    scfia: model.scfia.clone(),
+                    hints: hints.clone(),
+                    fork_sink: Some(RV32iForkSink {
+                        new_values_history: vec![],
+                        forks: vec![],
+                    }),
+                };
+                _step(&mut model.state, &mut context);
                 results.push(model)
             }
 
             results
         }
     }
-    */
 
     pub fn clone_model(&self) -> RV32i {
         unsafe {
             let own_scfia = self.scfia.inner.try_borrow().unwrap();
-            let (cloned_scfia, cloned_active_symbols) = own_scfia.clone_symbols();
+            let (cloned_scfia, cloned_active_values) = own_scfia.clone_values();
             let cloned_memory = self.memory.clone_to(cloned_scfia.clone());
 
             RV32i {

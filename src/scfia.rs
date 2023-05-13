@@ -161,12 +161,14 @@ impl<SC: ScfiaComposition> Scfia<SC> {
                 can_be_false = true
             }
 
+            // warn!("{:?} {} {}", value, can_be_true, can_be_false);
             if can_be_true && can_be_false {
                 if let Some(fork_sink) = fork_sink {
                     fork_sink.fork(neg_condition_symbol.clone());
                     value.try_borrow_mut().unwrap().assert();
                     true
                 } else {
+                    warn!("unexpected fork");
                     panic!("unexpected fork")
                 }
             } else if can_be_true {
@@ -271,6 +273,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
 
     pub fn drop_active(&self, value: &ActiveValueInner<SC>) -> RetiredValue<SC> {
         let mut selff = self.inner.try_borrow_mut().unwrap();
+        debug!("dropping active {}", value.id);
         assert!(selff.active_symbols.remove(&value.id).is_some());
 
         let retired_value = match &value.expression {
@@ -1351,7 +1354,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         value
     }
 
-    pub fn clone_symbols(&self) -> (Scfia<SC>, BTreeMap<u64, ActiveValue<SC>>) {
+    pub fn clone_values(&self) -> (Scfia<SC>, BTreeMap<u64, ActiveValue<SC>>) {
         unsafe {
             let z3_config = Z3_mk_config();
             let z3_context = Z3_mk_context_rc(z3_config);
@@ -1361,7 +1364,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
             let mut cloned_actives = BTreeMap::new();
             let cloned_scfia_rc = Scfia {
                 inner: Rc::new(RefCell::new(ScfiaInner {
-                    next_symbol_id: 0,
+                    next_symbol_id: self.next_symbol_id,
                     active_symbols: BTreeMap::new(),
                     retired_symbols: BTreeMap::new(),
                     z3_context,
