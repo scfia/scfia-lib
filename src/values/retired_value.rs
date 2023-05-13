@@ -29,7 +29,7 @@ pub struct RetiredValueInner<SC: ScfiaComposition> {
 }
 
 pub enum RetiredExpression<SC: ScfiaComposition> {
-    BoolConcrete(RetiredBoolConcrete<SC>),
+    BoolConcrete(RetiredBoolConcrete),
     BoolEqExpression(RetiredBoolEqExpression<SC>),
     BoolNotExpression(RetiredBoolNotExpression<SC>),
     BoolSignedLessThanExpression(RetiredBoolSignedLessThanExpression<SC>),
@@ -50,20 +50,20 @@ pub enum RetiredExpression<SC: ScfiaComposition> {
     BVXorExpression(RetiredBVXorExpression<SC>),
 }
 
-impl<Model> Debug for RetiredValueInner<Model> {
+impl<SC: ScfiaComposition> Debug for RetiredValueInner<SC> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.expression.fmt(f)?;
         f.write_str(format!("[id={}]", self.id).as_str())
     }
 }
 
-impl<Model> Drop for RetiredValueInner<Model> {
+impl<SC: ScfiaComposition> Drop for RetiredValueInner<SC> {
     fn drop(&mut self) {
         self.scfia.drop_retired(self)
     }
 }
 
-impl<Model> Debug for RetiredExpression<Model> {
+impl<SC: ScfiaComposition> Debug for RetiredExpression<SC> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             RetiredExpression::BVConcrete(e) => e.fmt(f),

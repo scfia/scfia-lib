@@ -25,13 +25,13 @@ impl<SC: ScfiaComposition> Debug for RetiredBVUnsignedRemainderExpression<SC> {
 
 #[cfg(test)]
 mod tests {
-    use crate::scfia::Scfia;
+    use crate::{models::riscv::rv32i::RV32iScfiaComposition, scfia::Scfia};
 
     #[test]
     #[allow(unused_must_use)]
     fn test_concrete() {
         simple_logger::SimpleLogger::new().env().init();
-        let scfia = Scfia::new();
+        let scfia: Scfia<RV32iScfiaComposition> = Scfia::new();
         let s1 = scfia.new_bv_concrete(110, 32, &mut None);
         let s2 = scfia.new_bv_concrete(100, 30, &mut None);
         let unsigned_remainder = scfia.new_bv_unsigned_remainder(s1, s2, 32, &mut None);

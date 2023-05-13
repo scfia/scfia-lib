@@ -27,13 +27,13 @@ impl<SC: ScfiaComposition> Debug for RetiredBVSliceExpression<SC> {
 
 #[cfg(test)]
 mod tests {
-    use crate::scfia::Scfia;
+    use crate::{models::riscv::rv32i::RV32iScfiaComposition, scfia::Scfia};
 
     #[test]
     #[allow(unused_must_use)]
     fn test_concrete() {
         simple_logger::SimpleLogger::new().env().init();
-        let scfia = Scfia::new();
+        let scfia: Scfia<RV32iScfiaComposition> = Scfia::new();
         let s1 = scfia.new_bv_concrete(0b110011, 6, &mut None);
         let slice = scfia.new_bv_slice(s1, 4, 1, &mut None);
         assert_eq!(slice.try_borrow().unwrap().try_as_concrete_bv().unwrap(), 0b1001);

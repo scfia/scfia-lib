@@ -25,13 +25,13 @@ impl<SC: ScfiaComposition> Debug for RetiredBVAndExpression<SC> {
 
 #[cfg(test)]
 mod tests {
-    use crate::scfia::Scfia;
+    use crate::{models::riscv::rv32i::RV32iScfiaComposition, scfia::Scfia};
 
     #[test]
     #[allow(unused_must_use)]
     fn test_concrete_and() {
         simple_logger::SimpleLogger::new().env().init();
-        let scfia = Scfia::new();
+        let scfia: Scfia<RV32iScfiaComposition> = Scfia::new();
         let s1 = scfia.new_bv_concrete(1, 32, &mut None);
         let s2 = scfia.new_bv_concrete(0xffffff, 32, &mut None);
         let add = scfia.new_bv_and(s1, s2, 32, &mut None);
@@ -42,7 +42,7 @@ mod tests {
     #[allow(unused_must_use)]
     fn test_symbol_and() {
         simple_logger::SimpleLogger::new().env().init();
-        let scfia = Scfia::new();
+        let scfia: Scfia<RV32iScfiaComposition> = Scfia::new();
         let s1 = scfia.new_bv_concrete(0, 32, &mut None);
         let s2 = scfia.new_bv_symbol(32, &mut None);
         let and = scfia.new_bv_and(s1, s2, 32, &mut None);

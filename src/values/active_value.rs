@@ -8,8 +8,8 @@ use std::{
 use log::{trace, warn};
 use z3_sys::Z3_ast;
 
-use crate::ScfiaComposition;
 use crate::scfia::{Scfia, ScfiaInner};
+use crate::ScfiaComposition;
 
 use super::bool_concrete::BoolConcrete;
 use super::bool_eq_expression::BoolEqExpression;
@@ -30,7 +30,7 @@ use super::bv_unsigned_remainder_expression::BVUnsignedRemainderExpression;
 use super::bv_xor_expression::BVXorExpression;
 use super::{bv_concrete::BVConcrete, bv_symbol::BVSymbol, retired_value::RetiredValue};
 
-pub type ActiveValue<SC: ScfiaComposition> = Rc<RefCell<ActiveValueInner<SC>>>;
+pub type ActiveValue<SC> = Rc<RefCell<ActiveValueInner<SC>>>;
 pub type ActiveValueWeak<SC> = Weak<RefCell<ActiveValueInner<SC>>>;
 
 pub struct ActiveValueInner<SC: ScfiaComposition> {
@@ -43,7 +43,7 @@ pub struct ActiveValueInner<SC: ScfiaComposition> {
 }
 
 pub enum ActiveExpression<SC: ScfiaComposition> {
-    BoolConcrete(BoolConcrete<SC>),
+    BoolConcrete(BoolConcrete),
     BoolEqExpression(BoolEqExpression<SC>),
     BoolNotExpression(BoolNotExpression<SC>),
     BoolSignedLessThanExpression(BoolSignedLessThanExpression<SC>),
@@ -134,7 +134,7 @@ impl<SC: ScfiaComposition> ActiveExpression<SC> {
         }
     }
 
-    pub(crate) fn clone_to(&self, own_scfia: &ScfiaInner<SC>, cloned_scfia: &ScfiaInner<SC>, cloned_scfia_rc: Scfia<SC>, id: u64) -> ActiveValue<SC> {
+    pub(crate) fn clone_to(&self, own_scfia: &ScfiaInner<SC>, cloned_scfia: &mut ScfiaInner<SC>, cloned_scfia_rc: Scfia<SC>, id: u64) -> ActiveValue<SC> {
         trace!("cloning {:?}", self);
         match self {
             ActiveExpression::BoolConcrete(e) => cloned_scfia.new_bool_concrete(cloned_scfia_rc, e.value, Some(id), &mut None),
@@ -160,7 +160,7 @@ impl<SC: ScfiaComposition> ActiveExpression<SC> {
     }
 }
 
-impl<SC> ActiveValueInner<SC> {
+impl<SC: ScfiaComposition> ActiveValueInner<SC> {
     pub fn try_as_concrete_bv(&self) -> Option<u64> {
         match &self.expression {
             ActiveExpression::BVConcrete(bvc) => Some(bvc.value),
@@ -184,20 +184,20 @@ impl<SC> ActiveValueInner<SC> {
     }
 }
 
-impl<SC> Debug for ActiveValueInner<SC> {
+impl<SC: ScfiaComposition> Debug for ActiveValueInner<SC> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.expression.fmt(f)?;
         f.write_str(format!("[id={}]", self.id).as_str())
     }
 }
 
-impl<SC> Drop for ActiveValueInner<SC> {
+impl<SC: ScfiaComposition> Drop for ActiveValueInner<SC> {
     fn drop(&mut self) {
         self.scfia.drop_active(self);
     }
 }
 
-impl<SC> Debug for ActiveExpression<SC> {
+impl<SC: ScfiaComposition> Debug for ActiveExpression<SC> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ActiveExpression::BVConcrete(e) => e.fmt(f),

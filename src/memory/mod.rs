@@ -9,14 +9,14 @@ use z3_sys::{
 use crate::{
     scfia::Scfia,
     values::active_value::{ActiveExpression, ActiveValue, ActiveValueInner},
-    ForkSink, StepContext, SymbolicHints, ScfiaComposition,
+    ForkSink, ScfiaComposition, StepContext, SymbolicHints,
 };
 
 use self::regions::{StableMemoryRegion, SymbolicVolatileMemoryRegion, VolatileMemoryRegion};
 
 pub struct Memory<SC: ScfiaComposition> {
     pub stables: Vec<StableMemoryRegion<SC>>,
-    pub volatiles: Vec<VolatileMemoryRegion<SC>>,
+    pub volatiles: Vec<VolatileMemoryRegion>,
     pub symbolic_volatiles: Vec<SymbolicVolatileMemoryRegion<SC>>,
 }
 
@@ -29,7 +29,14 @@ impl<SC: ScfiaComposition> Memory<SC> {
         }
     }
 
-    pub fn read(&mut self, address: ActiveValue<SC>, width: u32, scfia: Scfia<SC>, hints: &mut Option<SymbolicHints>, fork_sink: &mut Option<ForkSink<SC>>) -> ActiveValue<SC> {
+    pub fn read(
+        &mut self,
+        address: ActiveValue<SC>,
+        width: u32,
+        scfia: Scfia<SC>,
+        hints: &mut Option<SymbolicHints>,
+        fork_sink: &mut Option<ForkSink<SC>>,
+    ) -> ActiveValue<SC> {
         let address_inner = address.try_borrow().unwrap();
         if let ActiveExpression::BVConcrete(e) = &address_inner.expression {
             self.read_concrete(e.value, width, scfia, fork_sink)
@@ -57,7 +64,7 @@ impl<SC: ScfiaComposition> Memory<SC> {
 
     fn read_symbolic(
         &mut self,
-        address: &ActiveValue<SC>,
+        address: &ActiveValueInner<SC>,
         width: u32,
         scfia: Scfia<SC>,
         hints: &mut Option<SymbolicHints>,
@@ -126,7 +133,7 @@ impl<SC: ScfiaComposition> Memory<SC> {
         }
     }
 
-    fn write_symbolic(&mut self, _address: &ActiveValue<SC>, _value: ActiveValue<SC>, _width: u32) {
+    fn write_symbolic(&mut self, _address: &ActiveValueInner<SC>, _value: ActiveValue<SC>, _width: u32) {
         todo!()
     }
 
@@ -181,7 +188,7 @@ impl<SC: ScfiaComposition> Memory<SC> {
     }
 }
 
-impl<SC> Default for Memory<SC> {
+impl<SC: ScfiaComposition> Default for Memory<SC> {
     fn default() -> Self {
         Self::new()
     }

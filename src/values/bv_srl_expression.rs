@@ -27,13 +27,13 @@ impl<SC: ScfiaComposition> Debug for RetiredBVSrlExpression<SC> {
 
 #[cfg(test)]
 mod tests {
-    use crate::scfia::Scfia;
+    use crate::{models::riscv::rv32i::RV32iScfiaComposition, scfia::Scfia};
 
     #[test]
     #[allow(unused_must_use)]
     fn test_concrete() {
         simple_logger::SimpleLogger::new().env().init();
-        let scfia = Scfia::new();
+        let scfia: Scfia<RV32iScfiaComposition> = Scfia::new();
         let s1 = scfia.new_bv_concrete(0b110011, 6, &mut None);
         let s2 = scfia.new_bv_concrete(1, 6, &mut None);
         let sll = scfia.new_bv_srl(s1, s2, 6, 6, &mut None);

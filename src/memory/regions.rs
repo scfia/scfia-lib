@@ -2,28 +2,28 @@ use std::collections::{BTreeMap, VecDeque};
 
 use log::{debug, trace, warn};
 
-use crate::{scfia::Scfia, values::active_value::ActiveValue, ForkSink, StepContext, ScfiaComposition};
+use crate::{scfia::Scfia, values::active_value::ActiveValue, ForkSink, ScfiaComposition, StepContext};
 
 #[derive(Debug)]
-pub struct StableMemoryRegion<Model: ScfiaComposition> {
-    pub memory: BTreeMap<u64, ActiveValue<Model>>,
+pub struct StableMemoryRegion<SC: ScfiaComposition> {
+    pub memory: BTreeMap<u64, ActiveValue<SC>>,
     pub start_address: u64,
     pub length: u64,
 }
 
 #[derive(Clone, Debug)]
-pub struct VolatileMemoryRegion<Model: ScfiaComposition> {
+pub struct VolatileMemoryRegion {
     pub start_address: u64,
     pub length: u64,
 }
 
 #[derive(Debug)]
-pub struct SymbolicVolatileMemoryRegion<Model: ScfiaComposition> {
-    pub base_symbol: ActiveValue<Model>,
+pub struct SymbolicVolatileMemoryRegion<SC: ScfiaComposition> {
+    pub base_symbol: ActiveValue<SC>,
     pub length: u64,
 }
-impl<Model> SymbolicVolatileMemoryRegion<Model> {
-    pub(crate) fn clone_to(&self, cloned_scfia: Scfia<Model>) -> SymbolicVolatileMemoryRegion<Model> {
+impl<SC: ScfiaComposition> SymbolicVolatileMemoryRegion<SC> {
+    pub(crate) fn clone_to(&self, cloned_scfia: Scfia<SC>) -> SymbolicVolatileMemoryRegion<SC> {
         SymbolicVolatileMemoryRegion {
             base_symbol: cloned_scfia
                 .inner
@@ -39,7 +39,7 @@ impl<Model> SymbolicVolatileMemoryRegion<Model> {
     }
 }
 
-impl<Model> StableMemoryRegion<Model> {
+impl<SC: ScfiaComposition> StableMemoryRegion<SC> {
     pub fn new(start_address: u64, length: u64) -> Self {
         StableMemoryRegion {
             memory: BTreeMap::default(),
@@ -48,7 +48,7 @@ impl<Model> StableMemoryRegion<Model> {
         }
     }
 
-    pub(crate) fn read(&self, address: u64, width: u32, scfia: Scfia<Model>, fork_sink: &mut Option<ForkSink<Model>>) -> ActiveValue<Model> {
+    pub(crate) fn read(&self, address: u64, width: u32, scfia: Scfia<SC>, fork_sink: &mut Option<ForkSink<SC>>) -> ActiveValue<SC> {
         assert_eq!(width % 8, 0);
         let bytes = width / 8;
         let mut byte_values = VecDeque::new();
@@ -72,7 +72,7 @@ impl<Model> StableMemoryRegion<Model> {
         value
     }
 
-    pub(crate) fn write(&mut self, address: u64, value: ActiveValue<Model>, width: u32, scfia: Scfia<Model>, fork_sink: &mut Option<ForkSink<Model>>) {
+    pub(crate) fn write(&mut self, address: u64, value: ActiveValue<SC>, width: u32, scfia: Scfia<SC>, fork_sink: &mut Option<ForkSink<SC>>) {
         let bytes = width / 8;
         for byte in 0..bytes {
             let v = scfia.new_bv_slice(value.clone(), (byte * 8) + 7, byte * 8, fork_sink);
@@ -81,7 +81,7 @@ impl<Model> StableMemoryRegion<Model> {
         }
     }
 
-    pub(crate) fn clone_to(&self, cloned_scfia: Scfia<Model>) -> StableMemoryRegion<Model> {
+    pub(crate) fn clone_to(&self, cloned_scfia: Scfia<SC>) -> StableMemoryRegion<SC> {
         let mut clone = StableMemoryRegion {
             length: self.length,
             memory: BTreeMap::new(),
