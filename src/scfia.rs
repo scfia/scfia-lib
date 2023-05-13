@@ -110,7 +110,7 @@ pub struct Scfia<SC: ScfiaComposition> {
 pub struct ScfiaInner<SC: ScfiaComposition> {
     next_symbol_id: u64,
     pub(crate) active_symbols: BTreeMap<u64, ActiveValueWeak<SC>>,
-    retired_symbols: BTreeMap<u64, RetiredValueWeak<SC>>,
+    pub(crate) retired_symbols: BTreeMap<u64, RetiredValueWeak<SC>>,
     pub(crate) z3_context: Z3_context,
     pub(crate) z3_solver: Z3_solver,
 }
@@ -1388,8 +1388,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
                             let next_active_ref = next_active.1.upgrade().unwrap();
                             let next_active_ref = next_active_ref.try_borrow().unwrap();
                             let cloned_active = next_active_ref
-                                .expression
-                                .clone_to(self, &mut cloned_scfia, cloned_scfia_rc.clone(), *next_active.0);
+                                .clone_to(self, &mut cloned_scfia, cloned_scfia_rc.clone(), Some(*next_active.0));
                             cloned_actives.insert(*next_active.0, cloned_active);
                             next_active_option = active_iter.next();
                         } else {
@@ -1404,8 +1403,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
                         let next_active_ref = next_active.1.upgrade().unwrap();
                         let next_active_ref = next_active_ref.try_borrow().unwrap();
                         let cloned_active = next_active_ref
-                            .expression
-                            .clone_to(self, &mut cloned_scfia, cloned_scfia_rc.clone(), *next_active.0);
+                            .clone_to(self, &mut cloned_scfia, cloned_scfia_rc.clone(), Some(*next_active.0));
                         cloned_actives.insert(*next_active.0, cloned_active);
                         next_active_option = active_iter.next();
                     }

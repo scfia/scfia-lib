@@ -133,31 +133,6 @@ impl<SC: ScfiaComposition> ActiveExpression<SC> {
             }
         }
     }
-
-    pub(crate) fn clone_to(&self, own_scfia: &ScfiaInner<SC>, cloned_scfia: &mut ScfiaInner<SC>, cloned_scfia_rc: Scfia<SC>, id: u64) -> ActiveValue<SC> {
-        trace!("cloning {:?}", self);
-        match self {
-            ActiveExpression::BoolConcrete(e) => cloned_scfia.new_bool_concrete(cloned_scfia_rc, e.value, Some(id), &mut None),
-            ActiveExpression::BoolEqExpression(_) => todo!(),
-            ActiveExpression::BoolNotExpression(_) => todo!(),
-            ActiveExpression::BoolSignedLessThanExpression(_) => todo!(),
-            ActiveExpression::BoolUnsignedLessThanExpression(_) => todo!(),
-            ActiveExpression::BVAddExpression(_) => todo!(),
-            ActiveExpression::BVAndExpression(_) => todo!(),
-            ActiveExpression::BVConcatExpression(_) => todo!(),
-            ActiveExpression::BVConcrete(e) => cloned_scfia.new_bv_concrete(cloned_scfia_rc, e.value, e.width, Some(id), &mut None),
-            ActiveExpression::BVMultiplyExpression(_) => todo!(),
-            ActiveExpression::BVOrExpression(_) => todo!(),
-            ActiveExpression::BVSignExtendExpression(_) => todo!(),
-            ActiveExpression::BVSliceExpression(_) => todo!(),
-            ActiveExpression::BVSllExpression(_) => todo!(),
-            ActiveExpression::BVSrlExpression(_) => todo!(),
-            ActiveExpression::BVSubExpression(_) => todo!(),
-            ActiveExpression::BVSymbol(e) => cloned_scfia.new_bv_symbol(cloned_scfia_rc, e.width, Some(id), &mut None),
-            ActiveExpression::BVUnsignedRemainderExpression(_) => todo!(),
-            ActiveExpression::BVXorExpression(_) => todo!(),
-        }
-    }
 }
 
 impl<SC: ScfiaComposition> ActiveValueInner<SC> {
@@ -181,6 +156,42 @@ impl<SC: ScfiaComposition> ActiveValueInner<SC> {
 
     pub fn assert(&mut self) {
         self.scfia.clone().assert(self);
+    }
+
+    pub(crate) fn clone_to(&self, own_scfia: &ScfiaInner<SC>, cloned_scfia: &mut ScfiaInner<SC>, cloned_scfia_rc: Scfia<SC>, id: Option<u64>) -> ActiveValue<SC> {
+        trace!("cloning {:?}", self);
+        let cloned_value = match &self.expression {
+            ActiveExpression::BoolConcrete(e) => cloned_scfia.new_bool_concrete(cloned_scfia_rc, e.value, id, &mut None),
+            ActiveExpression::BoolEqExpression(e) => cloned_scfia.new_bool_eq(cloned_scfia_rc, e.s1.clone(), e.s2.clone(), id, &mut None),
+            ActiveExpression::BoolNotExpression(_) => todo!(),
+            ActiveExpression::BoolSignedLessThanExpression(_) => todo!(),
+            ActiveExpression::BoolUnsignedLessThanExpression(_) => todo!(),
+            ActiveExpression::BVAddExpression(_) => todo!(),
+            ActiveExpression::BVAndExpression(_) => todo!(),
+            ActiveExpression::BVConcatExpression(_) => todo!(),
+            ActiveExpression::BVConcrete(e) => cloned_scfia.new_bv_concrete(cloned_scfia_rc, e.value, e.width, id, &mut None),
+            ActiveExpression::BVMultiplyExpression(_) => todo!(),
+            ActiveExpression::BVOrExpression(_) => todo!(),
+            ActiveExpression::BVSignExtendExpression(_) => todo!(),
+            ActiveExpression::BVSliceExpression(_) => todo!(),
+            ActiveExpression::BVSllExpression(_) => todo!(),
+            ActiveExpression::BVSrlExpression(_) => todo!(),
+            ActiveExpression::BVSubExpression(_) => todo!(),
+            ActiveExpression::BVSymbol(e) => cloned_scfia.new_bv_symbol(cloned_scfia_rc, e.width, id, &mut None),
+            ActiveExpression::BVUnsignedRemainderExpression(_) => todo!(),
+            ActiveExpression::BVXorExpression(_) => todo!(),
+        };
+        let mut cloned_value_inner = cloned_value.borrow_mut();
+        // Fix references to inherited RetiredValues
+        for inherited_value in &self.inherited_asts {
+            let old = cloned_value_inner.inherited_asts.insert(*inherited_value.0, cloned_scfia.retired_symbols.get(inherited_value.0).unwrap().upgrade().unwrap());
+            debug_assert!(old.is_none());
+        }
+        // Fix references to discovered values
+        for discovered_value in &self.discovered_asts {
+            panic!("welp with recursive clones this would work")
+        }
+        cloned_value.clone()
     }
 }
 

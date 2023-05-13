@@ -2,6 +2,7 @@
 #![allow(non_snake_case)]
 #![allow(unused)]
 use log::debug;
+use std::{fmt::Debug, borrow::BorrowMut};
 
 use crate::{memory::Memory, scfia::Scfia, values::active_value::ActiveValue, GenericForkSink, ScfiaComposition, StepContext, SymbolicHints};
 
@@ -13,8 +14,9 @@ pub struct RV32i {
 
 #[derive(Debug)]
 pub struct RV32iForkSink {
+    base_state: RV32i,
     new_values_history: Vec<ActiveValue<RV32iScfiaComposition>>,
-    forks: Vec<RV32iScfiaComposition>,
+    forks: Vec<RV32i>,
 }
 
 #[derive(Debug, Clone)]
@@ -27,7 +29,14 @@ impl Drop for RV32i {
 }
 
 impl GenericForkSink<RV32iScfiaComposition> for RV32iForkSink {
-    fn fork(&self, fork_symbol: ActiveValue<RV32iScfiaComposition>) {
+    fn fork(&mut self, fork_symbol: ActiveValue<RV32iScfiaComposition>) {
+        let clone = self.base_state.clone_model();
+        // Clone all values that were created after self.base_state was created
+        for new_value in &self.new_values_history {
+            new_value.try_borrow().unwrap().clone_to(todo!(), todo!(), todo!(), todo!());
+        }
+        let cloned_condition: ActiveValue<RV32iScfiaComposition> = todo!();
+        self.forks.push(clone);
         todo!()
     }
 
@@ -35,8 +44,9 @@ impl GenericForkSink<RV32iScfiaComposition> for RV32iForkSink {
         self.new_values_history.push(value)
     }
 }
+
 impl ScfiaComposition for RV32iScfiaComposition {
-    type Model = u32;
+    type Model = RV32i;
     type ForkSink = RV32iForkSink;
 }
 
@@ -53,23 +63,24 @@ impl RV32i {
         }
     }
 
-    pub fn step_forking(&self, mut hints: Option<SymbolicHints>) -> Vec<RV32i> {
+    pub fn step_forking(self, mut hints: Option<SymbolicHints>) -> Vec<RV32i> {
         unsafe {
-            let mut states: Vec<RV32i> = vec![self.clone_model()];
+            let mut states: Vec<RV32i> = vec![self];
             let mut results = vec![];
 
-            while let Some(mut model) = states.pop() {
+            while let Some(mut state) = states.pop() {
                 let mut context = StepContext {
-                    memory: &mut model.memory,
-                    scfia: model.scfia.clone(),
+                    memory: &mut state.memory,
+                    scfia: state.scfia.clone(),
                     hints: hints.clone(),
                     fork_sink: Some(RV32iForkSink {
+                        base_state: state.clone_model(),
                         new_values_history: vec![],
                         forks: vec![],
                     }),
                 };
-                _step(&mut model.state, &mut context);
-                results.push(model)
+                _step(&mut state.state, &mut context);
+                results.push(state)
             }
 
             results
@@ -88,6 +99,12 @@ impl RV32i {
                 scfia: cloned_scfia,
             }
         }
+    }
+}
+
+impl Debug for RV32i {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RV32i").field("state", &self.state).finish()
     }
 }
 

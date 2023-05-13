@@ -14,7 +14,7 @@ pub trait ScfiaComposition: Debug + Clone + Sized {
 }
 
 pub trait GenericForkSink<SC: ScfiaComposition>: Debug {
-    fn fork(&self, fork_symbol: ActiveValue<SC>);
+    fn fork(&mut self, fork_symbol: ActiveValue<SC>);
     fn push_value(&mut self, value: ActiveValue<SC>);
 }
 
