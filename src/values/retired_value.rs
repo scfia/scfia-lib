@@ -6,7 +6,7 @@ use std::{
 
 use z3_sys::Z3_ast;
 
-use crate::scfia::Scfia;
+use crate::{scfia::Scfia, ScfiaComposition};
 
 use super::{
     bool_concrete::RetiredBoolConcrete, bool_eq_expression::RetiredBoolEqExpression, bool_not_expresssion::RetiredBoolNotExpression,
@@ -18,52 +18,52 @@ use super::{
     bv_unsigned_remainder_expression::RetiredBVUnsignedRemainderExpression, bv_xor_expression::RetiredBVXorExpression,
 };
 
-pub type RetiredValue = Rc<RefCell<RetiredValueInner>>;
-pub type RetiredValueWeak = Weak<RefCell<RetiredValueInner>>;
+pub type RetiredValue<Model> = Rc<RefCell<RetiredValueInner<Model>>>;
+pub type RetiredValueWeak<Model> = Weak<RefCell<RetiredValueInner<Model>>>;
 
-pub struct RetiredValueInner {
+pub struct RetiredValueInner<SC: ScfiaComposition> {
     pub id: u64,
     pub z3_ast: Z3_ast,
-    pub expression: RetiredExpression,
-    pub scfia: Scfia,
+    pub expression: RetiredExpression<SC>,
+    pub scfia: Scfia<SC>,
 }
 
-pub enum RetiredExpression {
-    BoolConcrete(RetiredBoolConcrete),
-    BoolEqExpression(RetiredBoolEqExpression),
-    BoolNotExpression(RetiredBoolNotExpression),
-    BoolSignedLessThanExpression(RetiredBoolSignedLessThanExpression),
-    BoolUnsignedLessThanExpression(RetiredBoolUnsignedLessThanExpression),
-    BVAddExpression(RetiredBVAddExpression),
-    BVAndExpression(RetiredBVAndExpression),
-    BVConcatExpression(RetiredBVConcatExpression),
+pub enum RetiredExpression<SC: ScfiaComposition> {
+    BoolConcrete(RetiredBoolConcrete<SC>),
+    BoolEqExpression(RetiredBoolEqExpression<SC>),
+    BoolNotExpression(RetiredBoolNotExpression<SC>),
+    BoolSignedLessThanExpression(RetiredBoolSignedLessThanExpression<SC>),
+    BoolUnsignedLessThanExpression(RetiredBoolUnsignedLessThanExpression<SC>),
+    BVAddExpression(RetiredBVAddExpression<SC>),
+    BVAndExpression(RetiredBVAndExpression<SC>),
+    BVConcatExpression(RetiredBVConcatExpression<SC>),
     BVConcrete(RetiredBVConcrete),
-    BVMultiplyExpression(RetiredBVMultiplyExpression),
-    BVOrExpression(RetiredBVOrExpression),
-    BVSignExtendExpression(RetiredBVSignExtendExpression),
-    BVSliceExpression(RetiredBVSliceExpression),
-    BVSllExpression(RetiredBVSllExpression),
-    BVSrlExpression(RetiredBVSrlExpression),
-    BVSubExpression(RetiredBVSubExpression),
+    BVMultiplyExpression(RetiredBVMultiplyExpression<SC>),
+    BVOrExpression(RetiredBVOrExpression<SC>),
+    BVSignExtendExpression(RetiredBVSignExtendExpression<SC>),
+    BVSliceExpression(RetiredBVSliceExpression<SC>),
+    BVSllExpression(RetiredBVSllExpression<SC>),
+    BVSrlExpression(RetiredBVSrlExpression<SC>),
+    BVSubExpression(RetiredBVSubExpression<SC>),
     BVSymbol(RetiredBVSymbol),
-    BVUnsignedRemainderExpression(RetiredBVUnsignedRemainderExpression),
-    BVXorExpression(RetiredBVXorExpression),
+    BVUnsignedRemainderExpression(RetiredBVUnsignedRemainderExpression<SC>),
+    BVXorExpression(RetiredBVXorExpression<SC>),
 }
 
-impl Debug for RetiredValueInner {
+impl<Model> Debug for RetiredValueInner<Model> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.expression.fmt(f)?;
         f.write_str(format!("[id={}]", self.id).as_str())
     }
 }
 
-impl Drop for RetiredValueInner {
+impl<Model> Drop for RetiredValueInner<Model> {
     fn drop(&mut self) {
         self.scfia.drop_retired(self)
     }
 }
 
-impl Debug for RetiredExpression {
+impl<Model> Debug for RetiredExpression<Model> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             RetiredExpression::BVConcrete(e) => e.fmt(f),

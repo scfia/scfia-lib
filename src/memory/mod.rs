@@ -9,18 +9,18 @@ use z3_sys::{
 use crate::{
     scfia::Scfia,
     values::active_value::{ActiveExpression, ActiveValue, ActiveValueInner},
-    ForkSink, StepContext, SymbolicHints,
+    ForkSink, StepContext, SymbolicHints, ScfiaComposition,
 };
 
 use self::regions::{StableMemoryRegion, SymbolicVolatileMemoryRegion, VolatileMemoryRegion};
 
-pub struct Memory {
-    pub stables: Vec<StableMemoryRegion>,
-    pub volatiles: Vec<VolatileMemoryRegion>,
-    pub symbolic_volatiles: Vec<SymbolicVolatileMemoryRegion>,
+pub struct Memory<SC: ScfiaComposition> {
+    pub stables: Vec<StableMemoryRegion<SC>>,
+    pub volatiles: Vec<VolatileMemoryRegion<SC>>,
+    pub symbolic_volatiles: Vec<SymbolicVolatileMemoryRegion<SC>>,
 }
 
-impl Memory {
+impl<SC: ScfiaComposition> Memory<SC> {
     pub fn new() -> Self {
         Memory {
             stables: vec![],
@@ -29,7 +29,7 @@ impl Memory {
         }
     }
 
-    pub fn read(&mut self, address: ActiveValue, width: u32, scfia: Scfia, hints: &mut Option<SymbolicHints>, fork_sink: &mut Option<ForkSink>) -> ActiveValue {
+    pub fn read(&mut self, address: ActiveValue<SC>, width: u32, scfia: Scfia<SC>, hints: &mut Option<SymbolicHints>, fork_sink: &mut Option<ForkSink<SC>>) -> ActiveValue<SC> {
         let address_inner = address.try_borrow().unwrap();
         if let ActiveExpression::BVConcrete(e) = &address_inner.expression {
             self.read_concrete(e.value, width, scfia, fork_sink)
@@ -40,12 +40,12 @@ impl Memory {
 
     pub fn write(
         &mut self,
-        address: ActiveValue,
-        value: ActiveValue,
+        address: ActiveValue<SC>,
+        value: ActiveValue<SC>,
         width: u32,
-        scfia: Scfia,
+        scfia: Scfia<SC>,
         hints: &mut Option<SymbolicHints>,
-        fork_sink: &mut Option<ForkSink>,
+        fork_sink: &mut Option<ForkSink<SC>>,
     ) {
         let address_inner = address.try_borrow().unwrap();
         if let ActiveExpression::BVConcrete(e) = &address_inner.expression {
@@ -57,12 +57,12 @@ impl Memory {
 
     fn read_symbolic(
         &mut self,
-        address: &ActiveValueInner,
+        address: &ActiveValue<SC>,
         width: u32,
-        scfia: Scfia,
+        scfia: Scfia<SC>,
         hints: &mut Option<SymbolicHints>,
-        fork_sink: &mut Option<ForkSink>,
-    ) -> ActiveValue {
+        fork_sink: &mut Option<ForkSink<SC>>,
+    ) -> ActiveValue<SC> {
         unsafe {
             // Symbolic reads can be symbolic volatile region reads or unanimous reads
             let z3_context = scfia.inner.try_borrow().unwrap().z3_context;
@@ -126,11 +126,11 @@ impl Memory {
         }
     }
 
-    fn write_symbolic(&mut self, _address: &ActiveValueInner, _value: ActiveValue, _width: u32) {
+    fn write_symbolic(&mut self, _address: &ActiveValue<SC>, _value: ActiveValue<SC>, _width: u32) {
         todo!()
     }
 
-    fn read_concrete(&mut self, address: u64, width: u32, scfia: Scfia, fork_sink: &mut Option<ForkSink>) -> ActiveValue {
+    fn read_concrete(&mut self, address: u64, width: u32, scfia: Scfia<SC>, fork_sink: &mut Option<ForkSink<SC>>) -> ActiveValue<SC> {
         for region in &self.stables {
             if address >= region.start_address && address < region.start_address + region.length {
                 return region.read(address, width, scfia, fork_sink);
@@ -145,7 +145,7 @@ impl Memory {
         panic!("read_concrete failed to resolve 0x{:x}", address)
     }
 
-    fn write_concrete(&mut self, address: u64, value: ActiveValue, width: u32, scfia: Scfia, fork_sink: &mut Option<ForkSink>) {
+    fn write_concrete(&mut self, address: u64, value: ActiveValue<SC>, width: u32, scfia: Scfia<SC>, fork_sink: &mut Option<ForkSink<SC>>) {
         for region in &mut self.stables {
             if address >= region.start_address && address < region.start_address + region.length {
                 return region.write(address, value, width, scfia.clone(), fork_sink);
@@ -161,7 +161,7 @@ impl Memory {
         panic!("{:?}", address)
     }
 
-    pub(crate) fn clone_to(&self, cloned_scfia: Scfia) -> Memory {
+    pub(crate) fn clone_to(&self, cloned_scfia: Scfia<SC>) -> Memory<SC> {
         let mut cloned_stables = vec![];
         let mut symbolic_volatiles = vec![];
 
@@ -181,7 +181,7 @@ impl Memory {
     }
 }
 
-impl Default for Memory {
+impl<SC> Default for Memory<SC> {
     fn default() -> Self {
         Self::new()
     }

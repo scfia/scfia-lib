@@ -1,20 +1,22 @@
 use std::fmt::Debug;
 
+use crate::ScfiaComposition;
+
 use super::active_value::{ActiveValue, ActiveValueWeak};
 
-pub struct BVAddExpression {
-    pub s1: ActiveValue,
-    pub s2: ActiveValue,
+pub struct BVAddExpression<SC: ScfiaComposition> {
+    pub s1: ActiveValue<SC>,
+    pub s2: ActiveValue<SC>,
     pub width: u32,
 }
 
-pub struct RetiredBVAddExpression {
-    pub s1: ActiveValueWeak,
-    pub s2: ActiveValueWeak,
+pub struct RetiredBVAddExpression<SC: ScfiaComposition> {
+    pub s1: ActiveValueWeak<SC>,
+    pub s2: ActiveValueWeak<SC>,
     pub width: u32,
 }
 
-impl Debug for BVAddExpression {
+impl<SC: ScfiaComposition> Debug for BVAddExpression<SC> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("(")?;
         self.s1.try_borrow().unwrap().fmt(f)?;
@@ -24,7 +26,7 @@ impl Debug for BVAddExpression {
     }
 }
 
-impl Debug for RetiredBVAddExpression {
+impl<SC: ScfiaComposition> Debug for RetiredBVAddExpression<SC> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("RetiredBVAddExpression)")
     }

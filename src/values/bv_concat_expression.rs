@@ -1,21 +1,23 @@
 use std::fmt::Debug;
 
+use crate::ScfiaComposition;
+
 use super::active_value::{ActiveValue, ActiveValueWeak};
 
 #[derive(Debug)]
-pub struct BVConcatExpression {
-    pub s1: ActiveValue,
-    pub s2: ActiveValue,
+pub struct BVConcatExpression<SC: ScfiaComposition> {
+    pub s1: ActiveValue<SC>,
+    pub s2: ActiveValue<SC>,
     pub width: u32,
 }
 
-pub struct RetiredBVConcatExpression {
-    pub s1: ActiveValueWeak,
-    pub s2: ActiveValueWeak,
+pub struct RetiredBVConcatExpression<SC: ScfiaComposition> {
+    pub s1: ActiveValueWeak<SC>,
+    pub s2: ActiveValueWeak<SC>,
     pub width: u32,
 }
 
-impl Debug for RetiredBVConcatExpression {
+impl<SC: ScfiaComposition> Debug for RetiredBVConcatExpression<SC> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("RetiredBVConcatExpression)")
     }

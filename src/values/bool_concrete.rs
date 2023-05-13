@@ -1,20 +1,22 @@
 use std::fmt::Debug;
 
-pub struct BoolConcrete {
+use crate::ScfiaComposition;
+
+pub struct BoolConcrete<SC: ScfiaComposition> {
     pub value: bool,
 }
 
-pub struct RetiredBoolConcrete {
+pub struct RetiredBoolConcrete<SC: ScfiaComposition> {
     pub value: bool,
 }
 
-impl Debug for BoolConcrete {
+impl<SC: ScfiaComposition> Debug for BoolConcrete<SC> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(format!("{}", &self.value).as_str())
     }
 }
 
-impl Debug for RetiredBoolConcrete {
+impl<SC: ScfiaComposition> Debug for RetiredBoolConcrete<SC> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(format!("{}", &self.value).as_str())
     }

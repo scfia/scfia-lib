@@ -1,23 +1,25 @@
 use std::fmt::Debug;
 
+use crate::ScfiaComposition;
+
 use super::active_value::{ActiveValue, ActiveValueWeak};
 
 #[derive(Debug)]
-pub struct BVSliceExpression {
-    pub s1: ActiveValue,
+pub struct BVSliceExpression<SC: ScfiaComposition> {
+    pub s1: ActiveValue<SC>,
     pub width: u32,
     pub high: u32,
     pub low: u32,
 }
 
-pub struct RetiredBVSliceExpression {
-    pub s1: ActiveValueWeak,
+pub struct RetiredBVSliceExpression<SC: ScfiaComposition> {
+    pub s1: ActiveValueWeak<SC>,
     pub width: u32,
     pub high: u32,
     pub low: u32,
 }
 
-impl Debug for RetiredBVSliceExpression {
+impl<SC: ScfiaComposition> Debug for RetiredBVSliceExpression<SC> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("RetiredBVSliceExpression)")
     }

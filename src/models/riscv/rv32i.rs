@@ -1,12 +1,17 @@
 #![allow(clippy::all)]
 #![allow(non_snake_case)]
 #![allow(unused)]
-use crate::{memory::Memory, scfia::Scfia, values::active_value::ActiveValue, StepContext, SymbolicHints};
+use crate::{memory::Memory, scfia::Scfia, values::active_value::ActiveValue, StepContext, SymbolicHints, ScfiaComposition};
+
+pub struct RV32IScfiaComposition {}
+impl ScfiaComposition for RV32IScfiaComposition {
+    
+}
 
 pub struct RV32i {
     pub state: SystemState,
-    pub memory: Memory,
-    pub scfia: Scfia,
+    pub memory: Memory<RV32IScfiaComposition>,
+    pub scfia: Scfia<RV32IScfiaComposition>,
 }
 
 impl RV32i {

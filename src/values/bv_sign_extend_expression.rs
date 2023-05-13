@@ -1,19 +1,21 @@
 use std::fmt::Debug;
 
+use crate::ScfiaComposition;
+
 use super::active_value::{ActiveValue, ActiveValueWeak};
 
 #[derive(Debug)]
-pub struct BVSignExtendExpression {
-    pub s1: ActiveValue,
+pub struct BVSignExtendExpression<SC: ScfiaComposition> {
+    pub s1: ActiveValue<SC>,
     pub width: u32,
 }
 
-pub struct RetiredBVSignExtendExpression {
-    pub s1: ActiveValueWeak,
+pub struct RetiredBVSignExtendExpression<SC: ScfiaComposition> {
+    pub s1: ActiveValueWeak<SC>,
     pub width: u32,
 }
 
-impl Debug for RetiredBVSignExtendExpression {
+impl<SC: ScfiaComposition> Debug for RetiredBVSignExtendExpression<SC> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("RetiredBVSignExtendExpression)")
     }

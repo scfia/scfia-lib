@@ -8,6 +8,7 @@ use std::{
 use log::{trace, warn};
 use z3_sys::Z3_ast;
 
+use crate::ScfiaComposition;
 use crate::scfia::{Scfia, ScfiaInner};
 
 use super::bool_concrete::BoolConcrete;
@@ -29,43 +30,42 @@ use super::bv_unsigned_remainder_expression::BVUnsignedRemainderExpression;
 use super::bv_xor_expression::BVXorExpression;
 use super::{bv_concrete::BVConcrete, bv_symbol::BVSymbol, retired_value::RetiredValue};
 
-pub type ActiveValue = Rc<RefCell<ActiveValueInner>>;
+pub type ActiveValue<SC: ScfiaComposition> = Rc<RefCell<ActiveValueInner<SC>>>;
+pub type ActiveValueWeak<SC> = Weak<RefCell<ActiveValueInner<SC>>>;
 
-pub type ActiveValueWeak = Weak<RefCell<ActiveValueInner>>;
-
-pub struct ActiveValueInner {
+pub struct ActiveValueInner<SC: ScfiaComposition> {
     pub id: u64,
     pub z3_ast: Z3_ast,
-    pub expression: ActiveExpression,
-    pub inherited_asts: BTreeMap<u64, RetiredValue>,
-    pub discovered_asts: BTreeMap<u64, ActiveValueWeak>,
-    pub scfia: Scfia,
+    pub expression: ActiveExpression<SC>,
+    pub inherited_asts: BTreeMap<u64, RetiredValue<SC>>,
+    pub discovered_asts: BTreeMap<u64, ActiveValueWeak<SC>>,
+    pub scfia: Scfia<SC>,
 }
 
-pub enum ActiveExpression {
-    BoolConcrete(BoolConcrete),
-    BoolEqExpression(BoolEqExpression),
-    BoolNotExpression(BoolNotExpression),
-    BoolSignedLessThanExpression(BoolSignedLessThanExpression),
-    BoolUnsignedLessThanExpression(BoolUnsignedLessThanExpression),
-    BVAddExpression(BVAddExpression),
-    BVAndExpression(BVAndExpression),
-    BVConcatExpression(BVConcatExpression),
+pub enum ActiveExpression<SC: ScfiaComposition> {
+    BoolConcrete(BoolConcrete<SC>),
+    BoolEqExpression(BoolEqExpression<SC>),
+    BoolNotExpression(BoolNotExpression<SC>),
+    BoolSignedLessThanExpression(BoolSignedLessThanExpression<SC>),
+    BoolUnsignedLessThanExpression(BoolUnsignedLessThanExpression<SC>),
+    BVAddExpression(BVAddExpression<SC>),
+    BVAndExpression(BVAndExpression<SC>),
+    BVConcatExpression(BVConcatExpression<SC>),
     BVConcrete(BVConcrete),
-    BVMultiplyExpression(BVMultiplyExpression),
-    BVOrExpression(BVOrExpression),
-    BVSignExtendExpression(BVSignExtendExpression),
-    BVSliceExpression(BVSliceExpression),
-    BVSllExpression(BVSllExpression),
-    BVSrlExpression(BVSrlExpression),
-    BVSubExpression(BVSubExpression),
+    BVMultiplyExpression(BVMultiplyExpression<SC>),
+    BVOrExpression(BVOrExpression<SC>),
+    BVSignExtendExpression(BVSignExtendExpression<SC>),
+    BVSliceExpression(BVSliceExpression<SC>),
+    BVSllExpression(BVSllExpression<SC>),
+    BVSrlExpression(BVSrlExpression<SC>),
+    BVSubExpression(BVSubExpression<SC>),
     BVSymbol(BVSymbol),
-    BVUnsignedRemainderExpression(BVUnsignedRemainderExpression),
-    BVXorExpression(BVXorExpression),
+    BVUnsignedRemainderExpression(BVUnsignedRemainderExpression<SC>),
+    BVXorExpression(BVXorExpression<SC>),
 }
 
-impl ActiveExpression {
-    pub(crate) fn get_parents(&self, dest: &mut Vec<ActiveValue>) {
+impl<SC: ScfiaComposition> ActiveExpression<SC> {
+    pub(crate) fn get_parents(&self, dest: &mut Vec<ActiveValue<SC>>) {
         match self {
             ActiveExpression::BVConcrete(_) => {}
             ActiveExpression::BVSymbol(_) => {}
@@ -134,7 +134,7 @@ impl ActiveExpression {
         }
     }
 
-    pub(crate) fn clone_to(&self, own_scfia: &ScfiaInner, cloned_scfia: &mut ScfiaInner, cloned_scfia_rc: Scfia, id: u64) -> ActiveValue {
+    pub(crate) fn clone_to(&self, own_scfia: &ScfiaInner<SC>, cloned_scfia: &ScfiaInner<SC>, cloned_scfia_rc: Scfia<SC>, id: u64) -> ActiveValue<SC> {
         trace!("cloning {:?}", self);
         match self {
             ActiveExpression::BoolConcrete(e) => cloned_scfia.new_bool_concrete(cloned_scfia_rc, e.value, Some(id), &mut None),
@@ -160,7 +160,7 @@ impl ActiveExpression {
     }
 }
 
-impl ActiveValueInner {
+impl<SC> ActiveValueInner<SC> {
     pub fn try_as_concrete_bv(&self) -> Option<u64> {
         match &self.expression {
             ActiveExpression::BVConcrete(bvc) => Some(bvc.value),
@@ -184,20 +184,20 @@ impl ActiveValueInner {
     }
 }
 
-impl Debug for ActiveValueInner {
+impl<SC> Debug for ActiveValueInner<SC> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.expression.fmt(f)?;
         f.write_str(format!("[id={}]", self.id).as_str())
     }
 }
 
-impl Drop for ActiveValueInner {
+impl<SC> Drop for ActiveValueInner<SC> {
     fn drop(&mut self) {
         self.scfia.drop_active(self);
     }
 }
 
-impl Debug for ActiveExpression {
+impl<SC> Debug for ActiveExpression<SC> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ActiveExpression::BVConcrete(e) => e.fmt(f),

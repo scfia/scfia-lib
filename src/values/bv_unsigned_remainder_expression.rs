@@ -1,21 +1,23 @@
 use std::fmt::Debug;
 
+use crate::ScfiaComposition;
+
 use super::active_value::{ActiveValue, ActiveValueWeak};
 
 #[derive(Debug)]
-pub struct BVUnsignedRemainderExpression {
-    pub s1: ActiveValue,
-    pub s2: ActiveValue,
+pub struct BVUnsignedRemainderExpression<SC: ScfiaComposition> {
+    pub s1: ActiveValue<SC>,
+    pub s2: ActiveValue<SC>,
     pub width: u32,
 }
 
-pub struct RetiredBVUnsignedRemainderExpression {
-    pub s1: ActiveValueWeak,
-    pub s2: ActiveValueWeak,
+pub struct RetiredBVUnsignedRemainderExpression<SC: ScfiaComposition> {
+    pub s1: ActiveValueWeak<SC>,
+    pub s2: ActiveValueWeak<SC>,
     pub width: u32,
 }
 
-impl Debug for RetiredBVUnsignedRemainderExpression {
+impl<SC: ScfiaComposition> Debug for RetiredBVUnsignedRemainderExpression<SC> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("RetiredBVXorExpression)")
     }

@@ -1,21 +1,23 @@
 use std::fmt::Debug;
 
+use crate::ScfiaComposition;
+
 use super::active_value::{ActiveValue, ActiveValueWeak};
 
 #[derive(Debug)]
-pub struct BVMultiplyExpression {
-    pub s1: ActiveValue,
-    pub s2: ActiveValue,
+pub struct BVMultiplyExpression<SC: ScfiaComposition> {
+    pub s1: ActiveValue<SC>,
+    pub s2: ActiveValue<SC>,
     pub width: u32,
 }
 
-pub struct RetiredBVMultiplyExpression {
-    pub s1: ActiveValueWeak,
-    pub s2: ActiveValueWeak,
+pub struct RetiredBVMultiplyExpression<SC: ScfiaComposition> {
+    pub s1: ActiveValueWeak<SC>,
+    pub s2: ActiveValueWeak<SC>,
     pub width: u32,
 }
 
-impl Debug for RetiredBVMultiplyExpression {
+impl<SC: ScfiaComposition> Debug for RetiredBVMultiplyExpression<SC> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("RetiredBVMultiplyExpression)")
     }
