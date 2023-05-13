@@ -1,7 +1,5 @@
 use std::fmt::Debug;
 
-use crate::ScfiaComposition;
-
 pub struct BoolConcrete {
     pub value: bool,
 }

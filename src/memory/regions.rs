@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, VecDeque};
 
 use log::{debug, trace, warn};
 
-use crate::{scfia::Scfia, values::active_value::ActiveValue, ForkSink, ScfiaComposition, StepContext};
+use crate::{scfia::Scfia, values::active_value::ActiveValue, ScfiaComposition, StepContext};
 
 #[derive(Debug)]
 pub struct StableMemoryRegion<SC: ScfiaComposition> {
@@ -48,7 +48,7 @@ impl<SC: ScfiaComposition> StableMemoryRegion<SC> {
         }
     }
 
-    pub(crate) fn read(&self, address: u64, width: u32, scfia: Scfia<SC>, fork_sink: &mut Option<ForkSink<SC>>) -> ActiveValue<SC> {
+    pub(crate) fn read(&self, address: u64, width: u32, scfia: Scfia<SC>, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
         assert_eq!(width % 8, 0);
         let bytes = width / 8;
         let mut byte_values = VecDeque::new();
@@ -72,7 +72,7 @@ impl<SC: ScfiaComposition> StableMemoryRegion<SC> {
         value
     }
 
-    pub(crate) fn write(&mut self, address: u64, value: ActiveValue<SC>, width: u32, scfia: Scfia<SC>, fork_sink: &mut Option<ForkSink<SC>>) {
+    pub(crate) fn write(&mut self, address: u64, value: ActiveValue<SC>, width: u32, scfia: Scfia<SC>, fork_sink: &mut Option<SC::ForkSink>) {
         let bytes = width / 8;
         for byte in 0..bytes {
             let v = scfia.new_bv_slice(value.clone(), (byte * 8) + 7, byte * 8, fork_sink);

@@ -5,7 +5,7 @@ use std::{
     rc::{Rc, Weak},
 };
 
-use log::{trace, warn};
+use log::trace;
 use z3_sys::Z3_ast;
 
 use crate::scfia::{Scfia, ScfiaInner};

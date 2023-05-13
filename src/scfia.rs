@@ -67,7 +67,7 @@ use crate::values::bv_add_expression::BVAddExpression;
 use crate::values::bv_and_expression::BVAndExpression;
 use crate::values::bv_concat_expression::BVConcatExpression;
 use crate::values::bv_concrete::BVConcrete;
-use crate::ForkSink;
+use crate::GenericForkSink;
 use crate::ScfiaComposition;
 
 use crate::values::bool_concrete::RetiredBoolConcrete;
@@ -140,7 +140,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         selff.active_symbols.get(&id).map_or(None, |e| Some(e.upgrade().unwrap().clone()))
     }
 
-    pub fn check_condition(&self, value: ActiveValue<SC>, fork_sink: &mut Option<ForkSink<SC>>) -> bool {
+    pub fn check_condition(&self, value: ActiveValue<SC>, fork_sink: &mut Option<SC::ForkSink>) -> bool {
         unsafe {
             if let ActiveExpression::BoolConcrete(e) = &value.try_borrow().unwrap().expression {
                 return e.value;
@@ -179,92 +179,92 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         }
     }
 
-    pub fn new_bool_eq(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, fork_sink: &mut Option<ForkSink<SC>>) -> ActiveValue<SC> {
+    pub fn new_bool_eq(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
         let mut selff = self.inner.try_borrow_mut().unwrap();
         selff.new_bool_eq(self.clone(), s1.clone(), s2.clone(), None, fork_sink)
     }
 
-    pub fn new_bool_not(&self, s1: ActiveValue<SC>, fork_sink: &mut Option<ForkSink<SC>>) -> ActiveValue<SC> {
+    pub fn new_bool_not(&self, s1: ActiveValue<SC>, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
         let mut selff = self.inner.try_borrow_mut().unwrap();
         selff.new_bool_not(self.clone(), s1.clone(), None, fork_sink)
     }
 
-    pub fn new_bool_signed_less_than(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, fork_sink: &mut Option<ForkSink<SC>>) -> ActiveValue<SC> {
+    pub fn new_bool_signed_less_than(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
         let mut selff = self.inner.try_borrow_mut().unwrap();
         selff.new_bool_signed_less_than(self.clone(), s1.clone(), s2.clone(), None, fork_sink)
     }
 
-    pub fn new_bool_unsigned_less_than(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, fork_sink: &mut Option<ForkSink<SC>>) -> ActiveValue<SC> {
+    pub fn new_bool_unsigned_less_than(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
         let mut selff = self.inner.try_borrow_mut().unwrap();
         selff.new_bool_unsigned_less_than(self.clone(), s1.clone(), s2.clone(), None, fork_sink)
     }
 
-    pub fn new_bv_add(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, fork_sink: &mut Option<ForkSink<SC>>) -> ActiveValue<SC> {
+    pub fn new_bv_add(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
         let mut selff = self.inner.try_borrow_mut().unwrap();
         selff.new_bv_add(self.clone(), s1.clone(), s2.clone(), width, None, fork_sink)
     }
 
-    pub fn new_bv_and(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, fork_sink: &mut Option<ForkSink<SC>>) -> ActiveValue<SC> {
+    pub fn new_bv_and(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
         let mut selff = self.inner.try_borrow_mut().unwrap();
         selff.new_bv_and(self.clone(), s1.clone(), s2.clone(), width, None, fork_sink)
     }
 
-    pub fn new_bv_concat(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, fork_sink: &mut Option<ForkSink<SC>>) -> ActiveValue<SC> {
+    pub fn new_bv_concat(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
         let mut selff = self.inner.try_borrow_mut().unwrap();
         selff.new_bv_concat(self.clone(), s1.clone(), s2.clone(), width, None, fork_sink)
     }
 
-    pub fn new_bv_concrete(&self, value: u64, width: u32, fork_sink: &mut Option<ForkSink<SC>>) -> ActiveValue<SC> {
+    pub fn new_bv_concrete(&self, value: u64, width: u32, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
         let mut selff = self.inner.try_borrow_mut().unwrap();
         selff.new_bv_concrete(self.clone(), value, width, None, fork_sink)
     }
 
-    pub fn new_bv_multiply(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, fork_sink: &mut Option<ForkSink<SC>>) -> ActiveValue<SC> {
+    pub fn new_bv_multiply(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
         let mut selff = self.inner.try_borrow_mut().unwrap();
         selff.new_bv_multiply(self.clone(), s1.clone(), s2.clone(), width, None, fork_sink)
     }
 
-    pub fn new_bv_or(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, fork_sink: &mut Option<ForkSink<SC>>) -> ActiveValue<SC> {
+    pub fn new_bv_or(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
         let mut selff = self.inner.try_borrow_mut().unwrap();
         selff.new_bv_or(self.clone(), s1.clone(), s2.clone(), width, None, fork_sink)
     }
 
-    pub fn new_bv_sign_extend(&self, s1: ActiveValue<SC>, input_width: u32, output_width: u32, fork_sink: &mut Option<ForkSink<SC>>) -> ActiveValue<SC> {
+    pub fn new_bv_sign_extend(&self, s1: ActiveValue<SC>, input_width: u32, output_width: u32, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
         let mut selff = self.inner.try_borrow_mut().unwrap();
         selff.new_bv_sign_extend(self.clone(), s1.clone(), input_width, output_width, None, fork_sink)
     }
 
-    pub fn new_bv_slice(&self, s1: ActiveValue<SC>, high: u32, low: u32, fork_sink: &mut Option<ForkSink<SC>>) -> ActiveValue<SC> {
+    pub fn new_bv_slice(&self, s1: ActiveValue<SC>, high: u32, low: u32, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
         let mut selff = self.inner.try_borrow_mut().unwrap();
         selff.new_bv_slice(self.clone(), s1.clone(), high, low, None, fork_sink)
     }
 
-    pub fn new_bv_sll(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, shamt_width: u32, fork_sink: &mut Option<ForkSink<SC>>) -> ActiveValue<SC> {
+    pub fn new_bv_sll(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, shamt_width: u32, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
         let mut selff = self.inner.try_borrow_mut().unwrap();
         selff.new_bv_sll(self.clone(), s1.clone(), s2.clone(), width, shamt_width, None, fork_sink)
     }
 
-    pub fn new_bv_srl(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, shamt_width: u32, fork_sink: &mut Option<ForkSink<SC>>) -> ActiveValue<SC> {
+    pub fn new_bv_srl(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, shamt_width: u32, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
         let mut selff = self.inner.try_borrow_mut().unwrap();
         selff.new_bv_srl(self.clone(), s1.clone(), s2.clone(), width, shamt_width, None, fork_sink)
     }
 
-    pub fn new_bv_sub(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, fork_sink: &mut Option<ForkSink<SC>>) -> ActiveValue<SC> {
+    pub fn new_bv_sub(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
         let mut selff = self.inner.try_borrow_mut().unwrap();
         selff.new_bv_sub(self.clone(), s1.clone(), s2.clone(), width, None, fork_sink)
     }
 
-    pub fn new_bv_symbol(&self, width: u32, fork_sink: &mut Option<ForkSink<SC>>) -> ActiveValue<SC> {
+    pub fn new_bv_symbol(&self, width: u32, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
         let mut selff = self.inner.try_borrow_mut().unwrap();
         selff.new_bv_symbol(self.clone(), width, None, fork_sink)
     }
 
-    pub fn new_bv_unsigned_remainder(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, fork_sink: &mut Option<ForkSink<SC>>) -> ActiveValue<SC> {
+    pub fn new_bv_unsigned_remainder(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
         let mut selff = self.inner.try_borrow_mut().unwrap();
         selff.new_bv_unsigned_remainder(self.clone(), s1.clone(), s2.clone(), width, None, fork_sink)
     }
 
-    pub fn new_bv_xor(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, fork_sink: &mut Option<ForkSink<SC>>) -> ActiveValue<SC> {
+    pub fn new_bv_xor(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
         let mut selff = self.inner.try_borrow_mut().unwrap();
         selff.new_bv_xor(self.clone(), s1.clone(), s2.clone(), width, None, fork_sink)
     }
@@ -589,7 +589,7 @@ impl<SC: ScfiaComposition> Default for Scfia<SC> {
 }
 
 impl<SC: ScfiaComposition> ScfiaInner<SC> {
-    pub fn new_bool_concrete(&mut self, self_rc: Scfia<SC>, value: bool, id: Option<u64>, fork_sink: &mut Option<ForkSink<SC>>) -> ActiveValue<SC> {
+    pub fn new_bool_concrete(&mut self, self_rc: Scfia<SC>, value: bool, id: Option<u64>, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
         unsafe {
             let id = if let Some(id) = id { id } else { self.next_symbol_id() };
             let z3_ast = if value { Z3_mk_true(self.z3_context) } else { Z3_mk_false(self.z3_context) };
@@ -604,7 +604,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         s1: ActiveValue<SC>,
         s2: ActiveValue<SC>,
         id: Option<u64>,
-        fork_sink: &mut Option<ForkSink<SC>>,
+        fork_sink: &mut Option<SC::ForkSink>,
     ) -> ActiveValue<SC> {
         unsafe {
             let s1_inner = s1.try_borrow().unwrap();
@@ -647,7 +647,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         }
     }
 
-    pub fn new_bool_not(&mut self, self_rc: Scfia<SC>, s1: ActiveValue<SC>, id: Option<u64>, fork_sink: &mut Option<ForkSink<SC>>) -> ActiveValue<SC> {
+    pub fn new_bool_not(&mut self, self_rc: Scfia<SC>, s1: ActiveValue<SC>, id: Option<u64>, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
         unsafe {
             let s1_inner = s1.try_borrow().unwrap();
             assert!(Rc::ptr_eq(&s1_inner.scfia.inner, &self_rc.inner));
@@ -689,7 +689,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         s1: ActiveValue<SC>,
         s2: ActiveValue<SC>,
         id: Option<u64>,
-        fork_sink: &mut Option<ForkSink<SC>>,
+        fork_sink: &mut Option<SC::ForkSink>,
     ) -> ActiveValue<SC> {
         unsafe {
             let s1_inner = s1.try_borrow().unwrap();
@@ -728,7 +728,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         s1: ActiveValue<SC>,
         s2: ActiveValue<SC>,
         id: Option<u64>,
-        fork_sink: &mut Option<ForkSink<SC>>,
+        fork_sink: &mut Option<SC::ForkSink>,
     ) -> ActiveValue<SC> {
         unsafe {
             let s1_inner = s1.try_borrow().unwrap();
@@ -768,7 +768,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         s2: ActiveValue<SC>,
         width: u32,
         id: Option<u64>,
-        fork_sink: &mut Option<ForkSink<SC>>,
+        fork_sink: &mut Option<SC::ForkSink>,
     ) -> ActiveValue<SC> {
         unsafe {
             let s1_inner = s1.try_borrow().unwrap();
@@ -812,7 +812,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         s2: ActiveValue<SC>,
         width: u32,
         id: Option<u64>,
-        fork_sink: &mut Option<ForkSink<SC>>,
+        fork_sink: &mut Option<SC::ForkSink>,
     ) -> ActiveValue<SC> {
         unsafe {
             let s1_inner = s1.try_borrow().unwrap();
@@ -852,7 +852,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         s2: ActiveValue<SC>,
         width: u32,
         id: Option<u64>,
-        fork_sink: &mut Option<ForkSink<SC>>,
+        fork_sink: &mut Option<SC::ForkSink>,
     ) -> ActiveValue<SC> {
         unsafe {
             let s1_inner = s1.try_borrow().unwrap();
@@ -886,7 +886,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         }
     }
 
-    pub fn new_bv_concrete(&mut self, self_rc: Scfia<SC>, value: u64, width: u32, id: Option<u64>, fork_sink: &mut Option<ForkSink<SC>>) -> ActiveValue<SC> {
+    pub fn new_bv_concrete(&mut self, self_rc: Scfia<SC>, value: u64, width: u32, id: Option<u64>, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
         unsafe {
             //TODO assert value sticking to the width mask
             let sort = Z3_mk_bv_sort(self.z3_context, width);
@@ -904,7 +904,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         s2: ActiveValue<SC>,
         width: u32,
         id: Option<u64>,
-        fork_sink: &mut Option<ForkSink<SC>>,
+        fork_sink: &mut Option<SC::ForkSink>,
     ) -> ActiveValue<SC> {
         unsafe {
             let s1_inner = s1.try_borrow().unwrap();
@@ -948,7 +948,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         s2: ActiveValue<SC>,
         width: u32,
         id: Option<u64>,
-        fork_sink: &mut Option<ForkSink<SC>>,
+        fork_sink: &mut Option<SC::ForkSink>,
     ) -> ActiveValue<SC> {
         unsafe {
             let s1_inner = s1.try_borrow().unwrap();
@@ -988,7 +988,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         input_width: u32,
         output_width: u32,
         id: Option<u64>,
-        fork_sink: &mut Option<ForkSink<SC>>,
+        fork_sink: &mut Option<SC::ForkSink>,
     ) -> ActiveValue<SC> {
         unsafe {
             let s1_inner = s1.try_borrow().unwrap();
@@ -1033,7 +1033,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         high: u32,
         low: u32,
         id: Option<u64>,
-        fork_sink: &mut Option<ForkSink<SC>>,
+        fork_sink: &mut Option<SC::ForkSink>,
     ) -> ActiveValue<SC> {
         unsafe {
             let s1_inner = s1.try_borrow().unwrap();
@@ -1075,7 +1075,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         width: u32,
         shamt_width: u32,
         id: Option<u64>,
-        fork_sink: &mut Option<ForkSink<SC>>,
+        fork_sink: &mut Option<SC::ForkSink>,
     ) -> ActiveValue<SC> {
         unsafe {
             let s1_inner = s1.try_borrow().unwrap();
@@ -1128,7 +1128,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         width: u32,
         shamt_width: u32,
         id: Option<u64>,
-        fork_sink: &mut Option<ForkSink<SC>>,
+        fork_sink: &mut Option<SC::ForkSink>,
     ) -> ActiveValue<SC> {
         unsafe {
             let s1_inner = s1.try_borrow().unwrap();
@@ -1180,7 +1180,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         s2: ActiveValue<SC>,
         width: u32,
         id: Option<u64>,
-        fork_sink: &mut Option<ForkSink<SC>>,
+        fork_sink: &mut Option<SC::ForkSink>,
     ) -> ActiveValue<SC> {
         unsafe {
             let s1_inner = s1.try_borrow().unwrap();
@@ -1218,7 +1218,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         }
     }
 
-    pub fn new_bv_symbol(&mut self, self_rc: Scfia<SC>, width: u32, id: Option<u64>, fork_sink: &mut Option<ForkSink<SC>>) -> ActiveValue<SC> {
+    pub fn new_bv_symbol(&mut self, self_rc: Scfia<SC>, width: u32, id: Option<u64>, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
         unsafe {
             let id = if let Some(id) = id { id } else { self.next_symbol_id() };
             let z3_ast = Z3_mk_fresh_const(self.z3_context, 0 as Z3_string, Z3_mk_bv_sort(self.z3_context, width));
@@ -1235,7 +1235,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         s2: ActiveValue<SC>,
         width: u32,
         id: Option<u64>,
-        fork_sink: &mut Option<ForkSink<SC>>,
+        fork_sink: &mut Option<SC::ForkSink>,
     ) -> ActiveValue<SC> {
         unsafe {
             let s1_inner = s1.try_borrow().unwrap();
@@ -1279,7 +1279,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         s2: ActiveValue<SC>,
         width: u32,
         id: Option<u64>,
-        fork_sink: &mut Option<ForkSink<SC>>,
+        fork_sink: &mut Option<SC::ForkSink>,
     ) -> ActiveValue<SC> {
         unsafe {
             let s1_inner = s1.try_borrow().unwrap();
@@ -1326,7 +1326,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         z3_ast: Z3_ast,
         id: u64,
         scfia: Scfia<SC>,
-        fork_sink: &mut Option<ForkSink<SC>>,
+        fork_sink: &mut Option<SC::ForkSink>,
     ) -> ActiveValue<SC> {
         let value = Rc::new(RefCell::new(ActiveValueInner {
             id,
@@ -1339,7 +1339,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         trace!("Creating new expression ({:?})", value.try_borrow().unwrap());
         self.active_symbols.insert(id, Rc::downgrade(&value));
         if let Some(fork_sink) = fork_sink {
-            fork_sink.new_values_history.push(value.clone())
+            fork_sink.push_value(value.clone())
         }
         value
     }

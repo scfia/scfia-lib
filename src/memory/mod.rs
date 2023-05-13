@@ -9,7 +9,7 @@ use z3_sys::{
 use crate::{
     scfia::Scfia,
     values::active_value::{ActiveExpression, ActiveValue, ActiveValueInner},
-    ForkSink, ScfiaComposition, StepContext, SymbolicHints,
+    ScfiaComposition, StepContext, SymbolicHints,
 };
 
 use self::regions::{StableMemoryRegion, SymbolicVolatileMemoryRegion, VolatileMemoryRegion};
@@ -35,7 +35,7 @@ impl<SC: ScfiaComposition> Memory<SC> {
         width: u32,
         scfia: Scfia<SC>,
         hints: &mut Option<SymbolicHints>,
-        fork_sink: &mut Option<ForkSink<SC>>,
+        fork_sink: &mut Option<SC::ForkSink>,
     ) -> ActiveValue<SC> {
         let address_inner = address.try_borrow().unwrap();
         if let ActiveExpression::BVConcrete(e) = &address_inner.expression {
@@ -52,7 +52,7 @@ impl<SC: ScfiaComposition> Memory<SC> {
         width: u32,
         scfia: Scfia<SC>,
         hints: &mut Option<SymbolicHints>,
-        fork_sink: &mut Option<ForkSink<SC>>,
+        fork_sink: &mut Option<SC::ForkSink>,
     ) {
         let address_inner = address.try_borrow().unwrap();
         if let ActiveExpression::BVConcrete(e) = &address_inner.expression {
@@ -68,7 +68,7 @@ impl<SC: ScfiaComposition> Memory<SC> {
         width: u32,
         scfia: Scfia<SC>,
         hints: &mut Option<SymbolicHints>,
-        fork_sink: &mut Option<ForkSink<SC>>,
+        fork_sink: &mut Option<SC::ForkSink>,
     ) -> ActiveValue<SC> {
         unsafe {
             // Symbolic reads can be symbolic volatile region reads or unanimous reads
@@ -137,7 +137,7 @@ impl<SC: ScfiaComposition> Memory<SC> {
         todo!()
     }
 
-    fn read_concrete(&mut self, address: u64, width: u32, scfia: Scfia<SC>, fork_sink: &mut Option<ForkSink<SC>>) -> ActiveValue<SC> {
+    fn read_concrete(&mut self, address: u64, width: u32, scfia: Scfia<SC>, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
         for region in &self.stables {
             if address >= region.start_address && address < region.start_address + region.length {
                 return region.read(address, width, scfia, fork_sink);
@@ -152,7 +152,7 @@ impl<SC: ScfiaComposition> Memory<SC> {
         panic!("read_concrete failed to resolve 0x{:x}", address)
     }
 
-    fn write_concrete(&mut self, address: u64, value: ActiveValue<SC>, width: u32, scfia: Scfia<SC>, fork_sink: &mut Option<ForkSink<SC>>) {
+    fn write_concrete(&mut self, address: u64, value: ActiveValue<SC>, width: u32, scfia: Scfia<SC>, fork_sink: &mut Option<SC::ForkSink>) {
         for region in &mut self.stables {
             if address >= region.start_address && address < region.start_address + region.length {
                 return region.write(address, value, width, scfia.clone(), fork_sink);

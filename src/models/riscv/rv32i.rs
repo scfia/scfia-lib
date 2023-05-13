@@ -1,19 +1,35 @@
 #![allow(clippy::all)]
 #![allow(non_snake_case)]
 #![allow(unused)]
-use crate::{memory::Memory, scfia::Scfia, values::active_value::ActiveValue, ScfiaComposition, StepContext, SymbolicHints};
-
-#[derive(Clone, Debug)]
-pub struct RV32iScfiaComposition {}
-impl ScfiaComposition for RV32iScfiaComposition {
-    type Model = u32;
-    type ForkSink = u32;
-}
+use crate::{memory::Memory, scfia::Scfia, values::active_value::ActiveValue, GenericForkSink, ScfiaComposition, StepContext, SymbolicHints};
 
 pub struct RV32i {
     pub state: SystemState,
     pub memory: Memory<RV32iScfiaComposition>,
     pub scfia: Scfia<RV32iScfiaComposition>,
+}
+
+#[derive(Debug)]
+pub struct RV32iForkSink {
+    new_values_history: Vec<ActiveValue<RV32iScfiaComposition>>,
+    forks: Vec<RV32iScfiaComposition>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RV32iScfiaComposition {}
+
+impl<SC: ScfiaComposition> GenericForkSink<SC> for RV32iForkSink {
+    fn fork(&self, fork_symbol: ActiveValue<SC>) {
+        todo!()
+    }
+
+    fn push_value(&mut self, value: ActiveValue<SC>) {
+        todo!()
+    }
+}
+impl ScfiaComposition for RV32iScfiaComposition {
+    type Model = u32;
+    type ForkSink = RV32iForkSink;
 }
 
 impl RV32i {
