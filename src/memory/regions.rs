@@ -23,17 +23,13 @@ pub struct SymbolicVolatileMemoryRegion<SC: ScfiaComposition> {
     pub length: u64,
 }
 impl<SC: ScfiaComposition> SymbolicVolatileMemoryRegion<SC> {
-    pub(crate) fn clone_to(&self, cloned_scfia: Scfia<SC>) -> SymbolicVolatileMemoryRegion<SC> {
+    pub(crate) fn clone_to_stdlib(&self, cloned_scfia_rc: Scfia<SC>) -> SymbolicVolatileMemoryRegion<SC> {
         SymbolicVolatileMemoryRegion {
-            base_symbol: cloned_scfia
-                .inner
-                .try_borrow_mut()
+            base_symbol: self
+                .base_symbol
+                .try_borrow()
                 .unwrap()
-                .active_symbols
-                .get(&self.base_symbol.try_borrow().unwrap().id)
-                .unwrap()
-                .upgrade()
-                .unwrap(),
+                .clone_to_stdlib(&mut cloned_scfia_rc.inner.try_borrow_mut().unwrap(), cloned_scfia_rc.clone()),
             length: self.length,
         }
     }
@@ -69,6 +65,8 @@ impl<SC: ScfiaComposition> StableMemoryRegion<SC> {
             value = scfia.new_bv_concat(rhs, value, width - (byte_values.len() * 8) as u32, fork_sink);
         }
 
+        trace!("? = *{:x} ({:?})", address, value);
+
         value
     }
 
@@ -76,12 +74,12 @@ impl<SC: ScfiaComposition> StableMemoryRegion<SC> {
         let bytes = width / 8;
         for byte in 0..bytes {
             let v = scfia.new_bv_slice(value.clone(), (byte * 8) + 7, byte * 8, fork_sink);
-            debug!("*{:x} = {:?}", address, v);
+            trace!("*{:x} = {:?}", address, v);
             self.memory.insert(address + byte as u64, v);
         }
     }
 
-    pub(crate) fn clone_to(&self, cloned_scfia: Scfia<SC>) -> StableMemoryRegion<SC> {
+    pub(crate) fn clone_to_stdlib(&self, cloned_scfia_rc: Scfia<SC>) -> StableMemoryRegion<SC> {
         let mut clone = StableMemoryRegion {
             length: self.length,
             memory: BTreeMap::new(),
@@ -92,16 +90,10 @@ impl<SC: ScfiaComposition> StableMemoryRegion<SC> {
             trace!("memcloning {:?}", value);
             clone.memory.insert(
                 *offset,
-                cloned_scfia
-                    .inner
-                    .try_borrow_mut()
+                value
+                    .try_borrow()
                     .unwrap()
-                    .active_symbols
-                    .get(&value.try_borrow().unwrap().id)
-                    .unwrap()
-                    .upgrade()
-                    .unwrap()
-                    .clone(),
+                    .clone_to_stdlib(&mut cloned_scfia_rc.inner.try_borrow_mut().unwrap(), cloned_scfia_rc.clone()),
             );
         }
 

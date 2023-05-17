@@ -4,11 +4,13 @@ use std::fs;
 use std::time::Instant;
 
 use log::{debug, info, trace, warn, LevelFilter};
-use scfia_lib::memory::regions::{StableMemoryRegion, VolatileMemoryRegion};
+use scfia_lib::memory::regions::{StableMemoryRegion, SymbolicVolatileMemoryRegion, VolatileMemoryRegion};
 use scfia_lib::memory::Memory;
 use scfia_lib::models::riscv::rv32i;
 use scfia_lib::models::riscv::rv32i::RV32i;
 use scfia_lib::scfia::Scfia;
+use scfia_lib::values::active_value::ActiveValueImpl;
+use scfia_lib::SymbolicHints;
 use xmas_elf::program::ProgramHeader::Ph32;
 use xmas_elf::{program, ElfFile};
 use z3_sys::{
@@ -22,6 +24,18 @@ use crate::rv32im::constants::{
     INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_HIGHER_U32, INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_LOWER_U32, INGRESS_RECEIVEQUEUE_DESCRIPTOR_LENGTH,
     INGRESS_RECEIVEQUEUE_DRIVER_POSITIONS, INGRESS_SENDQUEUE_DRIVER_POSITIONS, START_OF_MAIN_LOOP,
 };
+
+fn step_until(rv32i_system_state: &mut RV32i, address: u64, begin: &Instant) {
+    while rv32i_system_state.state.pc.to_u64() != address {
+        assert!(rv32i_system_state.state.pc.to_u64() != 0x508);
+        step_logging(rv32i_system_state, begin);
+    }
+}
+
+fn step_logging(rv32i_system_state: &mut RV32i, begin: &Instant) {
+    debug!("({}ms) Executing 0x{:x}", begin.elapsed().as_millis(), rv32i_system_state.state.pc.to_u64());
+    rv32i_system_state.step(None);
+}
 
 #[test]
 fn test_system_state() {
@@ -182,65 +196,51 @@ fn test_system_state() {
         scfia,
     };
 
+    let begin = Instant::now();
     info!("Stepping until NIC1 receivequeue queue_pfn check");
-    while rv32i_system_state.state.pc.try_borrow().unwrap().try_as_concrete_bv().unwrap() != 0x24 {
-        debug!(
-            "Executing 0x{:x}",
-            rv32i_system_state.state.pc.try_borrow().unwrap().try_as_concrete_bv().unwrap()
-        );
-        rv32i_system_state.step(None);
-    }
+    step_until(&mut rv32i_system_state, 0x24, &begin);
 
     let mut successors = rv32i_system_state.step_forking(None);
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
-    /*
 
-    println!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
-    while panicking.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x508 {
-        print!("({}ms) ", begin.elapsed().as_millis());
-        panicking.step(None)
-    }
+    info!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
+    step_until(&mut panicking, 0x508, &begin);
 
-    println!("[{}s] ### Stepping until NIC1 receivequeue queue_num_max 0 check", begin.elapsed().as_millis());
-    while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x30 {
-        print!("({}ms) ", begin.elapsed().as_millis());
-        continuing.step(None)
-    }
+    info!("[{}s] ### Stepping until NIC1 receivequeue queue_num_max 0 check", begin.elapsed().as_millis());
+    step_until(&mut continuing, 0x30, &begin);
 
-    let mut successors = continuing.step_forking();
+    let mut successors = continuing.step_forking(None);
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
 
-    println!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
-    while panicking.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x508 {
-        print!("({}ms) ", begin.elapsed().as_millis());
-        panicking.step(None)
-    }
+    info!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
+    step_until(&mut panicking, 0x508, &begin);
 
-    println!(
+    info!(
         "[{}s] ### Stepping until NIC1 receivequeue queue_num_max <1024 check",
         begin.elapsed().as_millis()
     );
-    while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x38 {
-        print!("({}ms) ", begin.elapsed().as_millis());
-        continuing.step(None)
-    }
+    step_until(&mut continuing, 0x38, &begin);
 
-    let mut successors = continuing.step_forking();
+    let mut successors = continuing.step_forking(None);
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
 
-    println!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
-    while panicking.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x508 {
-        print!("({}ms) ", begin.elapsed().as_millis());
-        panicking.step(None)
-    }
+    info!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
+    step_until(&mut panicking, 0x508, &begin);
 
-    println!("[{}s] ### Stepping until NIC1 sendqueue configure_virtqueue", begin.elapsed().as_millis());
-    while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x4 {
-        print!("({}ms) ", begin.elapsed().as_millis());
-        if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x3dc {
+    info!("[{}s] ### Stepping until NIC1 sendqueue configure_virtqueue", begin.elapsed().as_millis());
+    while continuing.state.pc.to_u64() != 0x4 {
+        assert!(continuing.state.pc.to_u64() != 0x508);
+        debug!(
+            "({}ms) Executing 0x{:x} ({}, {})",
+            begin.elapsed().as_millis(),
+            continuing.state.pc.to_u64(),
+            continuing.scfia.inner.try_borrow().unwrap().active_symbols.len(),
+            continuing.scfia.inner.try_borrow().unwrap().retired_symbols.len(),
+        );
+        if continuing.state.pc.to_u64() == 0x3dc {
             continuing.step(Some(SymbolicHints {
                 hints: vec![INGRESS_RECEIVEQUEUE_DRIVER_POSITIONS.to_vec()],
             }));
@@ -249,61 +249,56 @@ fn test_system_state() {
         }
     }
 
-    println!("[{}s] ### Cloning state to free some z3 memory", begin.elapsed().as_millis());
-    continuing = continuing.clone();
+    //info!("[{}s] ### Cloning state to free some z3 memory", begin.elapsed().as_millis());
+    //continuing = continuing.clone();
 
-    println!("[{}s] ### Stepping until NIC1 sendqueue queue_pfn check", begin.elapsed().as_millis());
-    while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x24 {
-        print!("({}ms) ", begin.elapsed().as_millis());
-        continuing.step(None);
-    }
+    info!("[{}s] ### Stepping until NIC1 sendqueue queue_pfn check", begin.elapsed().as_millis());
+    step_until(&mut continuing, 0x24, &begin);
 
-    let mut successors = continuing.step_forking();
+    let mut successors = continuing.step_forking(None);
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
 
-    println!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
-    while panicking.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x508 {
-        print!("({}ms) ", begin.elapsed().as_millis());
-        panicking.step(None)
-    }
+    info!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
+    step_until(&mut panicking, 0x508, &begin);
 
-    println!("[{}s] ### Stepping until NIC1 sendqueue queue_num_max 0 check", begin.elapsed().as_millis());
-    while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x30 {
+    info!("[{}s] ### Stepping until NIC1 sendqueue queue_num_max 0 check", begin.elapsed().as_millis());
+    while continuing.state.pc.to_u64() != 0x30 {
         print!("({}ms) ", begin.elapsed().as_millis());
         continuing.step(None)
     }
 
-    let mut successors = continuing.step_forking();
+    let mut successors = continuing.step_forking(None);
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
 
-    println!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
-    while panicking.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x508 {
+    info!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
+    while panicking.state.pc.to_u64() != 0x508 {
         print!("({}ms) ", begin.elapsed().as_millis());
         panicking.step(None)
     }
 
-    println!("[{}s] ### Stepping until NIC1 sendqueue queue_num_max <1024 check", begin.elapsed().as_millis());
-    while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x38 {
+    info!("[{}s] ### Stepping until NIC1 sendqueue queue_num_max <1024 check", begin.elapsed().as_millis());
+    while continuing.state.pc.to_u64() != 0x38 {
         print!("({}ms) ", begin.elapsed().as_millis());
         continuing.step(None)
     }
 
-    let mut successors = continuing.step_forking();
+    let mut successors = continuing.step_forking(None);
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
 
-    println!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
-    while panicking.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x508 {
+    info!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
+    while panicking.state.pc.to_u64() != 0x508 {
         print!("({}ms) ", begin.elapsed().as_millis());
         panicking.step(None)
     }
 
-    println!("[{}s] ### Stepping until NIC2 receivequeue queue_pfn check", begin.elapsed().as_millis());
-    while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x24 {
+    info!("[{}s] ### Stepping until NIC2 receivequeue queue_pfn check", begin.elapsed().as_millis());
+    while continuing.state.pc.to_u64() != 0x24 {
+        assert!(continuing.state.pc.to_u64() != 0x508);
         print!("({}ms) ", begin.elapsed().as_millis());
-        if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x3dc {
+        if continuing.state.pc.to_u64() == 0x3dc {
             continuing.step(Some(SymbolicHints {
                 hints: vec![INGRESS_SENDQUEUE_DRIVER_POSITIONS.to_vec()],
             }));
@@ -312,55 +307,55 @@ fn test_system_state() {
         }
     }
 
-    let mut successors = continuing.step_forking();
+    let mut successors = continuing.step_forking(None);
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
 
-    println!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
-    while panicking.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x508 {
+    info!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
+    while panicking.state.pc.to_u64() != 0x508 {
         print!("({}ms) ", begin.elapsed().as_millis());
         panicking.step(None)
     }
 
-    println!("[{}s] ### Stepping until NIC2 receivequeue queue_num_max 0 check", begin.elapsed().as_millis());
-    while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x30 {
+    info!("[{}s] ### Stepping until NIC2 receivequeue queue_num_max 0 check", begin.elapsed().as_millis());
+    while continuing.state.pc.to_u64() != 0x30 {
         print!("({}ms) ", begin.elapsed().as_millis());
         continuing.step(None)
     }
 
-    let mut successors = continuing.step_forking();
+    let mut successors = continuing.step_forking(None);
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
 
-    println!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
-    while panicking.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x508 {
+    info!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
+    while panicking.state.pc.to_u64() != 0x508 {
         print!("({}ms) ", begin.elapsed().as_millis());
         panicking.step(None)
     }
 
-    println!(
+    info!(
         "[{}s] ### Stepping until NIC2 receivequeue queue_num_max <1024 check",
         begin.elapsed().as_millis()
     );
-    while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x38 {
+    while continuing.state.pc.to_u64() != 0x38 {
         print!("({}ms) ", begin.elapsed().as_millis());
         continuing.step(None)
     }
 
-    let mut successors = continuing.step_forking();
+    let mut successors = continuing.step_forking(None);
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
 
-    println!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
-    while panicking.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x508 {
+    info!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
+    while panicking.state.pc.to_u64() != 0x508 {
         print!("({}ms) ", begin.elapsed().as_millis());
         panicking.step(None)
     }
 
-    println!("[{}s] ### Stepping until NIC2 sendqueue configure_virtqueue", begin.elapsed().as_millis());
-    while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x4 {
+    info!("[{}s] ### Stepping until NIC2 sendqueue configure_virtqueue", begin.elapsed().as_millis());
+    while continuing.state.pc.to_u64() != 0x4 {
         print!("({}ms) ", begin.elapsed().as_millis());
-        if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x3dc {
+        if continuing.state.pc.to_u64() == 0x3dc {
             continuing.step(Some(SymbolicHints {
                 hints: vec![EGRESS_RECEIVEQUEUE_DRIVER_POSITIONS.to_vec()],
             }));
@@ -369,62 +364,62 @@ fn test_system_state() {
         }
     }
 
-    println!("[{}s] ### Cloning state to free some z3 memory", begin.elapsed().as_millis());
-    continuing = continuing.clone();
+    //info!("[{}s] ### Cloning state to free some z3 memory", begin.elapsed().as_millis());
+    //continuing = continuing.clone();
 
-    println!("[{}s] ### Stepping until NIC2 sendqueue queue_pfn check", begin.elapsed().as_millis());
+    info!("[{}s] ### Stepping until NIC2 sendqueue queue_pfn check", begin.elapsed().as_millis());
     print!("({}ms) ", begin.elapsed().as_millis());
-    while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x24 {
+    while continuing.state.pc.to_u64() != 0x24 {
         print!("({}ms) ", begin.elapsed().as_millis());
         continuing.step(None)
     }
 
-    let mut successors = continuing.step_forking();
+    let mut successors = continuing.step_forking(None);
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
 
-    println!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
-    while panicking.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x508 {
+    info!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
+    while panicking.state.pc.to_u64() != 0x508 {
         print!("({}ms) ", begin.elapsed().as_millis());
         panicking.step(None)
     }
 
-    println!("[{}s] ### Stepping until NIC2 sendqueue queue_num_max 0 check", begin.elapsed().as_millis());
-    while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x30 {
+    info!("[{}s] ### Stepping until NIC2 sendqueue queue_num_max 0 check", begin.elapsed().as_millis());
+    while continuing.state.pc.to_u64() != 0x30 {
         print!("({}ms) ", begin.elapsed().as_millis());
         continuing.step(None)
     }
 
-    let mut successors = continuing.step_forking();
+    let mut successors = continuing.step_forking(None);
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
 
-    println!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
-    while panicking.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x508 {
+    info!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
+    while panicking.state.pc.to_u64() != 0x508 {
         print!("({}ms) ", begin.elapsed().as_millis());
         panicking.step(None)
     }
 
-    println!("[{}s] ### Stepping until NIC2 sendqueue queue_num_max <1024 check", begin.elapsed().as_millis());
-    while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x38 {
+    info!("[{}s] ### Stepping until NIC2 sendqueue queue_num_max <1024 check", begin.elapsed().as_millis());
+    while continuing.state.pc.to_u64() != 0x38 {
         print!("({}ms) ", begin.elapsed().as_millis());
         continuing.step(None)
     }
 
-    let mut successors = continuing.step_forking();
+    let mut successors = continuing.step_forking(None);
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
 
-    println!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
-    while panicking.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x508 {
+    info!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
+    while panicking.state.pc.to_u64() != 0x508 {
         print!("({}ms) ", begin.elapsed().as_millis());
         panicking.step(None)
     }
 
-    println!("[{}s] ### Stepping until start of main loop", begin.elapsed().as_millis());
-    while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != START_OF_MAIN_LOOP {
+    info!("[{}s] ### Stepping until start of main loop", begin.elapsed().as_millis());
+    while continuing.state.pc.to_u64() != START_OF_MAIN_LOOP {
         print!("({}ms) ", begin.elapsed().as_millis());
-        if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x3dc {
+        if continuing.state.pc.to_u64() == 0x3dc {
             continuing.step(Some(SymbolicHints {
                 hints: vec![EGRESS_SENDQUEUE_DRIVER_POSITIONS.to_vec()],
             }));
@@ -433,27 +428,28 @@ fn test_system_state() {
         }
     }
 
-    println!("[{}s] ### Stepping until ingress try_remove fork", begin.elapsed().as_millis());
-    while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x428 {
+    info!("[{}s] ### Stepping until ingress try_remove fork", begin.elapsed().as_millis());
+    while continuing.state.pc.to_u64() != 0x428 {
         print!("({}ms) ", begin.elapsed().as_millis());
         continuing.step(None)
     }
 
-    let mut successors = continuing.step_forking();
+    let mut successors = continuing.step_forking(None);
     let mut continuing = successors.remove(0);
     let mut returning = successors.remove(0);
 
-    println!("[{}s] ### Stepping aborting until start of main loop", begin.elapsed().as_millis());
-    while returning.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != START_OF_MAIN_LOOP {
+    info!("[{}s] ### Stepping aborting until start of main loop", begin.elapsed().as_millis());
+    while returning.state.pc.to_u64() != START_OF_MAIN_LOOP {
         print!("({}ms) ", begin.elapsed().as_millis());
         returning.step(None)
     }
 
-    while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x460 {
+    while continuing.state.pc.to_u64() != 0x460 {
         print!("({}ms) ", begin.elapsed().as_millis());
         continuing.step(None)
     }
-    println!("[{}s] ### Monomorphizing a4 to 0x46005004", begin.elapsed().as_millis());
+    info!("[{}s] ### Monomorphizing a4 to 0x46005004", begin.elapsed().as_millis());
+    /*
     let mut monomorphizing_candidates = vec![0x46005004];
     continuing
         .stdlib
@@ -461,7 +457,7 @@ fn test_system_state() {
     assert_eq!(monomorphizing_candidates.len(), 1);
     continuing.system_state.x14 = BitVectorConcrete::new(*monomorphizing_candidates.iter().next().unwrap(), 32, &mut continuing.stdlib, &mut None);
 
-    println!("[{}s] ### Creating symbolic volatile memory regions", begin.elapsed().as_millis());
+    info!("[{}s] ### Creating symbolic volatile memory regions", begin.elapsed().as_millis());
     let base_symbol = BitVectorSymbol::new(None, 32, Some("SymbolicVolatileMemoryRegionBase".into()), &mut continuing.stdlib, &mut None);
     {
         let base_symbol_and_expr = BVAndExpression::new(
@@ -495,12 +491,12 @@ fn test_system_state() {
         length: 4096,
     };
 
-    println!("[{}s] ### Writing symbolic pointers to descriptor table", begin.elapsed().as_millis());
+    info!("[{}s] ### Writing symbolic pointers to descriptor table", begin.elapsed().as_millis());
     // TODO ensure is valid generalization
     for i in 0..1024 {
         let pointer_offset: u32 = i * 16;
         let ingress_receive_queue_pointer_address = 0x46000000 + pointer_offset;
-        println!(
+        info!(
             "[{}s] ### overwriting 0x{:x}",
             begin.elapsed().as_millis(),
             ingress_receive_queue_pointer_address
@@ -514,7 +510,7 @@ fn test_system_state() {
         );
 
         let egress_send_queue_pointer_address = 0x46c18000 + pointer_offset;
-        println!("[{}s] ### overwriting 0x{:x}", begin.elapsed().as_millis(), egress_send_queue_pointer_address);
+        info!("[{}s] ### overwriting 0x{:x}", begin.elapsed().as_millis(), egress_send_queue_pointer_address);
         continuing.memory.write_concrete(
             egress_send_queue_pointer_address,
             sym_region.base_symbol.clone(),
@@ -525,34 +521,34 @@ fn test_system_state() {
     }
     continuing.memory.symbolic_volatiles.push(sym_region);
 
-    println!("[{}s] ### Stepping until ethertype ipv4 check", begin.elapsed().as_millis());
-    while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x73c {
+    info!("[{}s] ### Stepping until ethertype ipv4 check", begin.elapsed().as_millis());
+    while continuing.state.pc.to_u64() != 0x73c {
         print!("({}ms) ", begin.elapsed().as_millis());
-        if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x49C {
+        if continuing.state.pc.to_u64() == 0x49C {
             continuing.step(Some(SymbolicHints {
                 hints: vec![INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_HIGHER_U32.to_vec()],
             }));
-        } else if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x4a0 {
+        } else if continuing.state.pc.to_u64() == 0x4a0 {
             continuing.step(Some(SymbolicHints {
                 hints: vec![INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_LOWER_U32.to_vec()],
             }));
-        } else if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x4a8 {
+        } else if continuing.state.pc.to_u64() == 0x4a8 {
             continuing.step(None);
-            println!("a3={:?}", continuing.system_state.x13);
+            info!("a3={:?}", continuing.system_state.x13);
             let mut candidates = vec![];
             continuing
                 .stdlib
                 .monomorphize(continuing.system_state.x13.try_borrow().unwrap().get_z3_ast(), &mut candidates);
-            println!("a3 candidates={:?}", candidates)
-        } else if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x4a4 {
+            info!("a3 candidates={:?}", candidates)
+        } else if continuing.state.pc.to_u64() == 0x4a4 {
             continuing.step(Some(SymbolicHints {
                 hints: vec![INGRESS_RECEIVEQUEUE_DESCRIPTOR_LENGTH.to_vec()],
             }));
-        } else if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x4b0 {
+        } else if continuing.state.pc.to_u64() == 0x4b0 {
             continuing.step(Some(SymbolicHints {
                 hints: vec![INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_HIGHER_U32.to_vec()],
             }));
-        } else if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x4b4 {
+        } else if continuing.state.pc.to_u64() == 0x4b4 {
             continuing.step(Some(SymbolicHints {
                 hints: vec![INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_LOWER_U32.to_vec()],
             }));
@@ -561,14 +557,14 @@ fn test_system_state() {
         }
     }
 
-    let mut successors = continuing.step_forking();
+    let mut successors = continuing.step_forking(None);
     let mut returning = successors.remove(0);
     let mut continuing = successors.remove(0);
 
-    println!("[{}s] ### Stepping not ipv4 until start of main loop", begin.elapsed().as_millis());
-    while returning.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != START_OF_MAIN_LOOP {
+    info!("[{}s] ### Stepping not ipv4 until start of main loop", begin.elapsed().as_millis());
+    while returning.state.pc.to_u64() != START_OF_MAIN_LOOP {
         print!("({}ms) ", begin.elapsed().as_millis());
-        if returning.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x3DC {
+        if returning.state.pc.to_u64() == 0x3DC {
             returning.step(Some(SymbolicHints {
                 hints: vec![INGRESS_RECEIVEQUEUE_DRIVER_POSITIONS.to_vec()],
             }));
@@ -577,20 +573,20 @@ fn test_system_state() {
         }
     }
 
-    println!("[{}s] ### Stepping until egress try_remove fork", begin.elapsed().as_millis());
-    while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != 0x428 {
+    info!("[{}s] ### Stepping until egress try_remove fork", begin.elapsed().as_millis());
+    while continuing.state.pc.to_u64() != 0x428 {
         print!("({}ms) ", begin.elapsed().as_millis());
         continuing.step(None);
     }
 
-    let mut successors = continuing.step_forking();
+    let mut successors = continuing.step_forking(None);
     let mut continuing = successors.remove(0);
     let mut returning = successors.remove(0);
 
-    println!("[{}s] ### Stepping egress empty until start of main loop", begin.elapsed().as_millis());
-    while returning.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != START_OF_MAIN_LOOP {
+    info!("[{}s] ### Stepping egress empty until start of main loop", begin.elapsed().as_millis());
+    while returning.state.pc.to_u64() != START_OF_MAIN_LOOP {
         print!("({}ms) ", begin.elapsed().as_millis());
-        if returning.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x3DC {
+        if returning.state.pc.to_u64() == 0x3DC {
             returning.step(Some(SymbolicHints {
                 hints: vec![INGRESS_RECEIVEQUEUE_DRIVER_POSITIONS.to_vec()],
             }));
@@ -599,43 +595,43 @@ fn test_system_state() {
         }
     }
 
-    println!("[{}s] ### stepping success until start of main loop", begin.elapsed().as_millis());
-    while continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value != START_OF_MAIN_LOOP {
+    info!("[{}s] ### stepping success until start of main loop", begin.elapsed().as_millis());
+    while continuing.state.pc.to_u64() != START_OF_MAIN_LOOP {
         print!("({}ms) ", begin.elapsed().as_millis());
-        if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x3DC {
+        if continuing.state.pc.to_u64() == 0x3DC {
             continuing.step(Some(SymbolicHints { hints: vec![vec![0x46c1d004]] }));
-        } else if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x460 {
+        } else if continuing.state.pc.to_u64() == 0x460 {
             continuing.step(Some(SymbolicHints { hints: vec![vec![0x46c1d004]] }));
-        } else if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x150 {
+        } else if continuing.state.pc.to_u64() == 0x150 {
             continuing.step(Some(SymbolicHints {
                 hints: vec![COPY_FROM_1.to_vec()],
             }));
-        } else if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x154 {
+        } else if continuing.state.pc.to_u64() == 0x154 {
             continuing.step(Some(SymbolicHints {
                 hints: vec![COPY_FROM_2.to_vec()],
             }));
-        } else if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x158 {
+        } else if continuing.state.pc.to_u64() == 0x158 {
             continuing.step(Some(SymbolicHints {
                 hints: vec![COPY_FROM_3.to_vec()],
             }));
-        } else if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x160 {
+        } else if continuing.state.pc.to_u64() == 0x160 {
             continuing.step(Some(SymbolicHints {
                 hints: vec![INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_HIGHER_U32.to_vec()],
             }));
-        } else if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x164 {
+        } else if continuing.state.pc.to_u64() == 0x164 {
             continuing.step(Some(SymbolicHints {
                 hints: vec![INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_LOWER_U32.to_vec()],
             }));
-        } else if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x168 {
+        } else if continuing.state.pc.to_u64() == 0x168 {
             continuing.step(Some(SymbolicHints {
                 hints: vec![COPY_FROM_3.to_vec()],
             }));
-        } else if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x11C0 {
+        } else if continuing.state.pc.to_u64() == 0x11C0 {
             continuing.step(Some(SymbolicHints { hints: vec![vec![0]] }));
-        } else if continuing.system_state.pc.try_borrow().unwrap().as_concrete_bitvector().value == 0x1264 {
+        } else if continuing.state.pc.to_u64() == 0x1264 {
             continuing.step(None);
-            println!("a3={:?}", &continuing.system_state.x13);
-            println!("a4={:?}", &continuing.system_state.x14);
+            info!("a3={:?}", &continuing.system_state.x13);
+            info!("a4={:?}", &continuing.system_state.x14);
             let sub = BVSubExpression::new(
                 continuing.system_state.x13.clone(),
                 continuing.system_state.x14.clone(),
@@ -644,7 +640,7 @@ fn test_system_state() {
             );
             let mut candidates = vec![];
             continuing.stdlib.monomorphize(sub.try_borrow().unwrap().get_z3_ast(), &mut candidates);
-            println!("diff={:?}", candidates)
+            info!("diff={:?}", candidates)
         } else {
             continuing.step(None);
         }

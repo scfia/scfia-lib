@@ -40,7 +40,7 @@ mod tests {
     #[allow(unused_must_use)]
     fn test_concrete_add() {
         simple_logger::SimpleLogger::new().env().init();
-        let scfia: Scfia<RV32iScfiaComposition> = Scfia::new();
+        let scfia: Scfia<RV32iScfiaComposition> = Scfia::new(None);
         let s1 = scfia.new_bv_concrete(1, 32, &mut None);
         let s2 = scfia.new_bv_concrete(2, 32, &mut None);
         let add = scfia.new_bv_add(s1, s2, 32, &mut None);
@@ -56,7 +56,7 @@ mod tests {
     #[allow(unused_must_use)]
     fn test_symbol_add() {
         simple_logger::SimpleLogger::new().env().init();
-        let scfia: Scfia<RV32iScfiaComposition> = Scfia::new();
+        let scfia: Scfia<RV32iScfiaComposition> = Scfia::new(None);
         let s1 = scfia.new_bv_concrete(1, 32, &mut None);
         let s2 = scfia.new_bv_symbol(32, &mut None);
         let _ = scfia.new_bv_add(s1, s2, 32, &mut None);

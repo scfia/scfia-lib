@@ -31,7 +31,7 @@ mod tests {
     #[allow(unused_must_use)]
     fn test_concrete_multiply() {
         simple_logger::SimpleLogger::new().env().init();
-        let scfia: Scfia<RV32iScfiaComposition> = Scfia::new();
+        let scfia: Scfia<RV32iScfiaComposition> = Scfia::new(None);
         let s1 = scfia.new_bv_concrete(2, 32, &mut None);
         let s2 = scfia.new_bv_concrete(3, 32, &mut None);
         let mul = scfia.new_bv_multiply(s1, s2, 32, &mut None);
@@ -42,7 +42,7 @@ mod tests {
     #[allow(unused_must_use)]
     fn test_symbol_multiply() {
         simple_logger::SimpleLogger::new().env().init();
-        let scfia: Scfia<RV32iScfiaComposition> = Scfia::new();
+        let scfia: Scfia<RV32iScfiaComposition> = Scfia::new(None);
         let s1 = scfia.new_bv_concrete(0, 32, &mut None);
         let s2 = scfia.new_bv_symbol(32, &mut None);
         let mul = scfia.new_bv_multiply(s1, s2, 32, &mut None);

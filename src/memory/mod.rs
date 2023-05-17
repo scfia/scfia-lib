@@ -1,6 +1,6 @@
 pub mod regions;
 
-use log::{error, trace};
+use log::{debug, error, trace};
 use z3_sys::{
     Z3_dec_ref, Z3_inc_ref, Z3_mk_bv_sort, Z3_mk_bvadd, Z3_mk_bvuge, Z3_mk_bvult, Z3_mk_eq, Z3_mk_not, Z3_mk_or, Z3_mk_unsigned_int64,
     Z3_solver_check_assumptions, Z3_L_FALSE,
@@ -58,7 +58,7 @@ impl<SC: ScfiaComposition> Memory<SC> {
         if let ActiveExpression::BVConcrete(e) = &address_inner.expression {
             self.write_concrete(e.value, value, width, scfia, fork_sink)
         } else {
-            self.write_symbolic(&address_inner, value, width)
+            self.write_symbolic(&address_inner, value, width, scfia, hints)
         }
     }
 
@@ -133,8 +133,55 @@ impl<SC: ScfiaComposition> Memory<SC> {
         }
     }
 
-    fn write_symbolic(&mut self, _address: &ActiveValueInner<SC>, _value: ActiveValue<SC>, _width: u32) {
-        todo!()
+    fn write_symbolic(&mut self, address: &ActiveValueInner<SC>, _value: ActiveValue<SC>, width: u32, scfia: Scfia<SC>, hints: &mut Option<SymbolicHints>) {
+        unsafe {
+            // Symbolic writes can be symbolic volatile region writes or unanimous writes
+            let z3_context = scfia.inner.try_borrow().unwrap().z3_context;
+            let z3_solver = scfia.inner.try_borrow().unwrap().z3_solver;
+
+            // Check for symbolic volatile region write
+            for region in &self.symbolic_volatiles {
+                // TODO refcounting for the intermediate refs
+                let base_ast = region.base_symbol.try_borrow().unwrap().z3_ast;
+                // address < base_address
+                let lt = Z3_mk_bvult(z3_context, address.z3_ast, base_ast);
+                Z3_inc_ref(z3_context, lt);
+
+                // address >= base_address + length
+                let sort: *mut z3_sys::_Z3_sort = Z3_mk_bv_sort(z3_context, 32);
+                let add_ast = Z3_mk_unsigned_int64(z3_context, region.length, sort);
+                let ge = Z3_mk_bvuge(z3_context, address.z3_ast, Z3_mk_bvadd(z3_context, base_ast, add_ast));
+                Z3_inc_ref(z3_context, ge);
+                let asts = [lt, ge];
+                let assumption = Z3_mk_or(z3_context, 2, asts.as_ptr());
+                Z3_inc_ref(z3_context, assumption);
+
+                let check_result = Z3_solver_check_assumptions(z3_context, z3_solver, 1, asts.as_ptr());
+                if check_result == Z3_L_FALSE {
+                    // If the address CAN NOT be outside the symbolic volatile region, we can skip the write
+                    debug!("Symbolic offset write covered");
+                    return;
+                }
+
+                Z3_dec_ref(z3_context, assumption);
+                Z3_dec_ref(z3_context, ge);
+                Z3_dec_ref(z3_context, add_ast);
+                Z3_dec_ref(z3_context, lt);
+            }
+
+            let mut candidates = if let Some(hints) = hints { (*hints).hints.pop().unwrap() } else { vec![] };
+            scfia.monomorphize_active(address, &mut candidates);
+            let unanimous_address = candidates.windows(2).all(|w| w[0] == w[1]);
+            assert!(!candidates.is_empty());
+            if candidates.len() == 1 {
+                // unanimous concrete write
+                todo!()
+            } else if self.is_volatile(&candidates, width) {
+                // irrelevant write, all candidates point to volatile memory
+            } else {
+                panic!("Symbolic write is neither unanimous nor irrelevant{:x?}", candidates)
+            }
+        }
     }
 
     fn read_concrete(&mut self, address: u64, width: u32, scfia: Scfia<SC>, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
@@ -168,16 +215,16 @@ impl<SC: ScfiaComposition> Memory<SC> {
         panic!("{:?}", address)
     }
 
-    pub(crate) fn clone_to(&self, cloned_scfia: Scfia<SC>) -> Memory<SC> {
+    pub(crate) fn clone_to_stdlib(&self, cloned_scfia: Scfia<SC>) -> Memory<SC> {
         let mut cloned_stables = vec![];
         let mut symbolic_volatiles = vec![];
 
         for stable in &self.stables {
-            cloned_stables.push(stable.clone_to(cloned_scfia.clone()))
+            cloned_stables.push(stable.clone_to_stdlib(cloned_scfia.clone()))
         }
 
         for symbolic_volatile in &self.symbolic_volatiles {
-            symbolic_volatiles.push(symbolic_volatile.clone_to(cloned_scfia.clone()))
+            symbolic_volatiles.push(symbolic_volatile.clone_to_stdlib(cloned_scfia.clone()))
         }
 
         Memory {
@@ -185,6 +232,25 @@ impl<SC: ScfiaComposition> Memory<SC> {
             volatiles: self.volatiles.clone(),
             symbolic_volatiles,
         }
+    }
+
+    fn is_volatile(&self, candidates: &[u64], width: u32) -> bool {
+        for candidate in candidates {
+            let mut covered = false;
+            for volatile_region in &self.volatiles {
+                if *candidate >= volatile_region.start_address && *candidate < volatile_region.start_address + volatile_region.length { // TODO width
+                    covered = true;
+                    break;
+                }
+            }
+
+            if !covered {
+                debug!("0x{:x} not covered by volatile regions", candidate);
+                return false;
+            }
+        }
+
+        true
     }
 }
 

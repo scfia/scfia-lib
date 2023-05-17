@@ -158,24 +158,32 @@ impl<SC: ScfiaComposition> ActiveValueInner<SC> {
         self.scfia.clone().assert(self);
     }
 
-    pub(crate) fn clone_to(
-        &self,
-        own_scfia: &ScfiaInner<SC>,
-        cloned_scfia: &mut ScfiaInner<SC>,
-        cloned_scfia_rc: Scfia<SC>,
-        id: Option<u64>,
-    ) -> ActiveValue<SC> {
-        trace!("cloning {:?}", self);
+    pub(crate) fn clone_to_stdlib(&self, cloned_scfia: &mut ScfiaInner<SC>, cloned_scfia_rc: Scfia<SC>) -> ActiveValue<SC> {
+        if let Some(value) = cloned_scfia.active_symbols.get(&self.id)  {
+            return value.upgrade().unwrap()
+        }
+
         let cloned_value = match &self.expression {
-            ActiveExpression::BoolConcrete(e) => cloned_scfia.new_bool_concrete(cloned_scfia_rc, e.value, id, &mut None),
-            ActiveExpression::BoolEqExpression(e) => cloned_scfia.new_bool_eq(cloned_scfia_rc, e.s1.clone(), e.s2.clone(), id, &mut None),
-            ActiveExpression::BoolNotExpression(_) => todo!(),
+            ActiveExpression::BoolConcrete(e) => cloned_scfia.new_bool_concrete(cloned_scfia_rc, e.value, Some(self.id), &mut None),
+            ActiveExpression::BoolEqExpression(e) => {
+                let s1 = e.s1.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_scfia_rc.clone());
+                let s2 = e.s2.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_scfia_rc.clone());
+                cloned_scfia.new_bool_eq(cloned_scfia_rc, s1, s2, Some(self.id), e.is_assert, &mut None)
+            },
+            ActiveExpression::BoolNotExpression(e) => {
+                let s1 = e.s1.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_scfia_rc.clone());
+                cloned_scfia.new_bool_not(cloned_scfia_rc, s1, Some(self.id), e.is_assert, &mut None)
+            },
             ActiveExpression::BoolSignedLessThanExpression(_) => todo!(),
-            ActiveExpression::BoolUnsignedLessThanExpression(_) => todo!(),
+            ActiveExpression::BoolUnsignedLessThanExpression(e) => {
+                let s1 = e.s1.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_scfia_rc.clone());
+                let s2 = e.s2.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_scfia_rc.clone());
+                cloned_scfia.new_bool_unsigned_less_than(cloned_scfia_rc, s1, s2, Some(self.id), e.is_assert, &mut None)
+            },
             ActiveExpression::BVAddExpression(_) => todo!(),
             ActiveExpression::BVAndExpression(_) => todo!(),
             ActiveExpression::BVConcatExpression(_) => todo!(),
-            ActiveExpression::BVConcrete(e) => cloned_scfia.new_bv_concrete(cloned_scfia_rc, e.value, e.width, id, &mut None),
+            ActiveExpression::BVConcrete(e) => cloned_scfia.new_bv_concrete(cloned_scfia_rc, e.value, e.width, Some(self.id), &mut None),
             ActiveExpression::BVMultiplyExpression(_) => todo!(),
             ActiveExpression::BVOrExpression(_) => todo!(),
             ActiveExpression::BVSignExtendExpression(_) => todo!(),
@@ -183,28 +191,12 @@ impl<SC: ScfiaComposition> ActiveValueInner<SC> {
             ActiveExpression::BVSllExpression(_) => todo!(),
             ActiveExpression::BVSrlExpression(_) => todo!(),
             ActiveExpression::BVSubExpression(_) => todo!(),
-            ActiveExpression::BVSymbol(e) => cloned_scfia.new_bv_symbol(cloned_scfia_rc, e.width, id, &mut None),
+            ActiveExpression::BVSymbol(e) => cloned_scfia.new_bv_symbol(cloned_scfia_rc, e.width, Some(self.id), &mut None),
             ActiveExpression::BVUnsignedRemainderExpression(_) => todo!(),
             ActiveExpression::BVXorExpression(_) => todo!(),
         };
-        let mut cloned_value_inner = cloned_value.borrow_mut();
-        // Fix references to inherited RetiredValues
-        for inherited_value in &self.inherited_asts {
-            todo!("Retired values can be younger, and younger values haven't been cloned yet");
-            let old = cloned_value_inner.inherited_asts.insert(
-                *inherited_value.0,
-                cloned_scfia.retired_symbols.get(inherited_value.0).unwrap().upgrade().unwrap(),
-            );
-            debug_assert!(old.is_none());
-        }
-        // Fix references to discovered values
-        for discovered_value in &self.discovered_asts {
-            if *discovered_value.0 < self.id {
-                // The younger symbol must set the acquaintance
-                todo!()
-            }
-        }
-        cloned_value.clone()
+        // TODO fix relations
+        cloned_value
     }
 }
 
@@ -243,6 +235,19 @@ impl<SC: ScfiaComposition> Debug for ActiveExpression<SC> {
             ActiveExpression::BVSubExpression(e) => e.fmt(f),
             ActiveExpression::BVUnsignedRemainderExpression(e) => e.fmt(f),
             ActiveExpression::BVXorExpression(e) => e.fmt(f),
+        }
+    }
+}
+
+pub trait ActiveValueImpl<SC: ScfiaComposition> {
+    fn to_u64(&self) -> u64;
+}
+
+impl<SC: ScfiaComposition> ActiveValueImpl<SC> for ActiveValue<SC> {
+    fn to_u64(&self) -> u64 {
+        match &self.try_borrow().unwrap().expression {
+            ActiveExpression::BVConcrete(bvc) => bvc.value,
+            _ => panic!(),
         }
     }
 }

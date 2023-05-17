@@ -31,7 +31,7 @@ mod tests {
     #[allow(unused_must_use)]
     fn test_concrete() {
         simple_logger::SimpleLogger::new().env().init();
-        let scfia: Scfia<RV32iScfiaComposition> = Scfia::new();
+        let scfia: Scfia<RV32iScfiaComposition> = Scfia::new(None);
         let s1 = scfia.new_bv_concrete(42, 32, &mut None);
         let s2 = scfia.new_bv_concrete(41, 32, &mut None);
         let sub = scfia.new_bv_sub(s1, s2, 32, &mut None);

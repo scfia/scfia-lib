@@ -45,7 +45,9 @@ use z3_sys::Z3_mk_solver;
 use z3_sys::Z3_mk_true;
 use z3_sys::Z3_mk_unsigned_int64;
 use z3_sys::Z3_mk_zero_ext;
+use z3_sys::Z3_model_dec_ref;
 use z3_sys::Z3_model_eval;
+use z3_sys::Z3_model_inc_ref;
 use z3_sys::Z3_solver;
 use z3_sys::Z3_solver_assert;
 use z3_sys::Z3_solver_check_assumptions;
@@ -104,19 +106,19 @@ use crate::values::retired_value::RetiredValueWeak;
 
 #[derive(Clone)]
 pub struct Scfia<SC: ScfiaComposition> {
-    pub(crate) inner: Rc<RefCell<ScfiaInner<SC>>>,
+    pub inner: Rc<RefCell<ScfiaInner<SC>>>,
 }
 
 pub struct ScfiaInner<SC: ScfiaComposition> {
-    next_symbol_id: u64,
-    pub(crate) active_symbols: BTreeMap<u64, ActiveValueWeak<SC>>,
-    pub(crate) retired_symbols: BTreeMap<u64, RetiredValueWeak<SC>>,
+    pub next_symbol_id: u64,
+    pub active_symbols: BTreeMap<u64, ActiveValueWeak<SC>>,
+    pub retired_symbols: BTreeMap<u64, RetiredValueWeak<SC>>,
     pub(crate) z3_context: Z3_context,
     pub(crate) z3_solver: Z3_solver,
 }
 
 impl<SC: ScfiaComposition> Scfia<SC> {
-    pub fn new() -> Scfia<SC> {
+    pub fn new(next_symbol_id: Option<u64>) -> Scfia<SC> {
         unsafe {
             let z3_config = Z3_mk_config();
             let z3_context = Z3_mk_context_rc(z3_config);
@@ -125,7 +127,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             Z3_del_config(z3_config);
             Scfia {
                 inner: Rc::new(RefCell::new(ScfiaInner {
-                    next_symbol_id: 0,
+                    next_symbol_id: next_symbol_id.unwrap_or(0),
                     active_symbols: BTreeMap::new(),
                     retired_symbols: BTreeMap::new(),
                     z3_context,
@@ -152,13 +154,15 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             let neg_condition_symbol = self.new_bool_not(value.clone(), fork_sink);
             let neg_condition_ast = neg_condition_symbol.try_borrow().unwrap().z3_ast;
 
-            let selff = self.inner.try_borrow_mut().unwrap();
-            if Z3_solver_check_assumptions(selff.z3_context, selff.z3_solver, 1, &value.try_borrow().unwrap().z3_ast) != Z3_L_FALSE {
-                can_be_true = true
-            }
+            {
+                let selff = self.inner.try_borrow_mut().unwrap();
+                if Z3_solver_check_assumptions(selff.z3_context, selff.z3_solver, 1, &value.try_borrow().unwrap().z3_ast) != Z3_L_FALSE {
+                    can_be_true = true
+                }
 
-            if Z3_solver_check_assumptions(selff.z3_context, selff.z3_solver, 1, &neg_condition_ast) != Z3_L_FALSE {
-                can_be_false = true
+                if Z3_solver_check_assumptions(selff.z3_context, selff.z3_solver, 1, &neg_condition_ast) != Z3_L_FALSE {
+                    can_be_false = true
+                }
             }
 
             // warn!("{:?} {} {}", value, can_be_true, can_be_false);
@@ -166,6 +170,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
                 if let Some(fork_sink) = fork_sink {
                     fork_sink.fork(neg_condition_symbol.clone());
                     value.try_borrow_mut().unwrap().assert();
+                    warn!("FORK");
                     true
                 } else {
                     warn!("unexpected fork");
@@ -183,12 +188,12 @@ impl<SC: ScfiaComposition> Scfia<SC> {
 
     pub fn new_bool_eq(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
         let mut selff = self.inner.try_borrow_mut().unwrap();
-        selff.new_bool_eq(self.clone(), s1.clone(), s2.clone(), None, fork_sink)
+        selff.new_bool_eq(self.clone(), s1.clone(), s2.clone(), None, false, fork_sink)
     }
 
     pub fn new_bool_not(&self, s1: ActiveValue<SC>, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
         let mut selff = self.inner.try_borrow_mut().unwrap();
-        selff.new_bool_not(self.clone(), s1.clone(), None, fork_sink)
+        selff.new_bool_not(self.clone(), s1.clone(), None, false, fork_sink)
     }
 
     pub fn new_bool_signed_less_than(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
@@ -198,7 +203,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
 
     pub fn new_bool_unsigned_less_than(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
         let mut selff = self.inner.try_borrow_mut().unwrap();
-        selff.new_bool_unsigned_less_than(self.clone(), s1.clone(), s2.clone(), None, fork_sink)
+        selff.new_bool_unsigned_less_than(self.clone(), s1.clone(), s2.clone(), None, false, fork_sink)
     }
 
     pub fn new_bv_add(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
@@ -273,8 +278,9 @@ impl<SC: ScfiaComposition> Scfia<SC> {
 
     pub fn drop_active(&self, value: &ActiveValueInner<SC>) -> RetiredValue<SC> {
         let mut selff = self.inner.try_borrow_mut().unwrap();
-        debug!("dropping active {}", value.id);
+        trace!("dropping active {} from scfia {}", value.id, self.inner.as_ptr() as u64);
         assert!(selff.active_symbols.remove(&value.id).is_some());
+        debug_assert!(selff.retired_symbols.remove(&value.id).is_none());
 
         let retired_value = match &value.expression {
             ActiveExpression::BVConcrete(e) => selff.insert_retired(
@@ -474,8 +480,11 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         trace!("Retiring {:?}", value);
         for heir in &heirs {
             let mut heir_mut = heir.try_borrow_mut().unwrap();
+            assert!(Rc::ptr_eq(&heir_mut.scfia.inner, &value.scfia.inner));
+            trace!("... to {:?} ({:?})", heir_mut, heir_mut.inherited_asts);
             // Inherit
-            assert!(heir_mut.inherited_asts.insert(value.id, retired_value.clone()).is_none());
+            let old = heir_mut.inherited_asts.insert(value.id, retired_value.clone());
+            assert!(old.is_none());
 
             // Acquaint
             for other_heir in &heirs {
@@ -504,7 +513,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         unsafe {
             let selff = self.inner.try_borrow_mut().unwrap();
             match &mut value.expression {
-                ActiveExpression::BoolConcrete(e) => assert!(e.value),
+                // ActiveExpression::BoolConcrete(e) => assert!(e.value),
                 ActiveExpression::BoolNotExpression(e) => {
                     e.is_assert = true;
                     Z3_solver_assert(selff.z3_context, selff.z3_solver, value.z3_ast);
@@ -536,11 +545,12 @@ impl<SC: ScfiaComposition> Scfia<SC> {
 
             // Fill assumptions with known candidates
             let mut assumptions: Vec<Z3_ast> = vec![];
+            let mut eqs: Vec<Z3_ast> = vec![];
             for candidate in candidates.iter() {
-                let assumption = Z3_mk_not(
-                    selff.z3_context,
-                    Z3_mk_eq(selff.z3_context, Z3_mk_unsigned_int64(selff.z3_context, *candidate, sort), value.z3_ast),
-                );
+                let eq = Z3_mk_eq(selff.z3_context, Z3_mk_unsigned_int64(selff.z3_context, *candidate, sort), value.z3_ast);
+                Z3_inc_ref(selff.z3_context, eq);
+                eqs.push(eq);
+                let assumption = Z3_mk_not(selff.z3_context, eq);
                 Z3_inc_ref(selff.z3_context, assumption);
                 assumptions.push(assumption)
             }
@@ -552,34 +562,43 @@ impl<SC: ScfiaComposition> Scfia<SC> {
                     break;
                 }
 
-                let model = Z3_solver_get_model(selff.z3_context, selff.z3_solver);
+                let model = Z3_solver_get_model(selff.z3_context, selff.z3_solver); // TODO do we need to free this?
+                Z3_model_inc_ref(selff.z3_context, model);
 
-                let mut z3_ast: Z3_ast = ptr::null_mut();
-                assert!(Z3_model_eval(selff.z3_context, model, value.z3_ast, true, &mut z3_ast));
+                let mut z3_ast_result: Z3_ast = ptr::null_mut();
+                assert!(Z3_model_eval(selff.z3_context, model, value.z3_ast, true, &mut z3_ast_result));
 
-                let ast_kind = Z3_get_ast_kind(selff.z3_context, z3_ast);
+                let ast_kind = Z3_get_ast_kind(selff.z3_context, z3_ast_result);
                 let mut v: u64 = 0;
                 if ast_kind == AstKind::Numeral {
-                    let size = Z3_get_bv_sort_size(selff.z3_context, Z3_get_sort(selff.z3_context, z3_ast));
+                    let size = Z3_get_bv_sort_size(selff.z3_context, Z3_get_sort(selff.z3_context, z3_ast_result));
                     assert_eq!(32, size);
-                    assert!(Z3_get_numeral_uint64(selff.z3_context, z3_ast, &mut v));
+                    assert!(Z3_get_numeral_uint64(selff.z3_context, z3_ast_result, &mut v));
                 } else {
                     panic!("{:?}", ast_kind)
                 }
 
+                Z3_inc_ref(selff.z3_context, z3_ast_result);
+                Z3_dec_ref(selff.z3_context, z3_ast_result);
+
+                Z3_model_dec_ref(selff.z3_context, model);
+
                 warn!("WARNING: Unpredicted monomorphization candidate 0x{:x} ", v);
                 candidates.push(v);
 
+                let eq = Z3_mk_eq(selff.z3_context, Z3_mk_unsigned_int64(selff.z3_context, v, sort), value.z3_ast);
+                Z3_inc_ref(selff.z3_context, eq);
                 let assumption = Z3_mk_not(
                     selff.z3_context,
-                    Z3_mk_eq(selff.z3_context, Z3_mk_unsigned_int64(selff.z3_context, v, sort), value.z3_ast),
+                    eq,
                 );
                 Z3_inc_ref(selff.z3_context, assumption);
                 assumptions.push(assumption)
             }
 
-            for assumption in assumptions {
-                Z3_dec_ref(selff.z3_context, assumption);
+            for i in 0..assumptions.len() {
+                Z3_dec_ref(selff.z3_context, assumptions[i]);
+                Z3_dec_ref(selff.z3_context, eqs[i]);
             }
         }
     }
@@ -587,7 +606,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
 
 impl<SC: ScfiaComposition> Default for Scfia<SC> {
     fn default() -> Self {
-        Self::new()
+        Self::new(None)
     }
 }
 
@@ -607,6 +626,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         s1: ActiveValue<SC>,
         s2: ActiveValue<SC>,
         id: Option<u64>,
+        is_assert: bool,
         fork_sink: &mut Option<SC::ForkSink>,
     ) -> ActiveValue<SC> {
         unsafe {
@@ -636,11 +656,14 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
 
             let z3_ast = Z3_mk_eq(self.z3_context, s1.try_borrow().unwrap().z3_ast, s2.try_borrow().unwrap().z3_ast);
             Z3_inc_ref(self.z3_context, z3_ast);
+            if is_assert {
+                Z3_solver_assert(self.z3_context, self.z3_solver, z3_ast);
+            }
             self.insert_active(
                 ActiveExpression::BoolEqExpression(BoolEqExpression {
                     s1: s1.clone(),
                     s2: s2.clone(),
-                    is_assert: false,
+                    is_assert,
                 }),
                 z3_ast,
                 id,
@@ -650,7 +673,14 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         }
     }
 
-    pub fn new_bool_not(&mut self, self_rc: Scfia<SC>, s1: ActiveValue<SC>, id: Option<u64>, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
+    pub fn new_bool_not(
+        &mut self,
+        self_rc: Scfia<SC>,
+        s1: ActiveValue<SC>,
+        id: Option<u64>,
+        is_assert: bool,
+        fork_sink: &mut Option<SC::ForkSink>,
+    ) -> ActiveValue<SC> {
         unsafe {
             let s1_inner = s1.try_borrow().unwrap();
             assert!(Rc::ptr_eq(&s1_inner.scfia.inner, &self_rc.inner));
@@ -673,11 +703,11 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
 
             let z3_ast = Z3_mk_not(self.z3_context, s1.try_borrow().unwrap().z3_ast);
             Z3_inc_ref(self.z3_context, z3_ast);
+            if is_assert {
+                Z3_solver_assert(self.z3_context, self.z3_solver, z3_ast);
+            }
             self.insert_active(
-                ActiveExpression::BoolNotExpression(BoolNotExpression {
-                    s1: s1.clone(),
-                    is_assert: false,
-                }),
+                ActiveExpression::BoolNotExpression(BoolNotExpression { s1: s1.clone(), is_assert }),
                 z3_ast,
                 id,
                 self_rc,
@@ -731,6 +761,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         s1: ActiveValue<SC>,
         s2: ActiveValue<SC>,
         id: Option<u64>,
+        is_assert: bool,
         fork_sink: &mut Option<SC::ForkSink>,
     ) -> ActiveValue<SC> {
         unsafe {
@@ -750,11 +781,14 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
 
             let z3_ast = Z3_mk_bvult(self.z3_context, s1.try_borrow().unwrap().z3_ast, s2.try_borrow().unwrap().z3_ast);
             Z3_inc_ref(self.z3_context, z3_ast);
+            if is_assert {
+                Z3_solver_assert(self.z3_context, self.z3_solver, z3_ast);
+            }
             self.insert_active(
                 ActiveExpression::BoolUnsignedLessThanExpression(BoolUnsignedLessThanExpression {
                     s1: s1.clone(),
                     s2: s2.clone(),
-                    is_assert: false,
+                    is_assert,
                 }),
                 z3_ast,
                 id,
@@ -1089,7 +1123,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
             if let ActiveExpression::BVConcrete(s1) = &s1_inner.expression {
                 if let ActiveExpression::BVConcrete(s2) = &s2_inner.expression {
                     let one: u64 = 1;
-                    let mask = one.rotate_left(s2.width).overflowing_sub(1).0;
+                    let mask = one.rotate_left(s1.width).overflowing_sub(1).0;
                     let value = (s1.value << s2.value) & mask;
                     let sort = Z3_mk_bv_sort(self.z3_context, width);
                     let z3_ast = Z3_mk_unsigned_int64(self.z3_context, value, sort);
@@ -1098,7 +1132,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
                 }
             };
 
-            let shamt_ast = if width == shamt_width {
+            let shamt_ast = if width != shamt_width {
                 let ast = Z3_mk_zero_ext(self.z3_context, width - shamt_width, s2_inner.z3_ast);
                 Z3_inc_ref(self.z3_context, ast); //TODO decrement secondary ASTs
                 Some(ast)
@@ -1142,7 +1176,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
             if let ActiveExpression::BVConcrete(s1) = &s1_inner.expression {
                 if let ActiveExpression::BVConcrete(s2) = &s2_inner.expression {
                     let one: u64 = 1;
-                    let mask = one.rotate_left(s2.width).overflowing_sub(1).0;
+                    let mask = one.rotate_left(s1.width).overflowing_sub(1).0;
                     let value = (s1.value >> s2.value) & mask;
                     let sort = Z3_mk_bv_sort(self.z3_context, width);
                     let z3_ast = Z3_mk_unsigned_int64(self.z3_context, value, sort);
@@ -1151,7 +1185,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
                 }
             };
 
-            let shamt_ast = if width == shamt_width {
+            let shamt_ast = if width != shamt_width {
                 let ast = Z3_mk_zero_ext(self.z3_context, width - shamt_width, s2_inner.z3_ast);
                 Z3_inc_ref(self.z3_context, ast); //TODO decrement secondary ASTs
                 Some(ast)
@@ -1348,77 +1382,14 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
     }
 
     fn insert_retired(&mut self, expression: RetiredExpression<SC>, z3_ast: Z3_ast, id: u64, scfia: Scfia<SC>) -> RetiredValue<SC> {
+        if id == 20378 {
+            warn!("retiring 20378");
+        }
         let value = Rc::new(RefCell::new(RetiredValueInner { id, z3_ast, expression, scfia }));
         trace!("Creating new retired expression ({:?})", value.try_borrow().unwrap());
-        self.retired_symbols.insert(id, Rc::downgrade(&value));
+        let old = self.retired_symbols.insert(id, Rc::downgrade(&value));
+        debug_assert!(old.is_none());
         value
-    }
-
-    pub fn clone_values(&self) -> (Scfia<SC>, BTreeMap<u64, ActiveValue<SC>>) {
-        unsafe {
-            let z3_config = Z3_mk_config();
-            let z3_context = Z3_mk_context_rc(z3_config);
-            let z3_solver = Z3_mk_solver(z3_context);
-            Z3_solver_inc_ref(z3_context, z3_solver);
-            Z3_del_config(z3_config);
-            let mut cloned_actives = BTreeMap::new();
-            let cloned_scfia_rc = Scfia {
-                inner: Rc::new(RefCell::new(ScfiaInner {
-                    next_symbol_id: self.next_symbol_id,
-                    active_symbols: BTreeMap::new(),
-                    retired_symbols: BTreeMap::new(),
-                    z3_context,
-                    z3_solver,
-                })),
-            };
-            let mut cloned_scfia = cloned_scfia_rc.inner.try_borrow_mut().unwrap();
-
-            debug!("Cloning {} actives and {} retireds", self.active_symbols.len(), self.retired_symbols.len());
-            let mut active_iter = self.active_symbols.iter();
-            let mut retired_iter = self.retired_symbols.iter();
-            let mut next_active_option = active_iter.next();
-            let mut next_retired_option = retired_iter.next();
-
-            loop {
-                if let Some(next_active) = next_active_option {
-                    if let Some(next_retired) = next_retired_option {
-                        if next_active.0 < next_retired.0 {
-                            // Take active
-                            trace!("Cloning active {:?}", next_active.1.upgrade());
-                            let next_active_ref = next_active.1.upgrade().unwrap();
-                            let next_active_ref = next_active_ref.try_borrow().unwrap();
-                            let cloned_active = next_active_ref.clone_to(self, &mut cloned_scfia, cloned_scfia_rc.clone(), Some(*next_active.0));
-                            cloned_actives.insert(*next_active.0, cloned_active);
-                            next_active_option = active_iter.next();
-                        } else {
-                            // Take retired
-                            trace!("Cloning retired {:?}", next_retired.1.upgrade());
-                            next_retired_option = retired_iter.next();
-                            todo!()
-                        }
-                    } else {
-                        // Take active
-                        trace!("Cloning active {:?}", next_active.1.upgrade());
-                        let next_active_ref = next_active.1.upgrade().unwrap();
-                        let next_active_ref = next_active_ref.try_borrow().unwrap();
-                        let cloned_active = next_active_ref.clone_to(self, &mut cloned_scfia, cloned_scfia_rc.clone(), Some(*next_active.0));
-                        cloned_actives.insert(*next_active.0, cloned_active);
-                        next_active_option = active_iter.next();
-                    }
-                } else if let Some(next_retired) = next_retired_option {
-                    // Take retired
-                    trace!("Cloning retired {:?}", next_retired.1.upgrade());
-                    next_retired_option = retired_iter.next();
-                    todo!()
-                } else {
-                    break;
-                }
-            }
-            // warn!("{:?}", cloned_scfia.active_symbols.get(&5).unwrap().upgrade());
-            debug_assert_eq!(cloned_scfia.active_symbols.len(), self.active_symbols.len());
-
-            (cloned_scfia_rc.clone(), cloned_actives)
-        }
     }
 }
 
