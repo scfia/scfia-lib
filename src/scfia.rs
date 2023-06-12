@@ -4,12 +4,15 @@ use std::ptr;
 use std::rc::Rc;
 
 use log::debug;
+use log::error;
 use log::trace;
 use log::warn;
 
 use z3_sys::AstKind;
 use z3_sys::SortKind;
 use z3_sys::Z3_ast;
+use z3_sys::Z3_ast_vector_dec_ref;
+use z3_sys::Z3_ast_vector_inc_ref;
 use z3_sys::Z3_context;
 use z3_sys::Z3_dec_ref;
 use z3_sys::Z3_del_config;
@@ -52,6 +55,7 @@ use z3_sys::Z3_solver;
 use z3_sys::Z3_solver_assert;
 use z3_sys::Z3_solver_check_assumptions;
 use z3_sys::Z3_solver_get_model;
+use z3_sys::Z3_solver_get_unsat_core;
 use z3_sys::Z3_solver_inc_ref;
 use z3_sys::Z3_string;
 use z3_sys::Z3_L_FALSE;
@@ -198,7 +202,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
 
     pub fn new_bool_signed_less_than(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
         let mut selff = self.inner.try_borrow_mut().unwrap();
-        selff.new_bool_signed_less_than(self.clone(), s1.clone(), s2.clone(), None, fork_sink)
+        selff.new_bool_signed_less_than(self.clone(), s1.clone(), s2.clone(), None, false, fork_sink)
     }
 
     pub fn new_bool_unsigned_less_than(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
@@ -473,20 +477,23 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         for discovered_ast in value.discovered_asts.values() {
             let acquaintance = discovered_ast.upgrade().unwrap();
             let mut acquaintance_ref = acquaintance.try_borrow_mut().unwrap();
+            trace!("Adding acquaintance {} to heir list", acquaintance_ref.id);
             assert!(acquaintance_ref.discovered_asts.remove(&value.id).is_some());
-            heirs.push(discovered_ast.upgrade().unwrap())
+            heirs.push(acquaintance.clone())
         }
 
-        trace!("Retiring {:?}", value);
+        // For each heir...
         for heir in &heirs {
             let mut heir_mut = heir.try_borrow_mut().unwrap();
-            assert!(Rc::ptr_eq(&heir_mut.scfia.inner, &value.scfia.inner));
-            trace!("... to {:?} ({:?})", heir_mut, heir_mut.inherited_asts);
-            // Inherit
-            let old = heir_mut.inherited_asts.insert(value.id, retired_value.clone());
-            assert!(old.is_none());
+            debug_assert!(Rc::ptr_eq(&heir_mut.scfia.inner, &value.scfia.inner));
 
-            // Acquaint
+            // Inherit
+            //TODO concretes should not inherit
+            heir_mut.inherited_asts.insert(value.id, retired_value.clone());
+
+            //TODO pass on inherited values
+
+            // Acquaint all heirs
             for other_heir in &heirs {
                 if !Rc::ptr_eq(heir, other_heir) {
                     let mut other_heir_mut = other_heir.try_borrow_mut().unwrap();
@@ -513,7 +520,6 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         unsafe {
             let selff = self.inner.try_borrow_mut().unwrap();
             match &mut value.expression {
-                // ActiveExpression::BoolConcrete(e) => assert!(e.value),
                 ActiveExpression::BoolNotExpression(e) => {
                     e.is_assert = true;
                     Z3_solver_assert(selff.z3_context, selff.z3_solver, value.z3_ast);
@@ -540,16 +546,20 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         unsafe {
             let selff = self.inner.try_borrow_mut().unwrap();
             let sort = Z3_get_sort(selff.z3_context, value.z3_ast);
-            let sort_kind = Z3_get_sort_kind(selff.z3_context, sort);
-            assert_eq!(SortKind::BV, sort_kind);
 
             // Fill assumptions with known candidates
             let mut assumptions: Vec<Z3_ast> = vec![];
             let mut eqs: Vec<Z3_ast> = vec![];
+            let mut candidate_asts: Vec<Z3_ast> = vec![];
             for candidate in candidates.iter() {
-                let eq = Z3_mk_eq(selff.z3_context, Z3_mk_unsigned_int64(selff.z3_context, *candidate, sort), value.z3_ast);
+                let candidate_ast = Z3_mk_unsigned_int64(selff.z3_context, *candidate, sort);
+                Z3_inc_ref(selff.z3_context, candidate_ast);
+                candidate_asts.push(candidate_ast);
+
+                let eq = Z3_mk_eq(selff.z3_context, candidate_ast, value.z3_ast);
                 Z3_inc_ref(selff.z3_context, eq);
                 eqs.push(eq);
+
                 let assumption = Z3_mk_not(selff.z3_context, eq);
                 Z3_inc_ref(selff.z3_context, assumption);
                 assumptions.push(assumption)
@@ -562,36 +572,31 @@ impl<SC: ScfiaComposition> Scfia<SC> {
                     break;
                 }
 
-                let model = Z3_solver_get_model(selff.z3_context, selff.z3_solver); // TODO do we need to free this?
+                let model = Z3_solver_get_model(selff.z3_context, selff.z3_solver);
                 Z3_model_inc_ref(selff.z3_context, model);
 
                 let mut z3_ast_result: Z3_ast = ptr::null_mut();
                 assert!(Z3_model_eval(selff.z3_context, model, value.z3_ast, true, &mut z3_ast_result));
 
-                let ast_kind = Z3_get_ast_kind(selff.z3_context, z3_ast_result);
                 let mut v: u64 = 0;
-                if ast_kind == AstKind::Numeral {
-                    let size = Z3_get_bv_sort_size(selff.z3_context, Z3_get_sort(selff.z3_context, z3_ast_result));
-                    assert_eq!(32, size);
-                    assert!(Z3_get_numeral_uint64(selff.z3_context, z3_ast_result, &mut v));
-                } else {
-                    panic!("{:?}", ast_kind)
-                }
+                assert!(Z3_get_numeral_uint64(selff.z3_context, z3_ast_result, &mut v));
 
                 Z3_inc_ref(selff.z3_context, z3_ast_result);
                 Z3_dec_ref(selff.z3_context, z3_ast_result);
-
                 Z3_model_dec_ref(selff.z3_context, model);
 
                 warn!("WARNING: Unpredicted monomorphization candidate 0x{:x} ", v);
                 candidates.push(v);
 
-                let eq = Z3_mk_eq(selff.z3_context, Z3_mk_unsigned_int64(selff.z3_context, v, sort), value.z3_ast);
+                let candidate_ast = Z3_mk_unsigned_int64(selff.z3_context, v, sort);
+                Z3_inc_ref(selff.z3_context, candidate_ast);
+                candidate_asts.push(candidate_ast);
+
+                let eq = Z3_mk_eq(selff.z3_context, candidate_ast, value.z3_ast);
                 Z3_inc_ref(selff.z3_context, eq);
-                let assumption = Z3_mk_not(
-                    selff.z3_context,
-                    eq,
-                );
+                eqs.push(eq);
+
+                let assumption = Z3_mk_not(selff.z3_context,eq);
                 Z3_inc_ref(selff.z3_context, assumption);
                 assumptions.push(assumption)
             }
@@ -599,6 +604,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             for i in 0..assumptions.len() {
                 Z3_dec_ref(selff.z3_context, assumptions[i]);
                 Z3_dec_ref(selff.z3_context, eqs[i]);
+                Z3_dec_ref(selff.z3_context, candidate_asts[i]);
             }
         }
     }
@@ -722,6 +728,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         s1: ActiveValue<SC>,
         s2: ActiveValue<SC>,
         id: Option<u64>,
+        is_assert: bool,
         fork_sink: &mut Option<SC::ForkSink>,
     ) -> ActiveValue<SC> {
         unsafe {
@@ -741,11 +748,14 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
 
             let z3_ast = Z3_mk_bvslt(self.z3_context, s1.try_borrow().unwrap().z3_ast, s2.try_borrow().unwrap().z3_ast);
             Z3_inc_ref(self.z3_context, z3_ast);
+            if is_assert {
+                Z3_solver_assert(self.z3_context, self.z3_solver, z3_ast);
+            }
             self.insert_active(
                 ActiveExpression::BoolSignedLessThanExpression(BoolSignedLessThanExpression {
                     s1: s1.clone(),
                     s2: s2.clone(),
-                    is_assert: false,
+                    is_assert: is_assert,
                 }),
                 z3_ast,
                 id,
@@ -1054,6 +1064,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
                 ActiveExpression::BVSignExtendExpression(BVSignExtendExpression {
                     s1: s1.clone(),
                     width: output_width,
+                    input_width,
                 }),
                 z3_ast,
                 id,
@@ -1309,7 +1320,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         }
     }
 
-    fn new_bv_xor(
+    pub fn new_bv_xor(
         &mut self,
         self_rc: Scfia<SC>,
         s1: ActiveValue<SC>,

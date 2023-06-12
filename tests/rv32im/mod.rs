@@ -1,6 +1,6 @@
 mod constants;
 
-use std::fs;
+use std::{fs, thread};
 use std::time::Instant;
 
 use log::{debug, info, trace, warn, LevelFilter};
@@ -39,6 +39,14 @@ fn step_logging(rv32i_system_state: &mut RV32i, begin: &Instant) {
 
 #[test]
 fn test_system_state() {
+    let builder = thread::Builder::new().stack_size(4 * 1024 * 1024 * 1024);
+    let handler = builder
+        .spawn(test_system_state_inner)
+        .unwrap();
+    handler.join().unwrap();
+}
+
+fn test_system_state_inner() {
     simple_logger::SimpleLogger::new().with_level(LevelFilter::Debug).env().init().unwrap();
     let binary_blob = fs::read("./tests/rv32im/data/simple_router_risc_v").unwrap();
     let elf = ElfFile::new(&binary_blob).unwrap();
@@ -234,12 +242,15 @@ fn test_system_state() {
     while continuing.state.pc.to_u64() != 0x4 {
         assert!(continuing.state.pc.to_u64() != 0x508);
         debug!(
-            "({}ms) Executing 0x{:x} ({}, {})",
+            "({}ms) Executing 0x{:x} ({} active, {} retired)",
             begin.elapsed().as_millis(),
             continuing.state.pc.to_u64(),
             continuing.scfia.inner.try_borrow().unwrap().active_symbols.len(),
             continuing.scfia.inner.try_borrow().unwrap().retired_symbols.len(),
         );
+        if continuing.state.pc.to_u64() == 0x3bc {
+            warn!("a2 = {:x}",continuing.state.x12.to_u64());
+        }
         if continuing.state.pc.to_u64() == 0x3dc {
             continuing.step(Some(SymbolicHints {
                 hints: vec![INGRESS_RECEIVEQUEUE_DRIVER_POSITIONS.to_vec()],
@@ -249,8 +260,8 @@ fn test_system_state() {
         }
     }
 
-    //info!("[{}s] ### Cloning state to free some z3 memory", begin.elapsed().as_millis());
-    //continuing = continuing.clone();
+    info!("[{}s] ### Cloning state to free some z3 memory", begin.elapsed().as_millis());
+    continuing = continuing.clone_model();
 
     info!("[{}s] ### Stepping until NIC1 sendqueue queue_pfn check", begin.elapsed().as_millis());
     step_until(&mut continuing, 0x24, &begin);
@@ -263,42 +274,44 @@ fn test_system_state() {
     step_until(&mut panicking, 0x508, &begin);
 
     info!("[{}s] ### Stepping until NIC1 sendqueue queue_num_max 0 check", begin.elapsed().as_millis());
-    while continuing.state.pc.to_u64() != 0x30 {
-        print!("({}ms) ", begin.elapsed().as_millis());
-        continuing.step(None)
-    }
+    step_until(&mut continuing, 0x30, &begin);
 
     let mut successors = continuing.step_forking(None);
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
 
     info!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
-    while panicking.state.pc.to_u64() != 0x508 {
-        print!("({}ms) ", begin.elapsed().as_millis());
-        panicking.step(None)
-    }
+    step_until(&mut panicking, 0x508, &begin);
 
     info!("[{}s] ### Stepping until NIC1 sendqueue queue_num_max <1024 check", begin.elapsed().as_millis());
-    while continuing.state.pc.to_u64() != 0x38 {
-        print!("({}ms) ", begin.elapsed().as_millis());
-        continuing.step(None)
-    }
+    step_until(&mut continuing, 0x38, &begin);
 
     let mut successors = continuing.step_forking(None);
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
 
     info!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
-    while panicking.state.pc.to_u64() != 0x508 {
-        print!("({}ms) ", begin.elapsed().as_millis());
-        panicking.step(None)
-    }
+    step_until(&mut panicking, 0x508, &begin);
 
     info!("[{}s] ### Stepping until NIC2 receivequeue queue_pfn check", begin.elapsed().as_millis());
     while continuing.state.pc.to_u64() != 0x24 {
         assert!(continuing.state.pc.to_u64() != 0x508);
-        print!("({}ms) ", begin.elapsed().as_millis());
+        debug!(
+            "({}ms) Executing 0x{:x} ({} active, {} retired)",
+            begin.elapsed().as_millis(),
+            continuing.state.pc.to_u64(),
+            continuing.scfia.inner.try_borrow().unwrap().active_symbols.len(),
+            continuing.scfia.inner.try_borrow().unwrap().retired_symbols.len(),
+        );
+        if continuing.state.pc.to_u64() == 0x3bc {
+            warn!("a2 = {:x}",continuing.state.x12.to_u64());
+        }
         if continuing.state.pc.to_u64() == 0x3dc {
+            // This is the `write_volatile` in `advance`, where a descriptor's index is written to a position in the ring.
+
+            // This is producing unpredicted monomorphizations (e.g. 0x4640a80e)
+            // We *should* be writing to the ingress sendqueue's driver area (e.g. 0x4640_C004)
+            // But 0x4640_a80e is in the ingress sendqueue's descriptor area -.-
             continuing.step(Some(SymbolicHints {
                 hints: vec![INGRESS_SENDQUEUE_DRIVER_POSITIONS.to_vec()],
             }));
@@ -307,15 +320,15 @@ fn test_system_state() {
         }
     }
 
+
+
+
     let mut successors = continuing.step_forking(None);
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
 
     info!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
-    while panicking.state.pc.to_u64() != 0x508 {
-        print!("({}ms) ", begin.elapsed().as_millis());
-        panicking.step(None)
-    }
+    step_until(&mut panicking, 0x508, &begin);
 
     info!("[{}s] ### Stepping until NIC2 receivequeue queue_num_max 0 check", begin.elapsed().as_millis());
     while continuing.state.pc.to_u64() != 0x30 {
@@ -328,10 +341,7 @@ fn test_system_state() {
     let mut continuing = successors.remove(0);
 
     info!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
-    while panicking.state.pc.to_u64() != 0x508 {
-        print!("({}ms) ", begin.elapsed().as_millis());
-        panicking.step(None)
-    }
+    step_until(&mut panicking, 0x508, &begin);
 
     info!(
         "[{}s] ### Stepping until NIC2 receivequeue queue_num_max <1024 check",
@@ -347,10 +357,7 @@ fn test_system_state() {
     let mut continuing = successors.remove(0);
 
     info!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
-    while panicking.state.pc.to_u64() != 0x508 {
-        print!("({}ms) ", begin.elapsed().as_millis());
-        panicking.step(None)
-    }
+    step_until(&mut panicking, 0x508, &begin);
 
     info!("[{}s] ### Stepping until NIC2 sendqueue configure_virtqueue", begin.elapsed().as_millis());
     while continuing.state.pc.to_u64() != 0x4 {
@@ -364,8 +371,8 @@ fn test_system_state() {
         }
     }
 
-    //info!("[{}s] ### Cloning state to free some z3 memory", begin.elapsed().as_millis());
-    //continuing = continuing.clone();
+    info!("[{}s] ### Cloning state to free some z3 memory", begin.elapsed().as_millis());
+    continuing = continuing.clone_model();
 
     info!("[{}s] ### Stepping until NIC2 sendqueue queue_pfn check", begin.elapsed().as_millis());
     print!("({}ms) ", begin.elapsed().as_millis());
@@ -379,10 +386,7 @@ fn test_system_state() {
     let mut continuing = successors.remove(0);
 
     info!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
-    while panicking.state.pc.to_u64() != 0x508 {
-        print!("({}ms) ", begin.elapsed().as_millis());
-        panicking.step(None)
-    }
+    step_until(&mut panicking, 0x508, &begin);
 
     info!("[{}s] ### Stepping until NIC2 sendqueue queue_num_max 0 check", begin.elapsed().as_millis());
     while continuing.state.pc.to_u64() != 0x30 {
@@ -395,10 +399,7 @@ fn test_system_state() {
     let mut continuing = successors.remove(0);
 
     info!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
-    while panicking.state.pc.to_u64() != 0x508 {
-        print!("({}ms) ", begin.elapsed().as_millis());
-        panicking.step(None)
-    }
+    step_until(&mut panicking, 0x508, &begin);
 
     info!("[{}s] ### Stepping until NIC2 sendqueue queue_num_max <1024 check", begin.elapsed().as_millis());
     while continuing.state.pc.to_u64() != 0x38 {
@@ -411,10 +412,7 @@ fn test_system_state() {
     let mut continuing = successors.remove(0);
 
     info!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
-    while panicking.state.pc.to_u64() != 0x508 {
-        print!("({}ms) ", begin.elapsed().as_millis());
-        panicking.step(None)
-    }
+    step_until(&mut panicking, 0x508, &begin);
 
     info!("[{}s] ### Stepping until start of main loop", begin.elapsed().as_millis());
     while continuing.state.pc.to_u64() != START_OF_MAIN_LOOP {

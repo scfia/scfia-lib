@@ -123,7 +123,7 @@ impl RV32i {
         unsafe {
             let own_scfia = self.scfia.inner.try_borrow().unwrap();
             let cloned_scfia_rc: Scfia<RV32iScfiaComposition> = Scfia::new(Some(own_scfia.next_symbol_id));
-            debug!("cloned scfia {} to {}", self.scfia.inner.as_ptr() as u64, cloned_scfia_rc.inner.as_ptr() as u64);
+            debug!("cloning scfia {} to {}", self.scfia.inner.as_ptr() as u64, cloned_scfia_rc.inner.as_ptr() as u64);
             RV32i {
                 state: self.state.clone_to_stdlib(cloned_scfia_rc.clone()),
                 memory: self.memory.clone_to_stdlib(cloned_scfia_rc.clone()),

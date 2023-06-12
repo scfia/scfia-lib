@@ -8,6 +8,7 @@ use super::active_value::{ActiveValue, ActiveValueWeak};
 pub struct BVSignExtendExpression<SC: ScfiaComposition> {
     pub s1: ActiveValue<SC>,
     pub width: u32,
+    pub input_width: u32,
 }
 
 pub struct RetiredBVSignExtendExpression<SC: ScfiaComposition> {

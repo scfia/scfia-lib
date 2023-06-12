@@ -2,8 +2,8 @@ pub mod regions;
 
 use log::{debug, error, trace};
 use z3_sys::{
-    Z3_dec_ref, Z3_inc_ref, Z3_mk_bv_sort, Z3_mk_bvadd, Z3_mk_bvuge, Z3_mk_bvult, Z3_mk_eq, Z3_mk_not, Z3_mk_or, Z3_mk_unsigned_int64,
-    Z3_solver_check_assumptions, Z3_L_FALSE,
+    Z3_ast_vector_dec_ref, Z3_ast_vector_inc_ref, Z3_dec_ref, Z3_inc_ref, Z3_mk_bv_sort, Z3_mk_bvadd, Z3_mk_bvuge, Z3_mk_bvult, Z3_mk_eq, Z3_mk_not, Z3_mk_or,
+    Z3_mk_unsigned_int64, Z3_model_dec_ref, Z3_model_inc_ref, Z3_solver_check_assumptions, Z3_solver_get_model, Z3_solver_get_unsat_core, Z3_L_FALSE,
 };
 
 use crate::{
@@ -135,6 +135,7 @@ impl<SC: ScfiaComposition> Memory<SC> {
 
     fn write_symbolic(&mut self, address: &ActiveValueInner<SC>, _value: ActiveValue<SC>, width: u32, scfia: Scfia<SC>, hints: &mut Option<SymbolicHints>) {
         unsafe {
+            debug!("write_symbolic");
             // Symbolic writes can be symbolic volatile region writes or unanimous writes
             let z3_context = scfia.inner.try_borrow().unwrap().z3_context;
             let z3_solver = scfia.inner.try_borrow().unwrap().z3_solver;
@@ -160,6 +161,14 @@ impl<SC: ScfiaComposition> Memory<SC> {
                 if check_result == Z3_L_FALSE {
                     // If the address CAN NOT be outside the symbolic volatile region, we can skip the write
                     debug!("Symbolic offset write covered");
+                    let z3_ast_vector = Z3_solver_get_unsat_core(z3_context, z3_solver);
+                    Z3_ast_vector_inc_ref(z3_context, z3_ast_vector);
+                    Z3_ast_vector_dec_ref(z3_context, z3_ast_vector);
+
+                    Z3_dec_ref(z3_context, assumption);
+                    Z3_dec_ref(z3_context, ge);
+                    Z3_dec_ref(z3_context, add_ast);
+                    Z3_dec_ref(z3_context, lt);
                     return;
                 }
 
@@ -177,7 +186,8 @@ impl<SC: ScfiaComposition> Memory<SC> {
                 // unanimous concrete write
                 todo!()
             } else if self.is_volatile(&candidates, width) {
-                // irrelevant write, all candidates point to volatile memory
+                // Irrelevant write, all candidates point to volatile memory
+                debug!("Irrelevant write covered");
             } else {
                 panic!("Symbolic write is neither unanimous nor irrelevant{:x?}", candidates)
             }
@@ -238,7 +248,8 @@ impl<SC: ScfiaComposition> Memory<SC> {
         for candidate in candidates {
             let mut covered = false;
             for volatile_region in &self.volatiles {
-                if *candidate >= volatile_region.start_address && *candidate < volatile_region.start_address + volatile_region.length { // TODO width
+                if *candidate >= volatile_region.start_address && *candidate < volatile_region.start_address + volatile_region.length {
+                    // TODO width
                     covered = true;
                     break;
                 }

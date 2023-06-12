@@ -174,26 +174,76 @@ impl<SC: ScfiaComposition> ActiveValueInner<SC> {
                 let s1 = e.s1.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_scfia_rc.clone());
                 cloned_scfia.new_bool_not(cloned_scfia_rc, s1, Some(self.id), e.is_assert, &mut None)
             },
-            ActiveExpression::BoolSignedLessThanExpression(_) => todo!(),
-            ActiveExpression::BoolUnsignedLessThanExpression(e) => {
+            ActiveExpression::BoolSignedLessThanExpression(e) => {
                 let s1 = e.s1.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_scfia_rc.clone());
                 let s2 = e.s2.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_scfia_rc.clone());
+                cloned_scfia.new_bool_signed_less_than(cloned_scfia_rc, s1, s2, Some(self.id), e.is_assert, &mut None)
+            },
+            ActiveExpression::BoolUnsignedLessThanExpression(e) => {
+                let s1 = e.s1.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_scfia_rc.clone());
+                let s2: Rc<RefCell<ActiveValueInner<SC>>> = e.s2.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_scfia_rc.clone());
                 cloned_scfia.new_bool_unsigned_less_than(cloned_scfia_rc, s1, s2, Some(self.id), e.is_assert, &mut None)
             },
-            ActiveExpression::BVAddExpression(_) => todo!(),
-            ActiveExpression::BVAndExpression(_) => todo!(),
-            ActiveExpression::BVConcatExpression(_) => todo!(),
+            ActiveExpression::BVAddExpression(e) => {
+                let s1 = e.s1.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_scfia_rc.clone());
+                let s2 = e.s2.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_scfia_rc.clone());
+                cloned_scfia.new_bv_add(cloned_scfia_rc, s1, s2, e.width, Some(self.id), &mut None)
+            },
+            ActiveExpression::BVAndExpression(e) => {
+                let s1 = e.s1.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_scfia_rc.clone());
+                let s2 = e.s2.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_scfia_rc.clone());
+                cloned_scfia.new_bv_and(cloned_scfia_rc, s1, s2, e.width, Some(self.id), &mut None)
+            },
+            ActiveExpression::BVConcatExpression(e) => {
+                let s1 = e.s1.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_scfia_rc.clone());
+                let s2 = e.s2.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_scfia_rc.clone());
+                cloned_scfia.new_bv_concat(cloned_scfia_rc, s1, s2, e.width, Some(self.id), &mut None)
+            },
             ActiveExpression::BVConcrete(e) => cloned_scfia.new_bv_concrete(cloned_scfia_rc, e.value, e.width, Some(self.id), &mut None),
-            ActiveExpression::BVMultiplyExpression(_) => todo!(),
-            ActiveExpression::BVOrExpression(_) => todo!(),
-            ActiveExpression::BVSignExtendExpression(_) => todo!(),
-            ActiveExpression::BVSliceExpression(_) => todo!(),
-            ActiveExpression::BVSllExpression(_) => todo!(),
-            ActiveExpression::BVSrlExpression(_) => todo!(),
-            ActiveExpression::BVSubExpression(_) => todo!(),
+            ActiveExpression::BVMultiplyExpression(e) => {
+                let s1 = e.s1.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_scfia_rc.clone());
+                let s2 = e.s2.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_scfia_rc.clone());
+                cloned_scfia.new_bv_multiply(cloned_scfia_rc, s1, s2, e.width, Some(self.id), &mut None)
+            },
+            ActiveExpression::BVOrExpression(e) => {
+                let s1 = e.s1.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_scfia_rc.clone());
+                let s2 = e.s2.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_scfia_rc.clone());
+                cloned_scfia.new_bv_or(cloned_scfia_rc, s1, s2, e.width, Some(self.id), &mut None)
+            },
+            ActiveExpression::BVSignExtendExpression(e) => {
+                let s1 = e.s1.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_scfia_rc.clone());
+                cloned_scfia.new_bv_sign_extend(cloned_scfia_rc, s1, e.input_width, e.width,Some(self.id), &mut None)
+            },
+            ActiveExpression::BVSliceExpression(e) => {
+                let s1 = e.s1.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_scfia_rc.clone());
+                cloned_scfia.new_bv_slice(cloned_scfia_rc, s1, e.high, e.low, Some(self.id), &mut None)
+            },
+            ActiveExpression::BVSllExpression(e) => {
+                let s1 = e.s1.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_scfia_rc.clone());
+                let s2 = e.s2.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_scfia_rc.clone());
+                cloned_scfia.new_bv_sll(cloned_scfia_rc, s1, s2, e.width, e.shamt_width, Some(self.id), &mut None)
+            },
+            ActiveExpression::BVSrlExpression(e) => {
+                let s1 = e.s1.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_scfia_rc.clone());
+                let s2 = e.s2.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_scfia_rc.clone());
+                cloned_scfia.new_bv_srl(cloned_scfia_rc, s1, s2, e.width, e.shamt, Some(self.id), &mut None)
+            },
+            ActiveExpression::BVSubExpression(e) => {
+                let s1 = e.s1.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_scfia_rc.clone());
+                let s2 = e.s2.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_scfia_rc.clone());
+                cloned_scfia.new_bv_sub(cloned_scfia_rc, s1, s2, e.width, Some(self.id), &mut None)
+            },
             ActiveExpression::BVSymbol(e) => cloned_scfia.new_bv_symbol(cloned_scfia_rc, e.width, Some(self.id), &mut None),
-            ActiveExpression::BVUnsignedRemainderExpression(_) => todo!(),
-            ActiveExpression::BVXorExpression(_) => todo!(),
+            ActiveExpression::BVUnsignedRemainderExpression(e) => {
+                let s1 = e.s1.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_scfia_rc.clone());
+                let s2 = e.s2.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_scfia_rc.clone());
+                cloned_scfia.new_bv_unsigned_remainder(cloned_scfia_rc, s1, s2, e.width, Some(self.id), &mut None)
+            },
+            ActiveExpression::BVXorExpression(e) => {
+                let s1 = e.s1.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_scfia_rc.clone());
+                let s2 = e.s2.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_scfia_rc.clone());
+                cloned_scfia.new_bv_xor(cloned_scfia_rc, s1, s2, e.width, Some(self.id), &mut None)
+            },
         };
         // TODO fix relations
         cloned_value
