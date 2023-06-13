@@ -267,6 +267,8 @@ impl<SC: ScfiaComposition> Debug for ActiveExpression<SC> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ActiveExpression::BVConcrete(e) => e.fmt(f),
+            _ => Ok(()),
+            /*
             ActiveExpression::BVSymbol(e) => e.fmt(f),
             ActiveExpression::BVAddExpression(e) => e.fmt(f),
             ActiveExpression::BoolConcrete(e) => e.fmt(f),
@@ -285,6 +287,7 @@ impl<SC: ScfiaComposition> Debug for ActiveExpression<SC> {
             ActiveExpression::BVSubExpression(e) => e.fmt(f),
             ActiveExpression::BVUnsignedRemainderExpression(e) => e.fmt(f),
             ActiveExpression::BVXorExpression(e) => e.fmt(f),
+            */
         }
     }
 }

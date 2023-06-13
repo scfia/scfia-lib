@@ -65,7 +65,7 @@ impl<SC: ScfiaComposition> StableMemoryRegion<SC> {
             value = scfia.new_bv_concat(rhs, value, width - (byte_values.len() * 8) as u32, fork_sink);
         }
 
-        trace!("? = *{:x} ({:?})", address, value);
+        debug!("? = *{:x} ({:?})", address, value);
 
         value
     }
@@ -74,7 +74,7 @@ impl<SC: ScfiaComposition> StableMemoryRegion<SC> {
         let bytes = width / 8;
         for byte in 0..bytes {
             let v = scfia.new_bv_slice(value.clone(), (byte * 8) + 7, byte * 8, fork_sink);
-            trace!("*{:x} = {:?}", address, v);
+            debug!("*{:x} = {:?}", address, v);
             self.memory.insert(address + byte as u64, v);
         }
     }

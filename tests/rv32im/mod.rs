@@ -249,7 +249,13 @@ fn test_system_state_inner() {
             continuing.scfia.inner.try_borrow().unwrap().retired_symbols.len(),
         );
         if continuing.state.pc.to_u64() == 0x3bc {
-            warn!("a2 = {:x}",continuing.state.x12.to_u64());
+            warn!("#### a2 = {:x}",continuing.state.x12.to_u64());
+        }
+        if continuing.state.pc.to_u64() == 0x24c {
+            warn!("#### pushing a7 = {:x}",continuing.state.x17.to_u64());
+        }
+        if continuing.state.pc.to_u64() == 0x224 {
+            warn!("#### new a7 = {:x}",continuing.state.x17.to_u64());
         }
         if continuing.state.pc.to_u64() == 0x3dc {
             continuing.step(Some(SymbolicHints {
@@ -304,13 +310,19 @@ fn test_system_state_inner() {
             continuing.scfia.inner.try_borrow().unwrap().retired_symbols.len(),
         );
         if continuing.state.pc.to_u64() == 0x3bc {
-            warn!("a2 = {:x}",continuing.state.x12.to_u64());
+            warn!("#### a2 = {:x}",continuing.state.x12.to_u64());
+        }
+        if continuing.state.pc.to_u64() == 0x24c {
+            warn!("#### pushing a7 = {:x}",continuing.state.x17.to_u64());
+        }
+        if continuing.state.pc.to_u64() == 0x224 {
+            warn!("#### new a7 = {:x}",continuing.state.x17.to_u64());
         }
         if continuing.state.pc.to_u64() == 0x3dc {
             // This is the `write_volatile` in `advance`, where a descriptor's index is written to a position in the ring.
 
-            // This is producing unpredicted monomorphizations (e.g. 0x4640a80e)
-            // We *should* be writing to the ingress sendqueue's driver area (e.g. 0x4640_C004)
+            // This is producing unpredicted monomorphizations (e.g. 0x4640_a80e)
+            // We *should* be writing to the ingress sendqueue's driver area (e.g. 0x4640_c004)
             // But 0x4640_a80e is in the ingress sendqueue's descriptor area -.-
             continuing.step(Some(SymbolicHints {
                 hints: vec![INGRESS_SENDQUEUE_DRIVER_POSITIONS.to_vec()],
