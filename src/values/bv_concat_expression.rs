@@ -32,10 +32,10 @@ mod tests {
     fn test_concrete_concat() {
         simple_logger::SimpleLogger::new().env().init();
         let scfia: Scfia<RV32iScfiaComposition> = Scfia::new(None);
-        let s1 = scfia.new_bv_concrete(1, 32, &mut None);
+        let s1 = scfia.new_bv_concrete(0x10, 32, &mut None);
         let s2 = scfia.new_bv_concrete(2, 32, &mut None);
         let concat = scfia.new_bv_concat(s1, s2, 64, &mut None);
-        assert_eq!(concat.try_borrow().unwrap().try_as_concrete_bv().unwrap(), 0x100000002);
+        assert_eq!(concat.try_borrow().unwrap().try_as_concrete_bv().unwrap(), 0x10_00000002);
 
         let s1 = scfia.new_bv_concrete(0b01, 2, &mut None);
         let s2 = scfia.new_bv_concrete(0b10, 2, &mut None);

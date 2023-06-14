@@ -36,6 +36,16 @@ mod tests {
         let s2 = scfia.new_bv_concrete(0b11110101, 8, &mut None);
         let xor = scfia.new_bv_xor(s1, s2, 8, &mut None);
         assert_eq!(xor.try_borrow().unwrap().try_as_concrete_bv().unwrap(), 0b10100000);
+
+        let s1 = scfia.new_bv_concrete(u32::MAX as u64, 32, &mut None);
+        let s2 = scfia.new_bv_concrete(0b1010_10101010, 32, &mut None);
+        let xor = scfia.new_bv_xor(s1, s2, 32, &mut None);
+        assert_eq!(xor.try_borrow().unwrap().try_as_concrete_bv().unwrap(), !0b1010_10101010 as u32 as u64);
+
+        let s1 = scfia.new_bv_concrete(u32::MAX as u64, 32, &mut None);
+        let s2 = scfia.new_bv_concrete(u32::MAX as u64, 32, &mut None);
+        let xor = scfia.new_bv_xor(s1, s2, 32, &mut None);
+        assert_eq!(xor.try_borrow().unwrap().try_as_concrete_bv().unwrap(), u32::MIN as u64);
     }
     //TODO test
 }

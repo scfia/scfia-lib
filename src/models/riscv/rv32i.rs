@@ -413,7 +413,7 @@ unsafe fn _step(state: *mut SystemState, context: *mut StepContext<RV32iScfiaCom
             _register_write_BV32(state, rd.clone(), value.clone(), context);
             _progress_pc_4(state, context);
         } else {
-            unimplemented!();
+            unimplemented!("unsupported func3 {:x?}", funct3);
         }
     } else if (*context).scfia.check_condition(
         (*context).scfia.new_bool_eq(
@@ -611,7 +611,7 @@ unsafe fn _step(state: *mut SystemState, context: *mut StepContext<RV32iScfiaCom
             let result: ActiveValue<RV32iScfiaComposition> =
                 (*context)
                     .scfia
-                    .new_bv_add(_register_read_BV32(state, rs1.clone(), context), imm_32.clone(), 32, &mut (*context).fork_sink);
+                    .new_bv_and(_register_read_BV32(state, rs1.clone(), context), imm_32.clone(), 32, &mut (*context).fork_sink);
             _register_write_BV32(state, rd.clone(), result.clone(), context);
             _progress_pc_4(state, context);
         } else {
@@ -1017,7 +1017,7 @@ unsafe fn _step(state: *mut SystemState, context: *mut StepContext<RV32iScfiaCom
                 ),
                 &mut (*context).fork_sink,
             ) {
-                let result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(
+                let result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_and(
                     _register_read_BV32(state, rs1.clone(), context),
                     _register_read_BV32(state, rs2.clone(), context),
                     32,

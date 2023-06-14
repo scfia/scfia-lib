@@ -542,7 +542,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
     }
 
     // TODO check refcounting
-    pub(crate) fn monomorphize_active(&self, value: &ActiveValueInner<SC>, candidates: &mut Vec<u64>) {
+    pub fn monomorphize_active(&self, value: &ActiveValueInner<SC>, candidates: &mut Vec<u64>) {
         unsafe {
             let selff = self.inner.try_borrow_mut().unwrap();
             let sort = Z3_get_sort(selff.z3_context, value.z3_ast);
@@ -826,7 +826,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
             if let ActiveExpression::BVConcrete(s1) = &s1_inner.expression {
                 if let ActiveExpression::BVConcrete(s2) = &s2_inner.expression {
                     let one: u64 = 1;
-                    let mask = one.rotate_left(s2.width).overflowing_sub(1).0;
+                    let mask = one.rotate_left(s2.width).overflowing_sub(1).0; // TODO is rotate_left the right choice here?
                     let sum = s1.value.overflowing_add(s2.value).0;
                     let value = mask & sum;
                     let sort = Z3_mk_bv_sort(self.z3_context, width);

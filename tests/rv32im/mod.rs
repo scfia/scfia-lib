@@ -1,5 +1,7 @@
 mod constants;
 
+use std::collections::HashMap;
+use std::hash::Hash;
 use std::{fs, thread};
 use std::time::Instant;
 
@@ -25,16 +27,46 @@ use crate::rv32im::constants::{
     INGRESS_RECEIVEQUEUE_DRIVER_POSITIONS, INGRESS_SENDQUEUE_DRIVER_POSITIONS, START_OF_MAIN_LOOP,
 };
 
-fn step_until(rv32i_system_state: &mut RV32i, address: u64, begin: &Instant) {
-    while rv32i_system_state.state.pc.to_u64() != address {
-        assert!(rv32i_system_state.state.pc.to_u64() != 0x508);
-        step_logging(rv32i_system_state, begin);
+pub struct StepContext<'a> {
+    hints: &'a [(u64, &'a [u64])],
+}
+
+impl<'a> StepContext<'a> {
+    fn new(hints: &'a [(u64, &'a [u64])]) -> Self {
+        StepContext {
+            hints,
+        }
     }
 }
 
-fn step_logging(rv32i_system_state: &mut RV32i, begin: &Instant) {
-    debug!("({}ms) Executing 0x{:x}", begin.elapsed().as_millis(), rv32i_system_state.state.pc.to_u64());
-    rv32i_system_state.step(None);
+fn step_until(rv32i_system_state: &mut RV32i, address: u64, begin: &Instant) {
+    while rv32i_system_state.state.pc.to_u64() != address {
+        assert!(rv32i_system_state.state.pc.to_u64() != 0x508);
+        debug!("({}ms) Executing {:#x}", begin.elapsed().as_millis(), rv32i_system_state.state.pc.to_u64());
+        rv32i_system_state.step(None);
+    }
+}
+
+fn step_until_hinted(rv32i_system_state: &mut RV32i, address: u64, begin: &Instant, context: &StepContext) {
+    let mut pc = rv32i_system_state.state.pc.to_u64();
+    while pc != address {
+        debug!("({}ms) Executing {:#x}", begin.elapsed().as_millis(), pc);
+        let mut found_hint = None;
+        for (hint_address, hint) in context.hints {
+            if address == address {
+                found_hint = Some(hint);
+                break;
+            }
+        }
+        if let Some(hints) = found_hint {
+            rv32i_system_state.step(Some(SymbolicHints {
+                hints: vec![hints.to_vec()],
+            }));
+        } else {
+            rv32i_system_state.step(None);
+        }
+        pc = rv32i_system_state.state.pc.to_u64();
+    }
 }
 
 #[test]
@@ -44,6 +76,40 @@ fn test_system_state() {
         .spawn(test_system_state_inner)
         .unwrap();
     handler.join().unwrap();
+}
+
+fn dump_regs(state: &RV32i) {
+    println!("x1  = {:x?}", state.state.x1);
+    println!("x2  = {:x?}", state.state.x2);
+    println!("x3  = {:x?}", state.state.x3);
+    println!("x4  = {:x?}", state.state.x4);
+    println!("x5  = {:x?}", state.state.x5);
+    println!("x6  = {:x?}", state.state.x6);
+    println!("x7  = {:x?}", state.state.x7);
+    println!("x8  = {:x?}", state.state.x8);
+    println!("x9  = {:x?}", state.state.x9);
+    println!("x10 = {:x?}", state.state.x10);
+    println!("x11 = {:x?}", state.state.x11);
+    println!("x12 = {:x?}", state.state.x12);
+    println!("x13 = {:x?}", state.state.x13);
+    println!("x14 = {:x?}", state.state.x14);
+    println!("x15 = {:x?}", state.state.x15);
+    println!("x16 = {:x?}", state.state.x16);
+    println!("x17 = {:x?}", state.state.x17);
+    println!("x18 = {:x?}", state.state.x18);
+    println!("x19 = {:x?}", state.state.x19);
+    println!("x20 = {:x?}", state.state.x20);
+    println!("x21 = {:x?}", state.state.x21);
+    println!("x22 = {:x?}", state.state.x22);
+    println!("x23 = {:x?}", state.state.x23);
+    println!("x24 = {:x?}", state.state.x24);
+    println!("x25 = {:x?}", state.state.x25);
+    println!("x26 = {:x?}", state.state.x26);
+    println!("x27 = {:x?}", state.state.x27);
+    println!("x28 = {:x?}", state.state.x28);
+    println!("x29 = {:x?}", state.state.x29);
+    println!("x30 = {:x?}", state.state.x30);
+    println!("x31 = {:x?}", state.state.x31);
 }
 
 fn test_system_state_inner() {
@@ -212,262 +278,152 @@ fn test_system_state_inner() {
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
 
-    info!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
+    info!("({}ms) Stepping panic until loop", begin.elapsed().as_millis());
     step_until(&mut panicking, 0x508, &begin);
 
-    info!("[{}s] ### Stepping until NIC1 receivequeue queue_num_max 0 check", begin.elapsed().as_millis());
+    info!("({}ms) Stepping until NIC1 receivequeue queue_num_max 0 check", begin.elapsed().as_millis());
     step_until(&mut continuing, 0x30, &begin);
 
     let mut successors = continuing.step_forking(None);
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
 
-    info!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
+    info!("({}ms) Stepping panic until loop", begin.elapsed().as_millis());
     step_until(&mut panicking, 0x508, &begin);
 
-    info!(
-        "[{}s] ### Stepping until NIC1 receivequeue queue_num_max <1024 check",
-        begin.elapsed().as_millis()
-    );
+    info!("({}ms) Stepping until NIC1 receivequeue queue_num_max <1024 check", begin.elapsed().as_millis());
     step_until(&mut continuing, 0x38, &begin);
 
     let mut successors = continuing.step_forking(None);
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
 
-    info!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
+    info!("({}ms) Stepping panic until loop", begin.elapsed().as_millis());
     step_until(&mut panicking, 0x508, &begin);
 
-    info!("[{}s] ### Stepping until NIC1 sendqueue configure_virtqueue", begin.elapsed().as_millis());
-    while continuing.state.pc.to_u64() != 0x4 {
-        assert!(continuing.state.pc.to_u64() != 0x508);
-        debug!(
-            "({}ms) Executing 0x{:x} ({} active, {} retired)",
-            begin.elapsed().as_millis(),
-            continuing.state.pc.to_u64(),
-            continuing.scfia.inner.try_borrow().unwrap().active_symbols.len(),
-            continuing.scfia.inner.try_borrow().unwrap().retired_symbols.len(),
-        );
-        if continuing.state.pc.to_u64() == 0x3bc {
-            warn!("#### a2 = {:x}",continuing.state.x12.to_u64());
-        }
-        if continuing.state.pc.to_u64() == 0x24c {
-            warn!("#### pushing a7 = {:x}",continuing.state.x17.to_u64());
-        }
-        if continuing.state.pc.to_u64() == 0x224 {
-            warn!("#### new a7 = {:x}",continuing.state.x17.to_u64());
-        }
-        if continuing.state.pc.to_u64() == 0x3dc {
-            continuing.step(Some(SymbolicHints {
-                hints: vec![INGRESS_RECEIVEQUEUE_DRIVER_POSITIONS.to_vec()],
-            }));
-        } else {
-            continuing.step(None);
-        }
-    }
+    info!("({}ms) Stepping until NIC1 sendqueue configure_virtqueue", begin.elapsed().as_millis());
+    step_until_hinted(&mut continuing, 0x04, &begin, &StepContext { hints: &[(0x3dc, &INGRESS_RECEIVEQUEUE_DRIVER_POSITIONS)] });
 
-    info!("[{}s] ### Cloning state to free some z3 memory", begin.elapsed().as_millis());
+    info!("({}ms) Cloning state to free some z3 memory", begin.elapsed().as_millis());
     continuing = continuing.clone_model();
 
-    info!("[{}s] ### Stepping until NIC1 sendqueue queue_pfn check", begin.elapsed().as_millis());
+    info!("({}ms) Stepping until NIC1 sendqueue queue_pfn check", begin.elapsed().as_millis());
     step_until(&mut continuing, 0x24, &begin);
 
     let mut successors = continuing.step_forking(None);
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
 
-    info!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
+    info!("({}ms) Stepping panic until loop", begin.elapsed().as_millis());
     step_until(&mut panicking, 0x508, &begin);
 
-    info!("[{}s] ### Stepping until NIC1 sendqueue queue_num_max 0 check", begin.elapsed().as_millis());
+    info!("({}ms) Stepping until NIC1 sendqueue queue_num_max 0 check", begin.elapsed().as_millis());
     step_until(&mut continuing, 0x30, &begin);
 
     let mut successors = continuing.step_forking(None);
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
 
-    info!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
+    info!("({}ms) Stepping panic until loop", begin.elapsed().as_millis());
     step_until(&mut panicking, 0x508, &begin);
 
-    info!("[{}s] ### Stepping until NIC1 sendqueue queue_num_max <1024 check", begin.elapsed().as_millis());
+    info!("({}ms) Stepping until NIC1 sendqueue queue_num_max <1024 check", begin.elapsed().as_millis());
     step_until(&mut continuing, 0x38, &begin);
 
     let mut successors = continuing.step_forking(None);
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
 
-    info!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
+    info!("({}ms) Stepping panic until loop", begin.elapsed().as_millis());
     step_until(&mut panicking, 0x508, &begin);
 
-    info!("[{}s] ### Stepping until NIC2 receivequeue queue_pfn check", begin.elapsed().as_millis());
-    while continuing.state.pc.to_u64() != 0x24 {
-        assert!(continuing.state.pc.to_u64() != 0x508);
-        debug!(
-            "({}ms) Executing 0x{:x} ({} active, {} retired)",
-            begin.elapsed().as_millis(),
-            continuing.state.pc.to_u64(),
-            continuing.scfia.inner.try_borrow().unwrap().active_symbols.len(),
-            continuing.scfia.inner.try_borrow().unwrap().retired_symbols.len(),
-        );
-        if continuing.state.pc.to_u64() == 0x3bc {
-            warn!("#### a2 = {:x}",continuing.state.x12.to_u64());
-        }
-        if continuing.state.pc.to_u64() == 0x24c {
-            warn!("#### pushing a7 = {:x}",continuing.state.x17.to_u64());
-        }
-        if continuing.state.pc.to_u64() == 0x224 {
-            warn!("#### new a7 = {:x}",continuing.state.x17.to_u64());
-        }
-        if continuing.state.pc.to_u64() == 0x3dc {
-            // This is the `write_volatile` in `advance`, where a descriptor's index is written to a position in the ring.
-
-            // This is producing unpredicted monomorphizations (e.g. 0x4640_a80e)
-            // We *should* be writing to the ingress sendqueue's driver area (e.g. 0x4640_c004)
-            // But 0x4640_a80e is in the ingress sendqueue's descriptor area -.-
-            continuing.step(Some(SymbolicHints {
-                hints: vec![INGRESS_SENDQUEUE_DRIVER_POSITIONS.to_vec()],
-            }));
-        } else {
-            continuing.step(None);
-        }
-    }
-
-
-
+    info!("({}ms) Stepping until NIC2 receivequeue queue_pfn check", begin.elapsed().as_millis());
+    step_until_hinted(&mut continuing, 0x24, &begin, &StepContext { hints: &[(0x3dc, &INGRESS_SENDQUEUE_DRIVER_POSITIONS)] });
 
     let mut successors = continuing.step_forking(None);
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
 
-    info!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
+    info!("({}ms) Stepping panic until loop", begin.elapsed().as_millis());
     step_until(&mut panicking, 0x508, &begin);
 
-    info!("[{}s] ### Stepping until NIC2 receivequeue queue_num_max 0 check", begin.elapsed().as_millis());
-    while continuing.state.pc.to_u64() != 0x30 {
-        print!("({}ms) ", begin.elapsed().as_millis());
-        continuing.step(None)
-    }
+    info!("({}ms) Stepping until NIC2 receivequeue queue_num_max 0 check", begin.elapsed().as_millis());
+    step_until(&mut continuing, 0x30, &begin);
 
     let mut successors = continuing.step_forking(None);
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
 
-    info!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
+    info!("({}ms) Stepping panic until loop", begin.elapsed().as_millis());
     step_until(&mut panicking, 0x508, &begin);
 
-    info!(
-        "[{}s] ### Stepping until NIC2 receivequeue queue_num_max <1024 check",
-        begin.elapsed().as_millis()
-    );
-    while continuing.state.pc.to_u64() != 0x38 {
-        print!("({}ms) ", begin.elapsed().as_millis());
-        continuing.step(None)
-    }
+    info!("({}ms) Stepping until NIC2 receivequeue queue_num_max <1024 check", begin.elapsed().as_millis());
+    step_until(&mut continuing, 0x38, &begin);
 
     let mut successors = continuing.step_forking(None);
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
 
-    info!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
+    info!("({}ms) Stepping panic until loop", begin.elapsed().as_millis());
     step_until(&mut panicking, 0x508, &begin);
 
-    info!("[{}s] ### Stepping until NIC2 sendqueue configure_virtqueue", begin.elapsed().as_millis());
-    while continuing.state.pc.to_u64() != 0x4 {
-        print!("({}ms) ", begin.elapsed().as_millis());
-        if continuing.state.pc.to_u64() == 0x3dc {
-            continuing.step(Some(SymbolicHints {
-                hints: vec![EGRESS_RECEIVEQUEUE_DRIVER_POSITIONS.to_vec()],
-            }));
-        } else {
-            continuing.step(None);
-        }
-    }
+    info!("({}ms) Stepping until NIC2 sendqueue configure_virtqueue", begin.elapsed().as_millis());
+    step_until_hinted(&mut continuing, 0x04, &begin, &StepContext { hints: &[(0x3dc, &EGRESS_RECEIVEQUEUE_DRIVER_POSITIONS)] });
 
-    info!("[{}s] ### Cloning state to free some z3 memory", begin.elapsed().as_millis());
+    info!("({}ms) Cloning state to free some z3 memory", begin.elapsed().as_millis());
     continuing = continuing.clone_model();
 
-    info!("[{}s] ### Stepping until NIC2 sendqueue queue_pfn check", begin.elapsed().as_millis());
-    print!("({}ms) ", begin.elapsed().as_millis());
-    while continuing.state.pc.to_u64() != 0x24 {
-        print!("({}ms) ", begin.elapsed().as_millis());
-        continuing.step(None)
-    }
+    info!("({}ms) Stepping until NIC2 sendqueue queue_pfn check", begin.elapsed().as_millis());
+    step_until(&mut continuing, 0x24, &begin);
 
     let mut successors = continuing.step_forking(None);
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
 
-    info!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
+    info!("({}ms) Stepping panic until loop", begin.elapsed().as_millis());
     step_until(&mut panicking, 0x508, &begin);
 
-    info!("[{}s] ### Stepping until NIC2 sendqueue queue_num_max 0 check", begin.elapsed().as_millis());
-    while continuing.state.pc.to_u64() != 0x30 {
-        print!("({}ms) ", begin.elapsed().as_millis());
-        continuing.step(None)
-    }
+    info!("({}ms) Stepping until NIC2 sendqueue queue_num_max 0 check", begin.elapsed().as_millis());
+    step_until(&mut continuing, 0x30, &begin);
 
     let mut successors = continuing.step_forking(None);
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
 
-    info!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
+    info!("({}ms) Stepping panic until loop", begin.elapsed().as_millis());
     step_until(&mut panicking, 0x508, &begin);
 
-    info!("[{}s] ### Stepping until NIC2 sendqueue queue_num_max <1024 check", begin.elapsed().as_millis());
-    while continuing.state.pc.to_u64() != 0x38 {
-        print!("({}ms) ", begin.elapsed().as_millis());
-        continuing.step(None)
-    }
+    info!("({}ms) Stepping until NIC2 sendqueue queue_num_max <1024 check", begin.elapsed().as_millis());
+    step_until(&mut continuing, 0x38, &begin);
 
     let mut successors = continuing.step_forking(None);
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
 
-    info!("[{}s] ### Stepping panic until loop", begin.elapsed().as_millis());
+    info!("({}ms) Stepping panic until loop", begin.elapsed().as_millis());
     step_until(&mut panicking, 0x508, &begin);
 
-    info!("[{}s] ### Stepping until start of main loop", begin.elapsed().as_millis());
-    while continuing.state.pc.to_u64() != START_OF_MAIN_LOOP {
-        print!("({}ms) ", begin.elapsed().as_millis());
-        if continuing.state.pc.to_u64() == 0x3dc {
-            continuing.step(Some(SymbolicHints {
-                hints: vec![EGRESS_SENDQUEUE_DRIVER_POSITIONS.to_vec()],
-            }));
-        } else {
-            continuing.step(None);
-        }
-    }
+    info!("({}ms) Stepping until start of main loop", begin.elapsed().as_millis());
+    step_until_hinted(&mut continuing, START_OF_MAIN_LOOP, &begin, &StepContext { hints: &[(0x3dc, &EGRESS_SENDQUEUE_DRIVER_POSITIONS)] });
 
-    info!("[{}s] ### Stepping until ingress try_remove fork", begin.elapsed().as_millis());
-    while continuing.state.pc.to_u64() != 0x428 {
-        print!("({}ms) ", begin.elapsed().as_millis());
-        continuing.step(None)
-    }
+    info!("({}ms) Stepping until ingress try_remove fork", begin.elapsed().as_millis());
+    step_until(&mut continuing, 0x428, &begin);
 
     let mut successors = continuing.step_forking(None);
     let mut continuing = successors.remove(0);
     let mut returning = successors.remove(0);
 
-    info!("[{}s] ### Stepping aborting until start of main loop", begin.elapsed().as_millis());
-    while returning.state.pc.to_u64() != START_OF_MAIN_LOOP {
-        print!("({}ms) ", begin.elapsed().as_millis());
-        returning.step(None)
-    }
+    info!("({}ms) Stepping aborting until start of main loop", begin.elapsed().as_millis());
+    step_until(&mut returning, START_OF_MAIN_LOOP, &begin);
 
-    while continuing.state.pc.to_u64() != 0x460 {
-        print!("({}ms) ", begin.elapsed().as_millis());
-        continuing.step(None)
-    }
-    info!("[{}s] ### Monomorphizing a4 to 0x46005004", begin.elapsed().as_millis());
-    /*
+    step_until(&mut continuing, 0x460, &begin);
+    info!("({}ms) Monomorphizing a4 to 0x46005004", begin.elapsed().as_millis());
     let mut monomorphizing_candidates = vec![0x46005004];
-    continuing
-        .stdlib
-        .monomorphize(continuing.system_state.x14.try_borrow().unwrap().get_z3_ast(), &mut monomorphizing_candidates);
+    continuing.scfia.monomorphize_active(&continuing.state.x14.try_borrow().unwrap(), &mut monomorphizing_candidates);
     assert_eq!(monomorphizing_candidates.len(), 1);
-    continuing.system_state.x14 = BitVectorConcrete::new(*monomorphizing_candidates.iter().next().unwrap(), 32, &mut continuing.stdlib, &mut None);
-
-    info!("[{}s] ### Creating symbolic volatile memory regions", begin.elapsed().as_millis());
+    continuing.state.x14 = continuing.scfia.new_bv_concrete(monomorphizing_candidates[0], 32, &mut None);
+    /*
+    info!("({}ms) Creating symbolic volatile memory regions", begin.elapsed().as_millis());
     let base_symbol = BitVectorSymbol::new(None, 32, Some("SymbolicVolatileMemoryRegionBase".into()), &mut continuing.stdlib, &mut None);
     {
         let base_symbol_and_expr = BVAndExpression::new(
@@ -501,13 +457,13 @@ fn test_system_state_inner() {
         length: 4096,
     };
 
-    info!("[{}s] ### Writing symbolic pointers to descriptor table", begin.elapsed().as_millis());
+    info!("({}ms) Writing symbolic pointers to descriptor table", begin.elapsed().as_millis());
     // TODO ensure is valid generalization
     for i in 0..1024 {
         let pointer_offset: u32 = i * 16;
         let ingress_receive_queue_pointer_address = 0x46000000 + pointer_offset;
         info!(
-            "[{}s] ### overwriting 0x{:x}",
+            "({}ms) overwriting 0x{:x}",
             begin.elapsed().as_millis(),
             ingress_receive_queue_pointer_address
         );
@@ -520,7 +476,7 @@ fn test_system_state_inner() {
         );
 
         let egress_send_queue_pointer_address = 0x46c18000 + pointer_offset;
-        info!("[{}s] ### overwriting 0x{:x}", begin.elapsed().as_millis(), egress_send_queue_pointer_address);
+        info!("({}ms) overwriting 0x{:x}", begin.elapsed().as_millis(), egress_send_queue_pointer_address);
         continuing.memory.write_concrete(
             egress_send_queue_pointer_address,
             sym_region.base_symbol.clone(),
@@ -531,7 +487,7 @@ fn test_system_state_inner() {
     }
     continuing.memory.symbolic_volatiles.push(sym_region);
 
-    info!("[{}s] ### Stepping until ethertype ipv4 check", begin.elapsed().as_millis());
+    info!("({}ms) Stepping until ethertype ipv4 check", begin.elapsed().as_millis());
     while continuing.state.pc.to_u64() != 0x73c {
         print!("({}ms) ", begin.elapsed().as_millis());
         if continuing.state.pc.to_u64() == 0x49C {
@@ -571,7 +527,7 @@ fn test_system_state_inner() {
     let mut returning = successors.remove(0);
     let mut continuing = successors.remove(0);
 
-    info!("[{}s] ### Stepping not ipv4 until start of main loop", begin.elapsed().as_millis());
+    info!("({}ms) Stepping not ipv4 until start of main loop", begin.elapsed().as_millis());
     while returning.state.pc.to_u64() != START_OF_MAIN_LOOP {
         print!("({}ms) ", begin.elapsed().as_millis());
         if returning.state.pc.to_u64() == 0x3DC {
@@ -583,7 +539,7 @@ fn test_system_state_inner() {
         }
     }
 
-    info!("[{}s] ### Stepping until egress try_remove fork", begin.elapsed().as_millis());
+    info!("({}ms) Stepping until egress try_remove fork", begin.elapsed().as_millis());
     while continuing.state.pc.to_u64() != 0x428 {
         print!("({}ms) ", begin.elapsed().as_millis());
         continuing.step(None);
@@ -593,7 +549,7 @@ fn test_system_state_inner() {
     let mut continuing = successors.remove(0);
     let mut returning = successors.remove(0);
 
-    info!("[{}s] ### Stepping egress empty until start of main loop", begin.elapsed().as_millis());
+    info!("({}ms) Stepping egress empty until start of main loop", begin.elapsed().as_millis());
     while returning.state.pc.to_u64() != START_OF_MAIN_LOOP {
         print!("({}ms) ", begin.elapsed().as_millis());
         if returning.state.pc.to_u64() == 0x3DC {
@@ -605,7 +561,7 @@ fn test_system_state_inner() {
         }
     }
 
-    info!("[{}s] ### stepping success until start of main loop", begin.elapsed().as_millis());
+    info!("({}ms) stepping success until start of main loop", begin.elapsed().as_millis());
     while continuing.state.pc.to_u64() != START_OF_MAIN_LOOP {
         print!("({}ms) ", begin.elapsed().as_millis());
         if continuing.state.pc.to_u64() == 0x3DC {

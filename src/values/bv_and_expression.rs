@@ -29,13 +29,29 @@ mod tests {
 
     #[test]
     #[allow(unused_must_use)]
-    fn test_concrete_and() {
+    fn test_concrete_and1() {
         simple_logger::SimpleLogger::new().env().init();
         let scfia: Scfia<RV32iScfiaComposition> = Scfia::new(None);
         let s1 = scfia.new_bv_concrete(1, 32, &mut None);
         let s2 = scfia.new_bv_concrete(0xffffff, 32, &mut None);
         let add = scfia.new_bv_and(s1, s2, 32, &mut None);
         assert_eq!(add.try_borrow().unwrap().try_as_concrete_bv().unwrap(), 1);
+    }
+
+    #[test]
+    #[allow(unused_must_use)]
+    fn test_concrete_and2() {
+        simple_logger::SimpleLogger::new().env().init();
+        let scfia: Scfia<RV32iScfiaComposition> = Scfia::new(None);
+        let s1 = scfia.new_bv_concrete(0b010001, 32, &mut None);
+        let s2 = scfia.new_bv_concrete(0b010101, 32, &mut None);
+        let add = scfia.new_bv_and(s1, s2, 32, &mut None);
+        assert_eq!(add.try_borrow().unwrap().try_as_concrete_bv().unwrap(), 0b010001);
+
+        let s1 = scfia.new_bv_concrete(0xfffff000, 32, &mut None);
+        let s2 = scfia.new_bv_concrete(0x3005, 32, &mut None);
+        let add = scfia.new_bv_and(s2, s1, 32, &mut None);
+        assert_eq!(add.try_borrow().unwrap().try_as_concrete_bv().unwrap(), 0x3000);
     }
 
     #[test]

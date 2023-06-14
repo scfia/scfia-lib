@@ -36,6 +36,11 @@ mod tests {
         let s2 = scfia.new_bv_concrete(3, 32, &mut None);
         let mul = scfia.new_bv_multiply(s1, s2, 32, &mut None);
         assert_eq!(mul.try_borrow().unwrap().try_as_concrete_bv().unwrap(), 6);
+
+        let s1 = scfia.new_bv_concrete(u32::MAX as _, 32, &mut None);
+        let s2 = scfia.new_bv_concrete(2, 32, &mut None);
+        let mul = scfia.new_bv_multiply(s1, s2, 32, &mut None);
+        assert_eq!(mul.try_borrow().unwrap().try_as_concrete_bv().unwrap(), 0xFFFFFFFE);
     }
 
     #[test]

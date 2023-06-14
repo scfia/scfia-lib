@@ -65,16 +65,18 @@ impl<SC: ScfiaComposition> StableMemoryRegion<SC> {
             value = scfia.new_bv_concat(rhs, value, width - (byte_values.len() * 8) as u32, fork_sink);
         }
 
-        debug!("? = *{:x} ({:?})", address, value);
+        //debug!("? = *{:x} ({:?})", address, value);
 
         value
     }
 
     pub(crate) fn write(&mut self, address: u64, value: ActiveValue<SC>, width: u32, scfia: Scfia<SC>, fork_sink: &mut Option<SC::ForkSink>) {
+        assert_eq!(width % 8, 0);
+        //debug!("*{:x} = {:?}", address, value);
         let bytes = width / 8;
         for byte in 0..bytes {
             let v = scfia.new_bv_slice(value.clone(), (byte * 8) + 7, byte * 8, fork_sink);
-            debug!("*{:x} = {:?}", address, v);
+            //debug!("*{:x} = {:?}", address, v);
             self.memory.insert(address + byte as u64, v);
         }
     }
