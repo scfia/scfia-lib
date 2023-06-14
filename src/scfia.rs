@@ -280,6 +280,11 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         selff.new_bv_xor(self.clone(), s1.clone(), s2.clone(), width, None, fork_sink)
     }
 
+    pub fn new_bv_constrained(&self, width: u32, align: u64, limit: u64) -> ActiveValue<SC> {
+        let mut selff = self.inner.try_borrow_mut().unwrap();
+        selff.new_bv_constrained(self.clone(), width, align, limit)
+    }
+
     pub fn drop_active(&self, value: &ActiveValueInner<SC>) -> RetiredValue<SC> {
         let mut selff = self.inner.try_borrow_mut().unwrap();
         trace!("dropping active {} from scfia {}", value.id, self.inner.as_ptr() as u64);
@@ -1360,6 +1365,22 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
                 fork_sink,
             )
         }
+    }
+
+    pub fn new_bv_constrained(&mut self, self_rc: Scfia<SC>, width: u32, align: u64, limit: u64) -> ActiveValue<SC> {
+        let base_symbol = self.new_bv_symbol(self_rc.clone(), width, None, &mut None);
+
+        // Assert base_symbol & align == 0
+        let align_bv = self.new_bv_concrete(self_rc.clone(), align, width, None, &mut None);
+        let align_and = self.new_bv_and(self_rc.clone(), base_symbol.clone(), align_bv, width, None, &mut None);
+        let zero = self.new_bv_concrete(self_rc.clone(), 0, width, None, &mut None);
+        self.new_bool_eq(self_rc.clone(), align_and, zero, None, true, &mut None);
+
+        // Assert base_symbol < max
+        let limit_bv = self.new_bv_concrete(self_rc.clone(), limit, width, None, &mut None);
+        self.new_bool_unsigned_less_than(self_rc, base_symbol.clone(), limit_bv, None, true, &mut None);
+
+        base_symbol
     }
 
     fn next_symbol_id(&mut self) -> u64 {

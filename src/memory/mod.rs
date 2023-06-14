@@ -209,7 +209,7 @@ impl<SC: ScfiaComposition> Memory<SC> {
         panic!("read_concrete failed to resolve 0x{:x}", address)
     }
 
-    fn write_concrete(&mut self, address: u64, value: ActiveValue<SC>, width: u32, scfia: Scfia<SC>, fork_sink: &mut Option<SC::ForkSink>) {
+    pub fn write_concrete(&mut self, address: u64, value: ActiveValue<SC>, width: u32, scfia: Scfia<SC>, fork_sink: &mut Option<SC::ForkSink>) {
         for region in &mut self.stables {
             if address >= region.start_address && address < region.start_address + region.length {
                 return region.write(address, value, width, scfia.clone(), fork_sink);

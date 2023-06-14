@@ -422,36 +422,9 @@ fn test_system_state_inner() {
     continuing.scfia.monomorphize_active(&continuing.state.x14.try_borrow().unwrap(), &mut monomorphizing_candidates);
     assert_eq!(monomorphizing_candidates.len(), 1);
     continuing.state.x14 = continuing.scfia.new_bv_concrete(monomorphizing_candidates[0], 32, &mut None);
-    /*
+
     info!("({}ms) Creating symbolic volatile memory regions", begin.elapsed().as_millis());
-    let base_symbol = BitVectorSymbol::new(None, 32, Some("SymbolicVolatileMemoryRegionBase".into()), &mut continuing.stdlib, &mut None);
-    {
-        let base_symbol_and_expr = BVAndExpression::new(
-            base_symbol.clone(),
-            BitVectorConcrete::new(0xff, 32, &mut continuing.stdlib, &mut None),
-            &mut continuing.stdlib,
-            &mut None,
-        );
-        let expr = BoolEqExpression::new(
-            BitVectorConcrete::new(0, 32, &mut continuing.stdlib, &mut None),
-            base_symbol_and_expr.clone(),
-            &mut continuing.stdlib,
-            &mut None,
-        );
-        expr.try_borrow_mut().unwrap().assert(&mut continuing.stdlib);
-    }
-
-    {
-        // constrain to < 0xFFFF0000 (to prevent wrapping around 0xFFFFFFFF)
-        let expr = BoolLessThanUIntExpression::new(
-            base_symbol.clone(),
-            BitVectorConcrete::new(0xFFFF0000, 32, &mut continuing.stdlib, &mut None),
-            &mut continuing.stdlib,
-            &mut None,
-        );
-        expr.try_borrow_mut().unwrap().assert(&mut continuing.stdlib);
-    }
-
+    let base_symbol = continuing.scfia.new_bv_constrained(32, 0xff, 0xffff0000);
     let sym_region = SymbolicVolatileMemoryRegion {
         base_symbol: base_symbol,
         length: 4096,
@@ -462,106 +435,55 @@ fn test_system_state_inner() {
     for i in 0..1024 {
         let pointer_offset: u32 = i * 16;
         let ingress_receive_queue_pointer_address = 0x46000000 + pointer_offset;
-        info!(
-            "({}ms) overwriting 0x{:x}",
-            begin.elapsed().as_millis(),
-            ingress_receive_queue_pointer_address
-        );
+        debug!("({}ms) overwriting 0x{:x}", begin.elapsed().as_millis(), ingress_receive_queue_pointer_address);
         continuing.memory.write_concrete(
-            ingress_receive_queue_pointer_address,
+            ingress_receive_queue_pointer_address as u64,
             sym_region.base_symbol.clone(),
             32,
-            &mut continuing.stdlib,
+            continuing.scfia.clone(),
             &mut None,
         );
 
         let egress_send_queue_pointer_address = 0x46c18000 + pointer_offset;
         info!("({}ms) overwriting 0x{:x}", begin.elapsed().as_millis(), egress_send_queue_pointer_address);
         continuing.memory.write_concrete(
-            egress_send_queue_pointer_address,
+            egress_send_queue_pointer_address as u64,
             sym_region.base_symbol.clone(),
             32,
-            &mut continuing.stdlib,
+            continuing.scfia.clone(),
             &mut None,
         );
     }
     continuing.memory.symbolic_volatiles.push(sym_region);
 
     info!("({}ms) Stepping until ethertype ipv4 check", begin.elapsed().as_millis());
-    while continuing.state.pc.to_u64() != 0x73c {
-        print!("({}ms) ", begin.elapsed().as_millis());
-        if continuing.state.pc.to_u64() == 0x49C {
-            continuing.step(Some(SymbolicHints {
-                hints: vec![INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_HIGHER_U32.to_vec()],
-            }));
-        } else if continuing.state.pc.to_u64() == 0x4a0 {
-            continuing.step(Some(SymbolicHints {
-                hints: vec![INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_LOWER_U32.to_vec()],
-            }));
-        } else if continuing.state.pc.to_u64() == 0x4a8 {
-            continuing.step(None);
-            info!("a3={:?}", continuing.system_state.x13);
-            let mut candidates = vec![];
-            continuing
-                .stdlib
-                .monomorphize(continuing.system_state.x13.try_borrow().unwrap().get_z3_ast(), &mut candidates);
-            info!("a3 candidates={:?}", candidates)
-        } else if continuing.state.pc.to_u64() == 0x4a4 {
-            continuing.step(Some(SymbolicHints {
-                hints: vec![INGRESS_RECEIVEQUEUE_DESCRIPTOR_LENGTH.to_vec()],
-            }));
-        } else if continuing.state.pc.to_u64() == 0x4b0 {
-            continuing.step(Some(SymbolicHints {
-                hints: vec![INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_HIGHER_U32.to_vec()],
-            }));
-        } else if continuing.state.pc.to_u64() == 0x4b4 {
-            continuing.step(Some(SymbolicHints {
-                hints: vec![INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_LOWER_U32.to_vec()],
-            }));
-        } else {
-            continuing.step(None);
-        }
-    }
-
+    step_until_hinted(&mut continuing, 0x73c, &begin, &StepContext { hints: &[
+        (0x49C, &INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_HIGHER_U32),
+        (0x4a0, &INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_LOWER_U32),
+        (0x4a4, &INGRESS_RECEIVEQUEUE_DESCRIPTOR_LENGTH),
+        (0x4b0, &INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_HIGHER_U32),
+        (0x4b4, &INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_LOWER_U32),
+    ] });
+    
     let mut successors = continuing.step_forking(None);
     let mut returning = successors.remove(0);
     let mut continuing = successors.remove(0);
 
     info!("({}ms) Stepping not ipv4 until start of main loop", begin.elapsed().as_millis());
-    while returning.state.pc.to_u64() != START_OF_MAIN_LOOP {
-        print!("({}ms) ", begin.elapsed().as_millis());
-        if returning.state.pc.to_u64() == 0x3DC {
-            returning.step(Some(SymbolicHints {
-                hints: vec![INGRESS_RECEIVEQUEUE_DRIVER_POSITIONS.to_vec()],
-            }));
-        } else {
-            returning.step(None);
-        }
-    }
+    step_until_hinted(&mut returning, START_OF_MAIN_LOOP, &begin, &StepContext { hints: &[(0x3dc, &INGRESS_RECEIVEQUEUE_DRIVER_POSITIONS)] });
 
     info!("({}ms) Stepping until egress try_remove fork", begin.elapsed().as_millis());
-    while continuing.state.pc.to_u64() != 0x428 {
-        print!("({}ms) ", begin.elapsed().as_millis());
-        continuing.step(None);
-    }
-
+    step_until(&mut continuing, 0x428, &begin);
     let mut successors = continuing.step_forking(None);
     let mut continuing = successors.remove(0);
     let mut returning = successors.remove(0);
 
     info!("({}ms) Stepping egress empty until start of main loop", begin.elapsed().as_millis());
-    while returning.state.pc.to_u64() != START_OF_MAIN_LOOP {
-        print!("({}ms) ", begin.elapsed().as_millis());
-        if returning.state.pc.to_u64() == 0x3DC {
-            returning.step(Some(SymbolicHints {
-                hints: vec![INGRESS_RECEIVEQUEUE_DRIVER_POSITIONS.to_vec()],
-            }));
-        } else {
-            returning.step(None);
-        }
-    }
+    step_until_hinted(&mut returning, START_OF_MAIN_LOOP, &begin, &StepContext { hints: &[(0x3dc, &INGRESS_RECEIVEQUEUE_DRIVER_POSITIONS)] });
 
     info!("({}ms) stepping success until start of main loop", begin.elapsed().as_millis());
+    step_until_hinted(&mut continuing, START_OF_MAIN_LOOP, &begin, &StepContext { hints: &[] });
+    /*
     while continuing.state.pc.to_u64() != START_OF_MAIN_LOOP {
         print!("({}ms) ", begin.elapsed().as_millis());
         if continuing.state.pc.to_u64() == 0x3DC {
