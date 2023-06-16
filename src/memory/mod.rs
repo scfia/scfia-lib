@@ -197,15 +197,15 @@ impl<SC: ScfiaComposition> Memory<SC> {
     }
 
     fn read_concrete(&mut self, address: u64, width: u32, scfia: Scfia<SC>, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
-        for region in &self.stables {
-            if address >= region.start_address && address < region.start_address + region.length {
-                return region.read(address, width, scfia, fork_sink);
-            }
-        }
         for region in &self.volatiles {
             if address >= region.start_address && address < region.start_address + region.length {
                 trace!("Volatile region 0x{:x} yielding fresh symbol", region.start_address);
                 return scfia.new_bv_symbol(width, fork_sink);
+            }
+        }
+        for region in &self.stables {
+            if address >= region.start_address && address < region.start_address + region.length {
+                return region.read(address, width, scfia, fork_sink);
             }
         }
         panic!("read_concrete failed to resolve 0x{:x}", address)

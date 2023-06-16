@@ -119,6 +119,8 @@ pub struct ScfiaInner<SC: ScfiaComposition> {
     pub(crate) z3_context: Z3_context,
     pub(crate) z3_solver: Z3_solver,
     phantom: PhantomData<SC>,
+    active_symbols: u64,
+    retired_symbols: u64,
 }
 
 impl<SC: ScfiaComposition> Scfia<SC> {
@@ -135,6 +137,8 @@ impl<SC: ScfiaComposition> Scfia<SC> {
                     z3_context,
                     z3_solver,
                     phantom: PhantomData,
+                    active_symbols: 0,
+                    retired_symbols: 0,
                 })),
             }
         }
@@ -281,6 +285,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
 
     pub fn drop_active(&self, value: &ActiveValueInner<SC>) -> RetiredValue<SC> {
         let mut selff = self.inner.try_borrow_mut().unwrap();
+        selff.active_symbols -= 1;
         //trace!("dropping active {} from scfia {}", value.id, self.inner.as_ptr() as u64);
 
         let retired_value = match &value.expression {
@@ -471,13 +476,14 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         // Heirs are parents and discovered symbols
         let mut heirs = vec![];
         value.expression.get_parents(&mut heirs);
+        /*
         for discovered_ast in value.discovered_asts.values() {
             let acquaintance = discovered_ast.upgrade().unwrap();
             let mut acquaintance_ref = acquaintance.try_borrow_mut().unwrap();
             //trace!("Adding acquaintance {} to heir list", acquaintance_ref.id);
             assert!(acquaintance_ref.discovered_asts.remove(&value.id).is_some());
             heirs.push(acquaintance.clone())
-        }
+        }*/
 
         // For each heir...
         for heir in &heirs {
@@ -507,6 +513,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         unsafe {
             //trace!("Dropping {:?}", value);
             let mut selff = self.inner.try_borrow_mut().unwrap();
+            selff.retired_symbols -= 1;
             Z3_dec_ref(selff.z3_context, value.z3_ast);
         }
     }
@@ -542,6 +549,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
     pub fn monomorphize_active(&self, value: &ActiveValueInner<SC>, candidates: &mut Vec<u64>) {
         unsafe {
             let selff = self.inner.try_borrow_mut().unwrap();
+            debug!("monomorphize_active {} active {} retired", selff.active_symbols, selff.retired_symbols);
             let sort = Z3_get_sort(selff.z3_context, value.z3_ast);
 
             // Fill assumptions with known candidates
@@ -601,6 +609,8 @@ impl<SC: ScfiaComposition> Scfia<SC> {
                 //Z3_dec_ref(selff.z3_context, eqs[i]);
                 //Z3_dec_ref(selff.z3_context, candidate_asts[i]);
             }
+
+            debug!("monomorphize_active done");
         }
     }
 }
@@ -1399,6 +1409,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         if let Some(fork_sink) = fork_sink {
             fork_sink.push_value(value.clone())
         }
+        self.active_symbols += 1;
         value
     }
 
@@ -1408,6 +1419,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         }
         let value = Rc::new(RefCell::new(RetiredValueInner { id, z3_ast, expression, scfia }));
         //trace!("Creating new retired expression ({:?})", value.try_borrow().unwrap());
+        self.retired_symbols += 1;
         value
     }
 }

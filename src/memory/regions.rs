@@ -37,6 +37,7 @@ impl<SC: ScfiaComposition> SymbolicVolatileMemoryRegion<SC> {
 
 impl<SC: ScfiaComposition> StableMemoryRegion<SC> {
     pub fn new(start_address: u64, length: u64) -> Self {
+        debug!("StableMemoryRegion(start_address={:#x}, {:#x})", start_address, length);
         StableMemoryRegion {
             memory: BTreeMap::default(),
             start_address,
@@ -52,7 +53,7 @@ impl<SC: ScfiaComposition> StableMemoryRegion<SC> {
             if let Some(byte) = self.memory.get(&(address + i as u64)) {
                 byte_values.push_back(byte.clone());
             } else {
-                warn!("Reading from uninitialized 0x{:x}", address + i as u64);
+                warn!("Region {:#x} (len={:#x}) reading from uninitialized {:#x}", self.start_address, self.length, address + i as u64);
                 byte_values.push_back(scfia.new_bv_symbol(8, fork_sink))
             }
         }
@@ -72,7 +73,7 @@ impl<SC: ScfiaComposition> StableMemoryRegion<SC> {
 
     pub(crate) fn write(&mut self, address: u64, value: ActiveValue<SC>, width: u32, scfia: Scfia<SC>, fork_sink: &mut Option<SC::ForkSink>) {
         assert_eq!(width % 8, 0);
-        //debug!("*{:x} = {:?}", address, value);
+        debug!("*{:x} = {:?}", address, value);
         let bytes = width / 8;
         for byte in 0..bytes {
             let v = scfia.new_bv_slice(value.clone(), (byte * 8) + 7, byte * 8, fork_sink);
