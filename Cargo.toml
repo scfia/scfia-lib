@@ -12,3 +12,6 @@ log = "0.4"
 [dev-dependencies]
 xmas-elf = "0.7"
 simple_logger = "4.1"
+
+[profile.release]
+debug = 1

@@ -1,5 +1,7 @@
 pub mod regions;
 
+use std::collections::BTreeMap;
+
 use log::{debug, error, trace};
 use z3_sys::{
     Z3_ast_vector_dec_ref, Z3_ast_vector_inc_ref, Z3_dec_ref, Z3_inc_ref, Z3_mk_bv_sort, Z3_mk_bvadd, Z3_mk_bvuge, Z3_mk_bvult, Z3_mk_eq, Z3_mk_not, Z3_mk_or,
@@ -8,7 +10,7 @@ use z3_sys::{
 
 use crate::{
     scfia::Scfia,
-    values::active_value::{ActiveExpression, ActiveValue, ActiveValueInner},
+    values::{active_value::{ActiveExpression, ActiveValue, ActiveValueInner}, retired_value::RetiredValue},
     ScfiaComposition, StepContext, SymbolicHints,
 };
 
@@ -225,16 +227,16 @@ impl<SC: ScfiaComposition> Memory<SC> {
         panic!("{:?}", address)
     }
 
-    pub(crate) fn clone_to_stdlib(&self, cloned_scfia: Scfia<SC>) -> Memory<SC> {
+    pub(crate) fn clone_to_stdlib(&self, cloned_scfia: Scfia<SC>, cloned_actives: &mut BTreeMap<u64, ActiveValue<SC>>, cloned_retired: &mut BTreeMap<u64, RetiredValue<SC>>) -> Memory<SC> {
         let mut cloned_stables = vec![];
         let mut symbolic_volatiles = vec![];
 
         for stable in &self.stables {
-            cloned_stables.push(stable.clone_to_stdlib(cloned_scfia.clone()))
+            cloned_stables.push(stable.clone_to_stdlib(cloned_scfia.clone(), cloned_actives, cloned_retired))
         }
 
         for symbolic_volatile in &self.symbolic_volatiles {
-            symbolic_volatiles.push(symbolic_volatile.clone_to_stdlib(cloned_scfia.clone()))
+            symbolic_volatiles.push(symbolic_volatile.clone_to_stdlib(cloned_scfia.clone(), cloned_actives, cloned_retired))
         }
 
         Memory {

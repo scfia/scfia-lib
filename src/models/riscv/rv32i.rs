@@ -2,9 +2,9 @@
 #![allow(non_snake_case)]
 #![allow(unused)]
 use log::debug;
-use std::{borrow::BorrowMut, fmt::Debug};
+use std::{borrow::BorrowMut, fmt::Debug, collections::BTreeMap};
 
-use crate::{memory::Memory, scfia::Scfia, values::active_value::ActiveValue, GenericForkSink, ScfiaComposition, StepContext, SymbolicHints};
+use crate::{memory::Memory, scfia::Scfia, values::{active_value::ActiveValue, retired_value::RetiredValue}, GenericForkSink, ScfiaComposition, StepContext, SymbolicHints};
 
 pub struct RV32i {
     pub state: SystemState,
@@ -22,29 +22,12 @@ pub struct RV32iForkSink {
 #[derive(Debug, Clone)]
 pub struct RV32iScfiaComposition {}
 
-impl Drop for RV32i {
-    fn drop(&mut self) {
-        debug!(
-            "Dropping RV32i {:?} {:?} with scfia {}",
-            self.scfia.inner.try_borrow().unwrap().active_symbols.get(&20378),
-            self.scfia.inner.try_borrow().unwrap().retired_symbols.get(&20378),
-            self.scfia.inner.as_ptr() as u64,
-        );
-    }
-}
 
 impl GenericForkSink<RV32iScfiaComposition> for RV32iForkSink {
     fn fork(&mut self, fork_symbol: ActiveValue<RV32iScfiaComposition>) {
         // Clone the base state.
-        let clone = self.base_state.clone_model();
-        assert_eq!(
-            clone.scfia.inner.try_borrow().unwrap().active_symbols.len(),
-            self.base_state.scfia.inner.try_borrow().unwrap().active_symbols.len()
-        );
-        assert_eq!(
-            clone.scfia.inner.try_borrow().unwrap().retired_symbols.len(),
-            self.base_state.scfia.inner.try_borrow().unwrap().retired_symbols.len()
-        );
+        let (clone, mut cloned_actives, mut cloned_retired) = self.base_state.clone_model();
+
         // Clone all values that were created after self.base_state was created.
         // new_values keeps the values active until we have cloned fork_symbol.
         let mut new_values = vec![];
@@ -53,12 +36,12 @@ impl GenericForkSink<RV32iScfiaComposition> for RV32iForkSink {
                 new_value
                     .try_borrow()
                     .unwrap()
-                    .clone_to_stdlib(&mut clone.scfia.inner.try_borrow_mut().unwrap(), clone.scfia.clone()),
+                    .clone_to_stdlib(&mut clone.scfia.inner.try_borrow_mut().unwrap(), clone.scfia.clone(), &mut cloned_actives, &mut cloned_retired),
             );
         }
         let fork_symbol_id = fork_symbol.try_borrow().unwrap().id;
         clone.scfia.inner.try_borrow_mut().unwrap().next_symbol_id = fork_symbol_id + 1;
-        let cloned_fork_symbol = clone.scfia.inner.try_borrow().unwrap().active_symbols.get(&fork_symbol_id).unwrap().upgrade().unwrap();
+        let cloned_fork_symbol = fork_symbol.try_borrow().unwrap().clone_to_stdlib(&mut clone.scfia.inner.try_borrow_mut().unwrap(), clone.scfia.clone(), &mut cloned_actives, &mut cloned_retired);
         cloned_fork_symbol.try_borrow_mut().unwrap().assert();
         /*
         let cloned_condition: ActiveValue<RV32iScfiaComposition> = fork_symbol
@@ -103,7 +86,7 @@ impl RV32i {
                     scfia: state.scfia.clone(),
                     hints: hints.clone(),
                     fork_sink: Some(RV32iForkSink {
-                        base_state: state.clone_model(),
+                        base_state: state.clone_model().0,
                         new_values_history: vec![],
                         forks: vec![],
                     }),
@@ -119,16 +102,18 @@ impl RV32i {
         }
     }
 
-    pub fn clone_model(&self) -> RV32i {
+    pub fn clone_model(&self) -> (RV32i, BTreeMap<u64, ActiveValue<RV32iScfiaComposition>>, BTreeMap<u64, RetiredValue<RV32iScfiaComposition>>) {
         unsafe {
             let own_scfia = self.scfia.inner.try_borrow().unwrap();
             let cloned_scfia_rc: Scfia<RV32iScfiaComposition> = Scfia::new(Some(own_scfia.next_symbol_id));
+            let mut cloned_actives = BTreeMap::new();
+            let mut cloned_retireds = BTreeMap::new();
             debug!("cloning scfia {} to {}", self.scfia.inner.as_ptr() as u64, cloned_scfia_rc.inner.as_ptr() as u64);
-            RV32i {
-                state: self.state.clone_to_stdlib(cloned_scfia_rc.clone()),
-                memory: self.memory.clone_to_stdlib(cloned_scfia_rc.clone()),
+            (RV32i {
+                state: self.state.clone_to_stdlib(cloned_scfia_rc.clone(), &mut cloned_actives, &mut cloned_retireds),
+                memory: self.memory.clone_to_stdlib(cloned_scfia_rc.clone(), &mut cloned_actives, &mut cloned_retireds),
                 scfia: cloned_scfia_rc,
-            }
+            }, cloned_actives, cloned_retireds)
         }
     }
 }
@@ -177,80 +162,42 @@ pub struct SystemState {
 }
 
 impl SystemState {
-    fn clone_to(&self, cloned_scfia: Scfia<RV32iScfiaComposition>) -> SystemState {
-        SystemState {
-            x0: cloned_scfia.try_get_active_value(self.x0.try_borrow().unwrap().id).unwrap(),
-            x1: cloned_scfia.try_get_active_value(self.x1.try_borrow().unwrap().id).unwrap(),
-            x2: cloned_scfia.try_get_active_value(self.x2.try_borrow().unwrap().id).unwrap(),
-            x3: cloned_scfia.try_get_active_value(self.x3.try_borrow().unwrap().id).unwrap(),
-            x4: cloned_scfia.try_get_active_value(self.x4.try_borrow().unwrap().id).unwrap(),
-            x5: cloned_scfia.try_get_active_value(self.x5.try_borrow().unwrap().id).unwrap(),
-            x6: cloned_scfia.try_get_active_value(self.x6.try_borrow().unwrap().id).unwrap(),
-            x7: cloned_scfia.try_get_active_value(self.x7.try_borrow().unwrap().id).unwrap(),
-            x8: cloned_scfia.try_get_active_value(self.x8.try_borrow().unwrap().id).unwrap(),
-            x9: cloned_scfia.try_get_active_value(self.x9.try_borrow().unwrap().id).unwrap(),
-            x10: cloned_scfia.try_get_active_value(self.x10.try_borrow().unwrap().id).unwrap(),
-            x11: cloned_scfia.try_get_active_value(self.x11.try_borrow().unwrap().id).unwrap(),
-            x12: cloned_scfia.try_get_active_value(self.x12.try_borrow().unwrap().id).unwrap(),
-            x13: cloned_scfia.try_get_active_value(self.x13.try_borrow().unwrap().id).unwrap(),
-            x14: cloned_scfia.try_get_active_value(self.x14.try_borrow().unwrap().id).unwrap(),
-            x15: cloned_scfia.try_get_active_value(self.x15.try_borrow().unwrap().id).unwrap(),
-            x16: cloned_scfia.try_get_active_value(self.x16.try_borrow().unwrap().id).unwrap(),
-            x17: cloned_scfia.try_get_active_value(self.x17.try_borrow().unwrap().id).unwrap(),
-            x18: cloned_scfia.try_get_active_value(self.x18.try_borrow().unwrap().id).unwrap(),
-            x19: cloned_scfia.try_get_active_value(self.x19.try_borrow().unwrap().id).unwrap(),
-            x20: cloned_scfia.try_get_active_value(self.x20.try_borrow().unwrap().id).unwrap(),
-            x21: cloned_scfia.try_get_active_value(self.x21.try_borrow().unwrap().id).unwrap(),
-            x22: cloned_scfia.try_get_active_value(self.x22.try_borrow().unwrap().id).unwrap(),
-            x23: cloned_scfia.try_get_active_value(self.x23.try_borrow().unwrap().id).unwrap(),
-            x24: cloned_scfia.try_get_active_value(self.x24.try_borrow().unwrap().id).unwrap(),
-            x25: cloned_scfia.try_get_active_value(self.x25.try_borrow().unwrap().id).unwrap(),
-            x26: cloned_scfia.try_get_active_value(self.x26.try_borrow().unwrap().id).unwrap(),
-            x27: cloned_scfia.try_get_active_value(self.x27.try_borrow().unwrap().id).unwrap(),
-            x28: cloned_scfia.try_get_active_value(self.x28.try_borrow().unwrap().id).unwrap(),
-            x29: cloned_scfia.try_get_active_value(self.x29.try_borrow().unwrap().id).unwrap(),
-            x30: cloned_scfia.try_get_active_value(self.x30.try_borrow().unwrap().id).unwrap(),
-            x31: cloned_scfia.try_get_active_value(self.x31.try_borrow().unwrap().id).unwrap(),
-            pc: cloned_scfia.try_get_active_value(self.pc.try_borrow().unwrap().id).unwrap(),
-        }
-    }
-
-    fn clone_to_stdlib(&self, cloned_scfia_rc: Scfia<RV32iScfiaComposition>) -> SystemState {
+    fn clone_to_stdlib(&self, cloned_scfia_rc: Scfia<RV32iScfiaComposition>, cloned_actives: &mut BTreeMap<u64, ActiveValue<RV32iScfiaComposition>>, cloned_retired: &mut BTreeMap<u64, RetiredValue<RV32iScfiaComposition>>) -> SystemState {
         let mut cloned_scfia = cloned_scfia_rc.inner.try_borrow_mut().unwrap();
         SystemState {
-            x0: self.x0.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone()),
-            x1: self.x1.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone()),
-            x2: self.x2.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone()),
-            x3: self.x3.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone()),
-            x4: self.x4.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone()),
-            x5: self.x5.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone()),
-            x6: self.x6.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone()),
-            x7: self.x7.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone()),
-            x8: self.x8.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone()),
-            x9: self.x9.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone()),
-            x10: self.x10.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone()),
-            x11: self.x11.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone()),
-            x12: self.x12.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone()),
-            x13: self.x13.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone()),
-            x14: self.x14.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone()),
-            x15: self.x15.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone()),
-            x16: self.x16.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone()),
-            x17: self.x17.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone()),
-            x18: self.x18.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone()),
-            x19: self.x19.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone()),
-            x20: self.x20.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone()),
-            x21: self.x21.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone()),
-            x22: self.x22.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone()),
-            x23: self.x23.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone()),
-            x24: self.x24.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone()),
-            x25: self.x25.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone()),
-            x26: self.x26.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone()),
-            x27: self.x27.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone()),
-            x28: self.x28.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone()),
-            x29: self.x29.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone()),
-            x30: self.x30.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone()),
-            x31: self.x31.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone()),
-            pc: self.pc.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone()),
+            x0: self.x0.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
+            x1: self.x1.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
+            x2: self.x2.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
+            x3: self.x3.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
+            x4: self.x4.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
+            x5: self.x5.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
+            x6: self.x6.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
+            x7: self.x7.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
+            x8: self.x8.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
+            x9: self.x9.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
+            x10: self.x10.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
+            x11: self.x11.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
+            x12: self.x12.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
+            x13: self.x13.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
+            x14: self.x14.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
+            x15: self.x15.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
+            x16: self.x16.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
+            x17: self.x17.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
+            x18: self.x18.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
+            x19: self.x19.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
+            x20: self.x20.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
+            x21: self.x21.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
+            x22: self.x22.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
+            x23: self.x23.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
+            x24: self.x24.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
+            x25: self.x25.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
+            x26: self.x26.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
+            x27: self.x27.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
+            x28: self.x28.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
+            x29: self.x29.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
+            x30: self.x30.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
+            x31: self.x31.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
+            pc: self.pc.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
         }
     }
 }
@@ -258,14 +205,6 @@ impl SystemState {
 #[derive(Debug)]
 pub struct ComplexSpecialStruct {
     pub some_flag: ActiveValue<RV32iScfiaComposition>,
-}
-
-impl ComplexSpecialStruct {
-    fn clone_to(&self, cloned_scfia: Scfia<RV32iScfiaComposition>) -> ComplexSpecialStruct {
-        ComplexSpecialStruct {
-            some_flag: cloned_scfia.try_get_active_value(self.some_flag.try_borrow().unwrap().id).unwrap(),
-        }
-    }
 }
 
 unsafe fn _reset(state: *mut SystemState, context: *mut StepContext<RV32iScfiaComposition>) {

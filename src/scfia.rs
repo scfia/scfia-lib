@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::marker::PhantomData;
 use std::ptr;
 use std::rc::Rc;
 
@@ -115,10 +116,9 @@ pub struct Scfia<SC: ScfiaComposition> {
 
 pub struct ScfiaInner<SC: ScfiaComposition> {
     pub next_symbol_id: u64,
-    pub active_symbols: BTreeMap<u64, ActiveValueWeak<SC>>,
-    pub retired_symbols: BTreeMap<u64, RetiredValueWeak<SC>>,
     pub(crate) z3_context: Z3_context,
     pub(crate) z3_solver: Z3_solver,
+    phantom: PhantomData<SC>,
 }
 
 impl<SC: ScfiaComposition> Scfia<SC> {
@@ -132,18 +132,12 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             Scfia {
                 inner: Rc::new(RefCell::new(ScfiaInner {
                     next_symbol_id: next_symbol_id.unwrap_or(0),
-                    active_symbols: BTreeMap::new(),
-                    retired_symbols: BTreeMap::new(),
                     z3_context,
                     z3_solver,
+                    phantom: PhantomData,
                 })),
             }
         }
-    }
-
-    pub fn try_get_active_value(&self, id: u64) -> Option<ActiveValue<SC>> {
-        let selff = self.inner.try_borrow_mut().unwrap();
-        selff.active_symbols.get(&id).map_or(None, |e| Some(e.upgrade().unwrap().clone()))
     }
 
     pub fn check_condition(&self, value: ActiveValue<SC>, fork_sink: &mut Option<SC::ForkSink>) -> bool {
@@ -172,9 +166,9 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             // warn!("{:?} {} {}", value, can_be_true, can_be_false);
             if can_be_true && can_be_false {
                 if let Some(fork_sink) = fork_sink {
+                    warn!("FORK");
                     fork_sink.fork(neg_condition_symbol.clone());
                     value.try_borrow_mut().unwrap().assert();
-                    warn!("FORK");
                     true
                 } else {
                     warn!("unexpected fork");
@@ -287,9 +281,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
 
     pub fn drop_active(&self, value: &ActiveValueInner<SC>) -> RetiredValue<SC> {
         let mut selff = self.inner.try_borrow_mut().unwrap();
-        trace!("dropping active {} from scfia {}", value.id, self.inner.as_ptr() as u64);
-        assert!(selff.active_symbols.remove(&value.id).is_some());
-        debug_assert!(selff.retired_symbols.remove(&value.id).is_none());
+        //trace!("dropping active {} from scfia {}", value.id, self.inner.as_ptr() as u64);
 
         let retired_value = match &value.expression {
             ActiveExpression::BVConcrete(e) => selff.insert_retired(
@@ -482,7 +474,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         for discovered_ast in value.discovered_asts.values() {
             let acquaintance = discovered_ast.upgrade().unwrap();
             let mut acquaintance_ref = acquaintance.try_borrow_mut().unwrap();
-            trace!("Adding acquaintance {} to heir list", acquaintance_ref.id);
+            //trace!("Adding acquaintance {} to heir list", acquaintance_ref.id);
             assert!(acquaintance_ref.discovered_asts.remove(&value.id).is_some());
             heirs.push(acquaintance.clone())
         }
@@ -508,15 +500,13 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             }
         }
 
-        selff.retired_symbols.insert(value.id, Rc::downgrade(&retired_value));
         retired_value
     }
 
     pub fn drop_retired(&self, value: &RetiredValueInner<SC>) {
         unsafe {
-            trace!("Dropping {:?}", value);
+            //trace!("Dropping {:?}", value);
             let mut selff = self.inner.try_borrow_mut().unwrap();
-            assert!(selff.retired_symbols.remove(&value.id).is_some());
             Z3_dec_ref(selff.z3_context, value.z3_ast);
         }
     }
@@ -524,6 +514,8 @@ impl<SC: ScfiaComposition> Scfia<SC> {
     pub(crate) fn assert(&self, value: &mut ActiveValueInner<SC>) {
         unsafe {
             let selff = self.inner.try_borrow_mut().unwrap();
+            debug!("Scfia {} asserting {:?}", self.inner.as_ptr() as u64, value);
+            //TODO abort if already is assert
             match &mut value.expression {
                 ActiveExpression::BoolNotExpression(e) => {
                     e.is_assert = true;
@@ -558,11 +550,11 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             let mut candidate_asts: Vec<Z3_ast> = vec![];
             for candidate in candidates.iter() {
                 let candidate_ast = Z3_mk_unsigned_int64(selff.z3_context, *candidate, sort);
-                Z3_inc_ref(selff.z3_context, candidate_ast);
+                //Z3_inc_ref(selff.z3_context, candidate_ast);
                 candidate_asts.push(candidate_ast);
 
                 let eq = Z3_mk_eq(selff.z3_context, candidate_ast, value.z3_ast);
-                Z3_inc_ref(selff.z3_context, eq);
+                //Z3_inc_ref(selff.z3_context, eq);
                 eqs.push(eq);
 
                 let assumption = Z3_mk_not(selff.z3_context, eq);
@@ -578,7 +570,6 @@ impl<SC: ScfiaComposition> Scfia<SC> {
                 }
 
                 let model = Z3_solver_get_model(selff.z3_context, selff.z3_solver);
-                Z3_model_inc_ref(selff.z3_context, model);
 
                 let mut z3_ast_result: Z3_ast = ptr::null_mut();
                 assert!(Z3_model_eval(selff.z3_context, model, value.z3_ast, true, &mut z3_ast_result));
@@ -586,19 +577,18 @@ impl<SC: ScfiaComposition> Scfia<SC> {
                 let mut v: u64 = 0;
                 assert!(Z3_get_numeral_uint64(selff.z3_context, z3_ast_result, &mut v));
 
-                Z3_inc_ref(selff.z3_context, z3_ast_result);
-                Z3_dec_ref(selff.z3_context, z3_ast_result);
-                Z3_model_dec_ref(selff.z3_context, model);
+                //Z3_inc_ref(selff.z3_context, z3_ast_result);
+                //Z3_dec_ref(selff.z3_context, z3_ast_result);
 
-                warn!("WARNING: Unpredicted monomorphization candidate 0x{:x} ", v);
+                warn!("Unpredicted monomorphization candidate 0x{:x} ", v);
                 candidates.push(v);
 
                 let candidate_ast = Z3_mk_unsigned_int64(selff.z3_context, v, sort);
-                Z3_inc_ref(selff.z3_context, candidate_ast);
+                //Z3_inc_ref(selff.z3_context, candidate_ast);
                 candidate_asts.push(candidate_ast);
 
                 let eq = Z3_mk_eq(selff.z3_context, candidate_ast, value.z3_ast);
-                Z3_inc_ref(selff.z3_context, eq);
+                //Z3_inc_ref(selff.z3_context, eq);
                 eqs.push(eq);
 
                 let assumption = Z3_mk_not(selff.z3_context,eq);
@@ -608,8 +598,8 @@ impl<SC: ScfiaComposition> Scfia<SC> {
 
             for i in 0..assumptions.len() {
                 Z3_dec_ref(selff.z3_context, assumptions[i]);
-                Z3_dec_ref(selff.z3_context, eqs[i]);
-                Z3_dec_ref(selff.z3_context, candidate_asts[i]);
+                //Z3_dec_ref(selff.z3_context, eqs[i]);
+                //Z3_dec_ref(selff.z3_context, candidate_asts[i]);
             }
         }
     }
@@ -1405,8 +1395,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
             discovered_asts: BTreeMap::new(),
             scfia,
         }));
-        trace!("Creating new expression ({:?})", value.try_borrow().unwrap());
-        self.active_symbols.insert(id, Rc::downgrade(&value));
+        //trace!("Creating new expression ({:?})", value.try_borrow().unwrap());
         if let Some(fork_sink) = fork_sink {
             fork_sink.push_value(value.clone())
         }
@@ -1418,16 +1407,14 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
             warn!("retiring 20378");
         }
         let value = Rc::new(RefCell::new(RetiredValueInner { id, z3_ast, expression, scfia }));
-        trace!("Creating new retired expression ({:?})", value.try_borrow().unwrap());
-        let old = self.retired_symbols.insert(id, Rc::downgrade(&value));
-        debug_assert!(old.is_none());
+        //trace!("Creating new retired expression ({:?})", value.try_borrow().unwrap());
         value
     }
 }
 
 impl<SC: ScfiaComposition> Drop for ScfiaInner<SC> {
     fn drop(&mut self) {
-        trace!("Dropping ScfiaInner");
+        //trace!("Dropping ScfiaInner");
         unsafe { Z3_del_context(self.z3_context) }
     }
 }
