@@ -53,7 +53,7 @@ fn step_until_hinted(rv32i_system_state: &mut RV32i, address: u64, begin: &Insta
         debug!("({}ms) Executing {:#x}", begin.elapsed().as_millis(), pc);
         let mut found_hint = None;
         for (hint_address, hint) in context.hints {
-            if address == address {
+            if *hint_address == pc {
                 found_hint = Some(hint);
                 break;
             }
@@ -306,7 +306,6 @@ fn test_system_state_inner() {
 
     info!("({}ms) Cloning state to free some z3 memory", begin.elapsed().as_millis());
     continuing = continuing.clone_model().0;
-    return;
 
     info!("({}ms) Stepping until NIC1 sendqueue queue_pfn check", begin.elapsed().as_millis());
     step_until(&mut continuing, 0x24, &begin);
@@ -483,6 +482,7 @@ fn test_system_state_inner() {
     step_until_hinted(&mut returning, START_OF_MAIN_LOOP, &begin, &StepContext { hints: &[(0x3dc, &INGRESS_RECEIVEQUEUE_DRIVER_POSITIONS)] });
 
     info!("({}ms) stepping success until start of main loop", begin.elapsed().as_millis());
+    return;
     step_until_hinted(&mut continuing, START_OF_MAIN_LOOP, &begin, &StepContext { hints: &[] });
     /*
     while continuing.state.pc.to_u64() != START_OF_MAIN_LOOP {

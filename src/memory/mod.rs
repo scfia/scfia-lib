@@ -197,6 +197,7 @@ impl<SC: ScfiaComposition> Memory<SC> {
     }
 
     fn read_concrete(&mut self, address: u64, width: u32, scfia: Scfia<SC>, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
+        // Volatile regions may be inside larger stable regions, so we check them first
         for region in &self.volatiles {
             if address >= region.start_address && address < region.start_address + region.length {
                 trace!("Volatile region 0x{:x} yielding fresh symbol", region.start_address);

@@ -12,12 +12,12 @@ pub struct RetiredBVConcrete {
 
 impl Debug for BVConcrete {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(format!("0x{:x}[{}]", self.value, self.width).as_str())
+        f.write_str(format!("BVC(value={:#x}, width={})", self.value, self.width).as_str())
     }
 }
 
 impl Debug for RetiredBVConcrete {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(format!("0x{:x}[{}]", self.value, self.width).as_str())
+        f.write_str(format!("BVC(value={:#x}, width={})", self.value, self.width).as_str())
     }
 }

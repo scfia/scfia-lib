@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, VecDeque};
 
 use log::{debug, trace, warn};
 
-use crate::{scfia::Scfia, values::{active_value::ActiveValue, retired_value::RetiredValue}, ScfiaComposition, StepContext};
+use crate::{scfia::Scfia, values::{active_value::{ActiveValue, ValueComment}, retired_value::RetiredValue}, ScfiaComposition, StepContext};
 
 #[derive(Debug)]
 pub struct StableMemoryRegion<SC: ScfiaComposition> {
@@ -49,21 +49,29 @@ impl<SC: ScfiaComposition> StableMemoryRegion<SC> {
         assert_eq!(width % 8, 0);
         let bytes = width / 8;
         let mut byte_values = VecDeque::new();
+        let mut uninitialized = false;
         for i in 0..bytes {
             if let Some(byte) = self.memory.get(&(address + i as u64)) {
                 byte_values.push_back(byte.clone());
             } else {
                 warn!("Region {:#x} (len={:#x}) reading from uninitialized {:#x}", self.start_address, self.length, address + i as u64);
-                byte_values.push_back(scfia.new_bv_symbol(8, fork_sink))
+                uninitialized = true;
+                byte_values.push_back(scfia.inner.try_borrow_mut().unwrap().new_bv_symbol(scfia.clone(), 8, None, fork_sink, Some(ValueComment::new(format!("Read from uninitialized address {:#x}", address + i as u64).to_string()))))
             }
         }
 
-        let mut value = byte_values.pop_front().unwrap();
-
         // Little endian
+        let mut value = byte_values.pop_front().unwrap();
         while !byte_values.is_empty() {
             let rhs = byte_values.pop_front().unwrap();
-            value = scfia.new_bv_concat(rhs, value, width - (byte_values.len() * 8) as u32, fork_sink);
+            let new_value = if uninitialized {
+                scfia.inner.try_borrow_mut().unwrap().new_bv_concat(scfia.clone(), rhs.clone(), value.clone(), width - (byte_values.len() * 8) as u32, None, fork_sink, Some(ValueComment::new("StableMemmoryRegion::read concat".to_string())))
+            } else {
+                scfia.new_bv_concat(rhs.clone(), value.clone(), width - (byte_values.len() * 8) as u32, fork_sink)
+            };
+            // Seriously, fuck Rust's drop behaviour/lifetimes.
+            // If we directly assign, the drop (of value's previous content) will be executed **before** the release of scfia.inner.try_borrow_mut().
+            value = new_value;
         }
 
         //debug!("? = *{:x} ({:?})", address, value);
