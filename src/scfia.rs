@@ -1,9 +1,12 @@
+use std::cell::Cell;
+use std::cell::OnceCell;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::ffi::CString;
 use std::marker::PhantomData;
 use std::ptr;
 use std::rc::Rc;
+use std::rc::Weak;
 use std::time::Instant;
 
 use log::debug;
@@ -14,7 +17,6 @@ use log::warn;
 
 use z3_sys::AstKind;
 use z3_sys::SortKind;
-use z3_sys::Z3_L_TRUE;
 use z3_sys::Z3_ast;
 use z3_sys::Z3_ast_vector_dec_ref;
 use z3_sys::Z3_ast_vector_inc_ref;
@@ -65,6 +67,7 @@ use z3_sys::Z3_solver_get_unsat_core;
 use z3_sys::Z3_solver_inc_ref;
 use z3_sys::Z3_string;
 use z3_sys::Z3_L_FALSE;
+use z3_sys::Z3_L_TRUE;
 
 use crate::values::active_value::ActiveExpression;
 use crate::values::active_value::ActiveValue;
@@ -114,804 +117,165 @@ use crate::values::retired_value::RetiredExpression;
 use crate::values::retired_value::RetiredValue;
 use crate::values::retired_value::RetiredValueInner;
 use crate::values::retired_value::RetiredValueWeak;
+use crate::z3_handle::Z3Ast;
+use crate::z3_handle::Z3Handle;
 
 pub const PREFIX: [i8; 4] = ['p' as i8, 'r' as i8, 'e' as i8, 0];
 
-#[derive(Clone)]
 pub struct Scfia<SC: ScfiaComposition> {
-    pub inner: Rc<RefCell<ScfiaInner<SC>>>,
-}
-
-pub struct ScfiaInner<SC: ScfiaComposition> {
-    pub next_symbol_id: u64,
-    pub(crate) z3_context: Z3_context,
-    pub(crate) z3_solver: Z3_solver,
+    pub(crate) z3: Rc<Z3Handle>,
+    pub next_symbol_id: Cell<u64>,
+    selff: OnceCell<Weak<Self>>,
     phantom: PhantomData<SC>,
-    active_symbols: u64,
-    retired_symbols: u64,
 }
 
 impl<SC: ScfiaComposition> Scfia<SC> {
-    pub fn new(next_symbol_id: Option<u64>) -> Scfia<SC> {
-        unsafe {
-            let z3_config = Z3_mk_config();
-            let z3_context = Z3_mk_context_rc(z3_config);
-            let z3_solver = Z3_mk_solver(z3_context);
-            Z3_solver_inc_ref(z3_context, z3_solver);
-            Z3_del_config(z3_config);
-            Scfia {
-                inner: Rc::new(RefCell::new(ScfiaInner {
-                    next_symbol_id: next_symbol_id.unwrap_or(0),
-                    z3_context,
-                    z3_solver,
-                    phantom: PhantomData,
-                    active_symbols: 0,
-                    retired_symbols: 0,
-                })),
-            }
-        }
-    }
-
-    pub fn check_condition(&self, condition: ActiveValue<SC>, fork_sink: &mut Option<SC::ForkSink>) -> bool {
-        unsafe {
-            if let ActiveExpression::BoolConcrete(e) = &condition.try_borrow().unwrap().expression {
-                return e.value;
-            }
-
-            let mut can_be_true = false;
-            let mut can_be_false = false;
-
-            let neg_condition_symbol = self.new_bool_not(condition.clone(), fork_sink);
-            let neg_condition_ast = neg_condition_symbol.try_borrow().unwrap().z3_ast;
-
-            {
-                let selff = self.inner.try_borrow_mut().unwrap();
-                let ast = condition.try_borrow().unwrap().z3_ast;
-                if Z3_solver_check_assumptions(selff.z3_context, selff.z3_solver, 1, &ast) != Z3_L_FALSE {
-                    can_be_true = true
-                }
-                
-                if Z3_solver_check_assumptions(selff.z3_context, selff.z3_solver, 1, &neg_condition_ast) != Z3_L_FALSE {
-                    can_be_false = true
-                }
-            }
-
-            if can_be_true && can_be_false {
-                if let Some(fork_sink) = fork_sink {
-                    info!("FORK");
-                    fork_sink.fork(neg_condition_symbol.clone());
-                    condition.try_borrow_mut().unwrap().assert();
-                    true
-                } else {
-                    error!("unexpected fork");
-                    panic!("unexpected fork")
-                }
-            } else if can_be_true {
-                true
-            } else if can_be_false {
-                false
-            } else {
-                unreachable!()
-            }
-        }
-    }
-
-    pub fn new_bool_eq(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
-        let mut selff = self.inner.try_borrow_mut().unwrap();
-        selff.new_bool_eq(self.clone(), s1.clone(), s2.clone(), None, false, fork_sink, None)
-    }
-
-    pub fn new_bool_not(&self, s1: ActiveValue<SC>, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
-        let mut selff = self.inner.try_borrow_mut().unwrap();
-        selff.new_bool_not(self.clone(), s1.clone(), None, false, fork_sink, None)
-    }
-
-    pub fn new_bool_signed_less_than(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
-        let mut selff = self.inner.try_borrow_mut().unwrap();
-        selff.new_bool_signed_less_than(self.clone(), s1.clone(), s2.clone(), None, false, fork_sink, None)
-    }
-
-    pub fn new_bool_unsigned_less_than(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
-        let mut selff = self.inner.try_borrow_mut().unwrap();
-        selff.new_bool_unsigned_less_than(self.clone(), s1.clone(), s2.clone(), None, false, fork_sink, None)
-    }
-
-    pub fn new_bv_add(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
-        let mut selff = self.inner.try_borrow_mut().unwrap();
-        selff.new_bv_add(self.clone(), s1.clone(), s2.clone(), width, None, fork_sink, None)
-    }
-
-    pub fn new_bv_and(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
-        let mut selff = self.inner.try_borrow_mut().unwrap();
-        selff.new_bv_and(self.clone(), s1.clone(), s2.clone(), width, None, fork_sink, None)
-    }
-
-    pub fn new_bv_concat(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
-        let mut selff = self.inner.try_borrow_mut().unwrap();
-        selff.new_bv_concat(self.clone(), s1.clone(), s2.clone(), width, None, fork_sink, None)
-    }
-
-    pub fn new_bv_concrete(&self, value: u64, width: u32, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
-        let mut selff = self.inner.try_borrow_mut().unwrap();
-        selff.new_bv_concrete(self.clone(), value, width, None, fork_sink, None)
-    }
-
-    pub fn new_bv_multiply(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
-        let mut selff = self.inner.try_borrow_mut().unwrap();
-        selff.new_bv_multiply(self.clone(), s1.clone(), s2.clone(), width, None, fork_sink, None)
-    }
-
-    pub fn new_bv_or(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
-        let mut selff = self.inner.try_borrow_mut().unwrap();
-        selff.new_bv_or(self.clone(), s1.clone(), s2.clone(), width, None, fork_sink, None)
-    }
-
-    pub fn new_bv_sign_extend(&self, s1: ActiveValue<SC>, input_width: u32, output_width: u32, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
-        let mut selff = self.inner.try_borrow_mut().unwrap();
-        selff.new_bv_sign_extend(self.clone(), s1.clone(), input_width, output_width, None, fork_sink, None)
-    }
-
-    pub fn new_bv_slice(&self, s1: ActiveValue<SC>, high: u32, low: u32, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
-        let mut selff = self.inner.try_borrow_mut().unwrap();
-        selff.new_bv_slice(self.clone(), s1.clone(), high, low, None, fork_sink, None)
-    }
-
-    pub fn new_bv_sll(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
-        let mut selff = self.inner.try_borrow_mut().unwrap();
-        selff.new_bv_sll(self.clone(), s1.clone(), s2.clone(), width, None, fork_sink, None)
-    }
-
-    pub fn new_bv_srl(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, shamt_width: u32, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
-        let mut selff = self.inner.try_borrow_mut().unwrap();
-        selff.new_bv_srl(self.clone(), s1.clone(), s2.clone(), width, None, fork_sink, None)
-    }
-
-    pub fn new_bv_sub(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
-        let mut selff = self.inner.try_borrow_mut().unwrap();
-        selff.new_bv_sub(self.clone(), s1.clone(), s2.clone(), width, None, fork_sink, None)
-    }
-
-    pub fn new_bv_symbol(&self, width: u32, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
-        let mut selff = self.inner.try_borrow_mut().unwrap();
-        selff.new_bv_symbol(self.clone(), width, None, fork_sink, None)
-    }
-
-    pub fn new_bv_unsigned_remainder(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
-        let mut selff = self.inner.try_borrow_mut().unwrap();
-        selff.new_bv_unsigned_remainder(self.clone(), s1.clone(), s2.clone(), width, None, fork_sink, None)
-    }
-
-    pub fn new_bv_xor(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
-        let mut selff = self.inner.try_borrow_mut().unwrap();
-        selff.new_bv_xor(self.clone(), s1.clone(), s2.clone(), width, None, fork_sink, None)
-    }
-
-    pub fn new_bv_constrained(&self, width: u32, align: u64, limit: u64) -> ActiveValue<SC> {
-        let base_symbol = self.inner.try_borrow_mut().unwrap().new_bv_symbol(self.clone(), width, None, &mut None, Some(ValueComment { message: "constrained symbol".to_string() }));
-
-        // Assert base_symbol & align == 0
-        let align_bv = self.inner.try_borrow_mut().unwrap().new_bv_concrete(self.clone(), align, width, None, &mut None, None);
-        let align_and = self.inner.try_borrow_mut().unwrap().new_bv_and(self.clone(), base_symbol.clone(), align_bv.clone(), width, None, &mut None, None);
-        let zero = self.inner.try_borrow_mut().unwrap().new_bv_concrete(self.clone(), 0, width, None, &mut None, None);
-        // I swear to whichever deity the Drop behaviour is a nightmare
-        let _eq = self.inner.try_borrow_mut().unwrap().new_bool_eq(self.clone(), align_and.clone(), zero.clone(), None, true, &mut None, None);
-
-        // Assert base_symbol < max
-        let limit_bv = self.inner.try_borrow_mut().unwrap().new_bv_concrete(self.clone(), limit, width, None, &mut None, None);
-        let _lt = self.inner.try_borrow_mut().unwrap().new_bool_unsigned_less_than(self.clone(), base_symbol.clone(), limit_bv.clone(), None, true, &mut None, None);
-
-        base_symbol
-    }
-
-    pub fn drop_active(&self, value: &ActiveValueInner<SC>) -> RetiredValue<SC> {
-        trace!("drop_active {:?}", value);
-        let mut selff = self.inner.try_borrow_mut().unwrap();
-        selff.active_symbols -= 1;
-        if value.comment.is_some() {
-            debug!("drop_active {:?}", value)
-        }
-
-        let retired_value = match &value.expression {
-            ActiveExpression::BVConcrete(e) => selff.insert_retired(
-                RetiredExpression::BVConcrete(RetiredBVConcrete {
-                    value: e.value,
-                    width: e.width,
-                }),
-                value.z3_ast,
-                value.id,
-                self.clone(),
-            ),
-            ActiveExpression::BVSymbol(e) => selff.insert_retired(
-                RetiredExpression::BVSymbol(RetiredBVSymbol { width: e.width }),
-                value.z3_ast,
-                value.id,
-                self.clone(),
-            ),
-            ActiveExpression::BVAddExpression(e) => selff.insert_retired(
-                RetiredExpression::BVAddExpression(RetiredBVAddExpression {
-                    s1: Rc::downgrade(&e.s1),
-                    s1_id: e.s1.try_borrow().unwrap().id,
-                    s2: Rc::downgrade(&e.s2),
-                    s2_id: e.s2.try_borrow().unwrap().id,
-                    width: e.width,
-                    phantom: PhantomData,
-                }),
-                value.z3_ast,
-                value.id,
-                self.clone(),
-            ),
-            ActiveExpression::BoolConcrete(e) => selff.insert_retired(
-                RetiredExpression::BoolConcrete(RetiredBoolConcrete { value: e.value }),
-                value.z3_ast,
-                value.id,
-                self.clone(),
-            ),
-            ActiveExpression::BoolEqExpression(e) => selff.insert_retired(
-                RetiredExpression::BoolEqExpression(RetiredBoolEqExpression {
-                    is_assert: e.is_assert,
-                    s1: Rc::downgrade(&e.s1),
-                    s1_id: e.s1.try_borrow().unwrap().id,
-                    s2: Rc::downgrade(&e.s2),
-                    s2_id: e.s2.try_borrow().unwrap().id,
-                    phantom: PhantomData,
-                }),
-                value.z3_ast,
-                value.id,
-                self.clone(),
-            ),
-            ActiveExpression::BoolNotExpression(e) => selff.insert_retired(
-                RetiredExpression::BoolNotExpression(RetiredBoolNotExpression {
-                    s1: Rc::downgrade(&e.s1),
-                    s1_id: e.s1.try_borrow().unwrap().id,
-                    is_assert: e.is_assert,
-                    phantom: PhantomData,
-                }),
-                value.z3_ast,
-                value.id,
-                self.clone(),
-            ),
-            ActiveExpression::BoolSignedLessThanExpression(e) => selff.insert_retired(
-                RetiredExpression::BoolSignedLessThanExpression(RetiredBoolSignedLessThanExpression {
-                    s1: Rc::downgrade(&e.s1),
-                    s1_id: e.s1.try_borrow().unwrap().id,
-                    s2: Rc::downgrade(&e.s2),
-                    s2_id: e.s2.try_borrow().unwrap().id,
-                    is_assert: e.is_assert,
-                    phantom: PhantomData,
-                }),
-                value.z3_ast,
-                value.id,
-                self.clone(),
-            ),
-            ActiveExpression::BoolUnsignedLessThanExpression(e) => selff.insert_retired(
-                RetiredExpression::BoolUnsignedLessThanExpression(RetiredBoolUnsignedLessThanExpression {
-                    s1: Rc::downgrade(&e.s1),
-                    s1_id: e.s1.try_borrow().unwrap().id,
-                    s2: Rc::downgrade(&e.s2),
-                    s2_id: e.s2.try_borrow().unwrap().id,
-                    is_assert: e.is_assert,
-                    phantom: PhantomData,
-                }),
-                value.z3_ast,
-                value.id,
-                self.clone(),
-            ),
-            ActiveExpression::BVAndExpression(e) => selff.insert_retired(
-                RetiredExpression::BVAndExpression(RetiredBVAndExpression {
-                    s1: Rc::downgrade(&e.s1),
-                    s1_id: e.s1.try_borrow().unwrap().id,
-                    s2: Rc::downgrade(&e.s2),
-                    s2_id: e.s2.try_borrow().unwrap().id,
-                    width: e.width,
-                    phantom: PhantomData,
-                }),
-                value.z3_ast,
-                value.id,
-                self.clone(),
-            ),
-            ActiveExpression::BVConcatExpression(e) => selff.insert_retired(
-                RetiredExpression::BVConcatExpression(RetiredBVConcatExpression {
-                    s1: Rc::downgrade(&e.s1),
-                    s1_id: e.s1.try_borrow().unwrap().id,
-                    s2: Rc::downgrade(&e.s2),
-                    s2_id: e.s2.try_borrow().unwrap().id,
-                    width: e.width,
-                    phantom: PhantomData,
-                }),
-                value.z3_ast,
-                value.id,
-                self.clone(),
-            ),
-            ActiveExpression::BVMultiplyExpression(e) => selff.insert_retired(
-                RetiredExpression::BVMultiplyExpression(RetiredBVMultiplyExpression {
-                    s1: Rc::downgrade(&e.s1),
-                    s1_id: e.s1.try_borrow().unwrap().id,
-                    s2: Rc::downgrade(&e.s2),
-                    s2_id: e.s2.try_borrow().unwrap().id,
-                    width: e.width,
-                    phantom: PhantomData,
-                }),
-                value.z3_ast,
-                value.id,
-                self.clone(),
-            ),
-            ActiveExpression::BVOrExpression(e) => selff.insert_retired(
-                RetiredExpression::BVOrExpression(RetiredBVOrExpression {
-                    s1: Rc::downgrade(&e.s1),
-                    s1_id: e.s1.try_borrow().unwrap().id,
-                    s2: Rc::downgrade(&e.s2),
-                    s2_id: e.s2.try_borrow().unwrap().id,
-                    width: e.width,
-                    phantom: PhantomData,
-                }),
-                value.z3_ast,
-                value.id,
-                self.clone(),
-            ),
-            ActiveExpression::BVSignExtendExpression(e) => selff.insert_retired(
-                RetiredExpression::BVSignExtendExpression(RetiredBVSignExtendExpression {
-                    s1: Rc::downgrade(&e.s1),
-                    s1_id: e.s1.try_borrow().unwrap().id,
-                    width: e.width,
-                    input_width: e.input_width,
-                    phantom: PhantomData,
-                }),
-                value.z3_ast,
-                value.id,
-                self.clone(),
-            ),
-            ActiveExpression::BVSliceExpression(e) => selff.insert_retired(
-                RetiredExpression::BVSliceExpression(RetiredBVSliceExpression {
-                    s1: Rc::downgrade(&e.s1),
-                    s1_id: e.s1.try_borrow().unwrap().id,
-                    width: e.width,
-                    high: e.width,
-                    low: e.width,
-                    phantom: PhantomData,
-                }),
-                value.z3_ast,
-                value.id,
-                self.clone(),
-            ),
-            ActiveExpression::BVSllExpression(e) => selff.insert_retired(
-                RetiredExpression::BVSllExpression(RetiredBVSllExpression {
-                    s1: Rc::downgrade(&e.s1),
-                    s1_id: e.s1.try_borrow().unwrap().id,
-                    s2: Rc::downgrade(&e.s2),
-                    s2_id: e.s2.try_borrow().unwrap().id,
-                    width: e.width,
-                    phantom: PhantomData,
-                }),
-                value.z3_ast,
-                value.id,
-                self.clone(),
-            ),
-            ActiveExpression::BVSrlExpression(e) => selff.insert_retired(
-                RetiredExpression::BVSrlExpression(RetiredBVSrlExpression {
-                    s1: Rc::downgrade(&e.s1),
-                    s1_id: e.s1.try_borrow().unwrap().id,
-                    s2: Rc::downgrade(&e.s2),
-                    s2_id: e.s2.try_borrow().unwrap().id,
-                    width: e.width,
-                    shamt: e.shamt,
-                    phantom: PhantomData,
-                }),
-                value.z3_ast,
-                value.id,
-                self.clone(),
-            ),
-            ActiveExpression::BVSubExpression(e) => selff.insert_retired(
-                RetiredExpression::BVSubExpression(RetiredBVSubExpression {
-                    s1: Rc::downgrade(&e.s1),
-                    s1_id: e.s1.try_borrow().unwrap().id,
-                    s2: Rc::downgrade(&e.s2),
-                    s2_id: e.s2.try_borrow().unwrap().id,
-                    width: e.width,
-                    phantom: PhantomData,
-                }),
-                value.z3_ast,
-                value.id,
-                self.clone(),
-            ),
-            ActiveExpression::BVUnsignedRemainderExpression(e) => selff.insert_retired(
-                RetiredExpression::BVXorExpression(RetiredBVXorExpression {
-                    s1: Rc::downgrade(&e.s1),
-                    s1_id: e.s1.try_borrow().unwrap().id,
-                    s2: Rc::downgrade(&e.s2),
-                    s2_id: e.s2.try_borrow().unwrap().id,
-                    width: e.width,
-                    phantom: PhantomData,
-                }),
-                value.z3_ast,
-                value.id,
-                self.clone(),
-            ),
-            ActiveExpression::BVXorExpression(e) => selff.insert_retired(
-                RetiredExpression::BVXorExpression(RetiredBVXorExpression {
-                    s1: Rc::downgrade(&e.s1),
-                    s1_id: e.s1.try_borrow().unwrap().id,
-                    s2: Rc::downgrade(&e.s2),
-                    s2_id: e.s2.try_borrow().unwrap().id,
-                    width: e.width,
-                    phantom: PhantomData,
-                }),
-                value.z3_ast,
-                value.id,
-                self.clone(),
-            ),
-        };
-
-        // Heirs are parents and discovered symbols
-        let mut heirs = vec![];
-        value.expression.get_parents(&mut heirs);
-        for discovered_ast in value.discovered_asts.values() {
-            let acquaintance = discovered_ast.upgrade().unwrap();
-            let mut acquaintance_mut = acquaintance.try_borrow_mut().unwrap();
-            acquaintance_mut.discovered_asts.remove(&value.id);
-            heirs.push(acquaintance.clone())
-        }
-
-        // For each heir...
-        for heir in &heirs {
-            let mut heir_mut = heir.try_borrow_mut().unwrap();
-            trace!("{:?} attempting to inherit {:?}", heir_mut, retired_value);
-            debug_assert!(Rc::ptr_eq(&heir_mut.scfia.inner, &value.scfia.inner));
-
-            // Inherit
-            if !heir_mut.is_concrete() {
-                heir_mut.inherited_asts.insert(value.id, retired_value.clone());
-
-                // Pass on inherited symbols
-                for (inherited_value_id, inherited_value) in &value.inherited_asts {
-                    let old = heir_mut.inherited_asts.insert(*inherited_value_id, inherited_value.clone());
-                    if let Some(old) = old {
-                        if !Rc::ptr_eq(&old, inherited_value) {
-                            error!("{:?} tried to pass on {:?}, but {:?} already had {:?} (same id, different thing)", value, inherited_value, heir_mut, old);
-                            panic!();
-                        }
-                    }
-                }
-            }
-
-            // Acquaint all heirs
-            for other_heir in &heirs {
-                if !Rc::ptr_eq(heir, other_heir) {
-                    let mut other_heir_mut = other_heir.try_borrow_mut().unwrap();
-                    other_heir_mut.discovered_asts.insert(heir_mut.id, Rc::downgrade(heir));
-                    heir_mut.discovered_asts.insert(other_heir_mut.id, Rc::downgrade(other_heir));
-                }
-            }
-        }
-
-        retired_value
-    }
-
-    pub fn drop_retired(&self, value: &RetiredValueInner<SC>) {
-        unsafe {
-            trace!("drop_retired {:?}", value);
-            let mut selff = self.inner.try_borrow_mut().unwrap();
-            selff.retired_symbols -= 1;
-            Z3_dec_ref(selff.z3_context, value.z3_ast);
-        }
-    }
-
-    pub(crate) fn assert(&self, value: &mut ActiveValueInner<SC>) {
-        unsafe {
-            let selff = self.inner.try_borrow_mut().unwrap();
-            debug!("Scfia {} asserting {:?}", self.inner.as_ptr() as u64, value);
-            //TODO abort if already is assert
-            match &mut value.expression {
-                ActiveExpression::BoolNotExpression(e) => {
-                    e.is_assert = true;
-                    Z3_solver_assert(selff.z3_context, selff.z3_solver, value.z3_ast);
-                }
-                ActiveExpression::BoolEqExpression(e) => {
-                    e.is_assert = true;
-                    Z3_solver_assert(selff.z3_context, selff.z3_solver, value.z3_ast);
-                }
-                ActiveExpression::BoolSignedLessThanExpression(e) => {
-                    e.is_assert = true;
-                    Z3_solver_assert(selff.z3_context, selff.z3_solver, value.z3_ast);
-                }
-                ActiveExpression::BoolUnsignedLessThanExpression(e) => {
-                    e.is_assert = true;
-                    Z3_solver_assert(selff.z3_context, selff.z3_solver, value.z3_ast);
-                }
-                _ => panic!(),
-            }
-        }
-    }
-
-    // TODO check refcounting
-    pub fn monomorphize_active(&self, value: &ActiveValueInner<SC>, candidates: &mut Vec<u64>) {
-        unsafe {
-            let begin = Instant::now();
-            let selff = self.inner.try_borrow_mut().unwrap();
-            debug!("monomorphize_active ({} active, {} retired)", selff.active_symbols, selff.retired_symbols);
-            let sort = Z3_get_sort(selff.z3_context, value.z3_ast);
-
-            // Fill assumptions with known candidates
-            let mut assumptions: Vec<Z3_ast> = vec![];
-            let mut eqs: Vec<Z3_ast> = vec![];
-            let mut candidate_asts: Vec<Z3_ast> = vec![];
-            for candidate in candidates.iter() {
-                let candidate_ast = Z3_mk_unsigned_int64(selff.z3_context, *candidate, sort);
-                Z3_inc_ref(selff.z3_context, candidate_ast);
-                candidate_asts.push(candidate_ast);
-
-                let eq = Z3_mk_eq(selff.z3_context, candidate_ast, value.z3_ast);
-                Z3_inc_ref(selff.z3_context, eq);
-                eqs.push(eq);
-
-                let assumption = Z3_mk_not(selff.z3_context, eq);
-                Z3_inc_ref(selff.z3_context, assumption);
-                assumptions.push(assumption)
-            }
-
-            // Find all remaining candidates
-            loop {
-                let assumptions_count = assumptions.len().try_into().unwrap();
-                if Z3_solver_check_assumptions(selff.z3_context, selff.z3_solver, assumptions_count, assumptions.as_ptr()) == Z3_L_FALSE {
-                    break;
-                }
-
-                let model = Z3_solver_get_model(selff.z3_context, selff.z3_solver);
-
-                let mut z3_ast_result: Z3_ast = ptr::null_mut();
-                assert!(Z3_model_eval(selff.z3_context, model, value.z3_ast, true, &mut z3_ast_result));
-
-                let mut v: u64 = 0;
-                assert!(Z3_get_numeral_uint64(selff.z3_context, z3_ast_result, &mut v));
-
-                Z3_inc_ref(selff.z3_context, z3_ast_result);
-                Z3_dec_ref(selff.z3_context, z3_ast_result);
-
-                warn!("Unpredicted monomorphization candidate 0x{:x} ", v);
-                candidates.push(v);
-
-                let candidate_ast = Z3_mk_unsigned_int64(selff.z3_context, v, sort);
-                Z3_inc_ref(selff.z3_context, candidate_ast);
-                candidate_asts.push(candidate_ast);
-
-                let eq = Z3_mk_eq(selff.z3_context, candidate_ast, value.z3_ast);
-                Z3_inc_ref(selff.z3_context, eq);
-                eqs.push(eq);
-
-                let assumption = Z3_mk_not(selff.z3_context,eq);
-                Z3_inc_ref(selff.z3_context, assumption);
-                assumptions.push(assumption)
-            }
-
-            for i in 0..assumptions.len() {
-                Z3_dec_ref(selff.z3_context, assumptions[i]);
-                Z3_dec_ref(selff.z3_context, eqs[i]);
-                Z3_dec_ref(selff.z3_context, candidate_asts[i]);
-            }
-
-            debug!("monomorphize_active done after {} ms", begin.elapsed().as_millis());
-        }
-    }
-}
-
-impl<SC: ScfiaComposition> Default for Scfia<SC> {
-    fn default() -> Self {
-        Self::new(None)
-    }
-}
-
-impl<SC: ScfiaComposition> ScfiaInner<SC> {
-    pub fn assert_consistency(&self) {
-        unsafe {
-            debug!("assert_consistency");
-            assert_eq!(Z3_solver_check(self.z3_context, self.z3_solver), Z3_L_TRUE);
-            debug!("assert_consistency success");
-        }
-    }
-
-    pub fn new_bool_concrete(&mut self, self_rc: Scfia<SC>, value: bool, id: Option<u64>, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
-        unsafe {
-            let id = if let Some(id) = id { id } else { self.next_symbol_id() };
-            let z3_ast = if value { Z3_mk_true(self.z3_context) } else { Z3_mk_false(self.z3_context) };
-            Z3_inc_ref(self.z3_context, z3_ast);
-            return self.insert_active(ActiveExpression::BoolConcrete(BoolConcrete { value }), z3_ast, id, self_rc, fork_sink, None);
-        }
+    pub fn new_bool_concrete(&self, value: bool, id: Option<u64>, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
+        let id = if let Some(id) = id { id } else { self.next_symbol_id() };
+        let z3_ast = self.z3.new_bool_concrete(value);
+        self.new_active(ActiveExpression::BoolConcrete(BoolConcrete { value }), z3_ast, id, fork_sink, None)
     }
 
     pub fn new_bool_eq(
-        &mut self,
-        self_rc: Scfia<SC>,
-        s1: ActiveValue<SC>,
-        s2: ActiveValue<SC>,
+        &self,
+        s1: &ActiveValue<SC>,
+        s2: &ActiveValue<SC>,
         id: Option<u64>,
         is_assert: bool,
         fork_sink: &mut Option<SC::ForkSink>,
         comment: Option<ValueComment>,
     ) -> ActiveValue<SC> {
-        unsafe {
-            let s1_inner = s1.try_borrow().unwrap();
-            let s2_inner = s2.try_borrow().unwrap();
-            assert!(Rc::ptr_eq(&s1_inner.scfia.inner, &self_rc.inner));
-            assert!(Rc::ptr_eq(&s2_inner.scfia.inner, &self_rc.inner));
-            // TODO also assert width?
-            let id = if let Some(id) = id { id } else { self.next_symbol_id() };
-            if let ActiveExpression::BVConcrete(s1) = &s1_inner.expression {
-                if let ActiveExpression::BVConcrete(s2) = &s2_inner.expression {
-                    let z3_ast = if s1.value == s2.value {
-                        Z3_mk_true(self.z3_context)
-                    } else {
-                        Z3_mk_false(self.z3_context)
-                    };
-                    Z3_inc_ref(self.z3_context, z3_ast);
-                    return self.insert_active(
-                        ActiveExpression::BoolConcrete(BoolConcrete { value: s1.value == s2.value }),
-                        z3_ast,
-                        id,
-                        self_rc,
-                        fork_sink,
-                        comment,
-                    );
-                }
-            };
-
-            let z3_ast = Z3_mk_eq(self.z3_context, s1.try_borrow().unwrap().z3_ast, s2.try_borrow().unwrap().z3_ast);
-            Z3_inc_ref(self.z3_context, z3_ast);
-            if is_assert {
-                Z3_solver_assert(self.z3_context, self.z3_solver, z3_ast);
-            }
-            self.insert_active(
-                ActiveExpression::BoolEqExpression(BoolEqExpression {
-                    s1: s1.clone(),
-                    s2: s2.clone(),
-                    is_assert,
-                }),
-                z3_ast,
-                id,
-                self_rc,
-                fork_sink,
-                comment,
-            )
-        }
-    }
-
-    pub fn new_bool_not(
-        &mut self,
-        self_rc: Scfia<SC>,
-        s1: ActiveValue<SC>,
-        id: Option<u64>,
-        is_assert: bool,
-        fork_sink: &mut Option<SC::ForkSink>,
-        comment: Option<ValueComment>,
-    ) -> ActiveValue<SC> {
-        unsafe {
-            let s1_inner = s1.try_borrow().unwrap();
-            assert!(Rc::ptr_eq(&s1_inner.scfia.inner, &self_rc.inner));
-            let id = if let Some(id) = id { id } else { self.next_symbol_id() };
-            if let ActiveExpression::BoolConcrete(s1) = &s1_inner.expression {
-                let z3_ast = if !s1.value {
-                    Z3_mk_true(self.z3_context)
-                } else {
-                    Z3_mk_false(self.z3_context)
-                };
-                Z3_inc_ref(self.z3_context, z3_ast);
-                return self.insert_active(
-                    ActiveExpression::BoolConcrete(BoolConcrete { value: !s1.value }),
+        let s1_inner = s1.try_borrow().unwrap();
+        let s2_inner = s2.try_borrow().unwrap();
+        let id = if let Some(id) = id { id } else { self.next_symbol_id() };
+        if let ActiveExpression::BVConcrete(s1) = &s1_inner.expression {
+            if let ActiveExpression::BVConcrete(s2) = &s2_inner.expression {
+                let z3_ast = self.z3.new_bool_concrete(s1.value == s2.value);
+                return self.new_active(
+                    ActiveExpression::BoolConcrete(BoolConcrete { value: s1.value == s2.value }),
                     z3_ast,
                     id,
-                    self_rc,
                     fork_sink,
                     comment,
                 );
             }
+        };
 
-            let z3_ast = Z3_mk_not(self.z3_context, s1.try_borrow().unwrap().z3_ast);
-            Z3_inc_ref(self.z3_context, z3_ast);
-            if is_assert {
-                Z3_solver_assert(self.z3_context, self.z3_solver, z3_ast);
-            }
-            self.insert_active(
-                ActiveExpression::BoolNotExpression(BoolNotExpression { s1: s1.clone(), is_assert }),
+        let z3_ast = self.z3.new_eq(&s1_inner.z3_ast, &s2_inner.z3_ast, is_assert);
+        self.new_active(
+            ActiveExpression::BoolEqExpression(BoolEqExpression {
+                s1: s1.clone(),
+                s2: s2.clone(),
+                is_assert,
+            }),
+            z3_ast,
+            id,
+            fork_sink,
+            comment,
+        )
+    }
+
+    pub fn new_bool_not(
+        &self,
+        s1: &ActiveValue<SC>,
+        id: Option<u64>,
+        is_assert: bool,
+        fork_sink: &mut Option<SC::ForkSink>,
+        comment: Option<ValueComment>,
+    ) -> ActiveValue<SC> {
+        let s1_inner = s1.try_borrow().unwrap();
+        let id = if let Some(id) = id { id } else { self.next_symbol_id() };
+        if let ActiveExpression::BoolConcrete(s1) = &s1_inner.expression {
+            let z3_ast = self.z3.new_bool_concrete(!s1.value);
+            return self.new_active(
+                ActiveExpression::BoolConcrete(BoolConcrete { value: !s1.value }),
                 z3_ast,
                 id,
-                self_rc,
                 fork_sink,
                 comment,
-            )
+            );
         }
+
+        let z3_ast = self.z3.new_not(&s1_inner.z3_ast, is_assert);
+        self.new_active(
+            ActiveExpression::BoolNotExpression(BoolNotExpression { s1: s1.clone(), is_assert }),
+            z3_ast,
+            id,
+            fork_sink,
+            comment,
+        )
     }
 
     pub fn new_bool_signed_less_than(
-        &mut self,
-        self_rc: Scfia<SC>,
-        s1: ActiveValue<SC>,
-        s2: ActiveValue<SC>,
+        &self,
+        s1: &ActiveValue<SC>,
+        s2: &ActiveValue<SC>,
         id: Option<u64>,
         is_assert: bool,
         fork_sink: &mut Option<SC::ForkSink>,
         comment: Option<ValueComment>,
     ) -> ActiveValue<SC> {
-        unsafe {
-            let s1_inner = s1.try_borrow().unwrap();
-            let s2_inner = s2.try_borrow().unwrap();
-            assert!(Rc::ptr_eq(&s1_inner.scfia.inner, &self_rc.inner));
-            assert!(Rc::ptr_eq(&s2_inner.scfia.inner, &self_rc.inner));
-            let id = if let Some(id) = id { id } else { self.next_symbol_id() };
-            if let ActiveExpression::BVConcrete(s1) = &s1_inner.expression {
-                if let ActiveExpression::BVConcrete(s2) = &s2_inner.expression {
-                    let slt = (s1.value as i64) < (s2.value as i64);
-                    let z3_ast = if slt { Z3_mk_true(self.z3_context) } else { Z3_mk_false(self.z3_context) };
-                    Z3_inc_ref(self.z3_context, z3_ast);
-                    return self.insert_active(ActiveExpression::BoolConcrete(BoolConcrete { value: slt }), z3_ast, id, self_rc, fork_sink, comment);
-                }
+        let s1_inner = s1.try_borrow().unwrap();
+        let s2_inner = s2.try_borrow().unwrap();
+        let id = if let Some(id) = id { id } else { self.next_symbol_id() };
+        if let ActiveExpression::BVConcrete(s1) = &s1_inner.expression {
+            if let ActiveExpression::BVConcrete(s2) = &s2_inner.expression {
+                let slt = (s1.value as i64) < (s2.value as i64);
+                let z3_ast = self.z3.new_bool_concrete(slt);
+                return self.new_active(ActiveExpression::BoolConcrete(BoolConcrete { value: slt }), z3_ast, id, fork_sink, comment);
             }
-
-            let z3_ast = Z3_mk_bvslt(self.z3_context, s1.try_borrow().unwrap().z3_ast, s2.try_borrow().unwrap().z3_ast);
-            Z3_inc_ref(self.z3_context, z3_ast);
-            if is_assert {
-                Z3_solver_assert(self.z3_context, self.z3_solver, z3_ast);
-            }
-            self.insert_active(
-                ActiveExpression::BoolSignedLessThanExpression(BoolSignedLessThanExpression {
-                    s1: s1.clone(),
-                    s2: s2.clone(),
-                    is_assert: is_assert,
-                }),
-                z3_ast,
-                id,
-                self_rc,
-                fork_sink,
-                comment,
-            )
         }
+
+        let z3_ast = self.z3.new_bvslt(&s1_inner.z3_ast, &s2_inner.z3_ast, is_assert);
+        self.new_active(
+            ActiveExpression::BoolSignedLessThanExpression(BoolSignedLessThanExpression {
+                s1: s1.clone(),
+                s2: s2.clone(),
+                is_assert: is_assert,
+            }),
+            z3_ast,
+            id,
+            fork_sink,
+            comment,
+        )
     }
 
     pub fn new_bool_unsigned_less_than(
-        &mut self,
-        self_rc: Scfia<SC>,
-        s1: ActiveValue<SC>,
-        s2: ActiveValue<SC>,
+        &self,
+        s1: &ActiveValue<SC>,
+        s2: &ActiveValue<SC>,
         id: Option<u64>,
         is_assert: bool,
         fork_sink: &mut Option<SC::ForkSink>,
         comment: Option<ValueComment>,
     ) -> ActiveValue<SC> {
-        unsafe {
-            let s1_inner = s1.try_borrow().unwrap();
-            let s2_inner = s2.try_borrow().unwrap();
-            assert!(Rc::ptr_eq(&s1_inner.scfia.inner, &self_rc.inner));
-            assert!(Rc::ptr_eq(&s2_inner.scfia.inner, &self_rc.inner));
-            let id = if let Some(id) = id { id } else { self.next_symbol_id() };
-            if let ActiveExpression::BVConcrete(s1) = &s1_inner.expression {
-                if let ActiveExpression::BVConcrete(s2) = &s2_inner.expression {
-                    let slt = s1.value < s2.value;
-                    let z3_ast = if slt { Z3_mk_true(self.z3_context) } else { Z3_mk_false(self.z3_context) };
-                    Z3_inc_ref(self.z3_context, z3_ast);
-                    return self.insert_active(ActiveExpression::BoolConcrete(BoolConcrete { value: slt }), z3_ast, id, self_rc, fork_sink, comment);
-                }
+        let s1_inner = s1.try_borrow().unwrap();
+        let s2_inner = s2.try_borrow().unwrap();
+        let id = if let Some(id) = id { id } else { self.next_symbol_id() };
+        if let ActiveExpression::BVConcrete(s1) = &s1_inner.expression {
+            if let ActiveExpression::BVConcrete(s2) = &s2_inner.expression {
+                let ult = s1.value < s2.value;
+                let z3_ast = self.z3.new_bool_concrete(ult);
+                return self.new_active(ActiveExpression::BoolConcrete(BoolConcrete { value: ult }), z3_ast, id, fork_sink, comment);
             }
-
-            let z3_ast = Z3_mk_bvult(self.z3_context, s1.try_borrow().unwrap().z3_ast, s2.try_borrow().unwrap().z3_ast);
-            Z3_inc_ref(self.z3_context, z3_ast);
-            if is_assert {
-                Z3_solver_assert(self.z3_context, self.z3_solver, z3_ast);
-            }
-            self.insert_active(
-                ActiveExpression::BoolUnsignedLessThanExpression(BoolUnsignedLessThanExpression {
-                    s1: s1.clone(),
-                    s2: s2.clone(),
-                    is_assert,
-                }),
-                z3_ast,
-                id,
-                self_rc,
-                fork_sink,
-                comment,
-            )
         }
+
+        let z3_ast = self.z3.new_bvult(&s1_inner.z3_ast, &s2_inner.z3_ast, is_assert);
+        self.new_active(
+            ActiveExpression::BoolUnsignedLessThanExpression(BoolUnsignedLessThanExpression {
+                s1: s1.clone(),
+                s2: s2.clone(),
+                is_assert,
+            }),
+            z3_ast,
+            id,
+            fork_sink,
+            comment,
+        )
     }
 
     pub fn new_bv_add(
-        &mut self,
-        self_rc: Scfia<SC>,
+        &self,
         s1: ActiveValue<SC>,
         s2: ActiveValue<SC>,
         width: u32,
@@ -919,45 +283,36 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         fork_sink: &mut Option<SC::ForkSink>,
         comment: Option<ValueComment>,
     ) -> ActiveValue<SC> {
-        unsafe {
-            let s1_inner = s1.try_borrow().unwrap();
-            let s2_inner = s2.try_borrow().unwrap();
-            assert!(Rc::ptr_eq(&s1_inner.scfia.inner, &self_rc.inner));
-            assert!(Rc::ptr_eq(&s2_inner.scfia.inner, &self_rc.inner));
-            let id = if let Some(id) = id { id } else { self.next_symbol_id() };
-            if let ActiveExpression::BVConcrete(s1) = &s1_inner.expression {
-                if let ActiveExpression::BVConcrete(s2) = &s2_inner.expression {
-                    let one: u64 = 1;
-                    let mask = one.rotate_left(s2.width).overflowing_sub(1).0; // TODO is rotate_left the right choice here?
-                    let sum = s1.value.overflowing_add(s2.value).0;
-                    let value = mask & sum;
-                    let sort = Z3_mk_bv_sort(self.z3_context, width);
-                    let z3_ast = Z3_mk_unsigned_int64(self.z3_context, value, sort);
-                    Z3_inc_ref(self.z3_context, z3_ast);
-                    return self.insert_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, self_rc, fork_sink, comment);
-                }
-            };
+        let s1_inner = s1.try_borrow().unwrap();
+        let s2_inner = s2.try_borrow().unwrap();
+        let id = if let Some(id) = id { id } else { self.next_symbol_id() };
+        if let ActiveExpression::BVConcrete(s1) = &s1_inner.expression {
+            if let ActiveExpression::BVConcrete(s2) = &s2_inner.expression {
+                let one: u64 = 1;
+                let mask = one.rotate_left(s2.width).overflowing_sub(1).0; // TODO is rotate_left the right choice here?
+                let sum = s1.value.overflowing_add(s2.value).0;
+                let value = mask & sum;
+                let z3_ast = self.z3.new_bv_concrete(value, width);
+                return self.new_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, fork_sink, comment);
+            }
+        };
 
-            let z3_ast = Z3_mk_bvadd(self.z3_context, s1.try_borrow().unwrap().z3_ast, s2.try_borrow().unwrap().z3_ast);
-            Z3_inc_ref(self.z3_context, z3_ast);
-            self.insert_active(
-                ActiveExpression::BVAddExpression(BVAddExpression {
-                    s1: s1.clone(),
-                    s2: s2.clone(),
-                    width,
-                }),
-                z3_ast,
-                id,
-                self_rc,
-                fork_sink,
-                comment,
-            )
-        }
+        let z3_ast = self.z3.new_bvadd(&s1_inner.z3_ast, &s2_inner.z3_ast);
+        self.new_active(
+            ActiveExpression::BVAddExpression(BVAddExpression {
+                s1: s1.clone(),
+                s2: s2.clone(),
+                width,
+            }),
+            z3_ast,
+            id,
+            fork_sink,
+            comment,
+        )
     }
 
     pub fn new_bv_and(
-        &mut self,
-        self_rc: Scfia<SC>,
+        &self,
         s1: ActiveValue<SC>,
         s2: ActiveValue<SC>,
         width: u32,
@@ -965,41 +320,33 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         fork_sink: &mut Option<SC::ForkSink>,
         comment: Option<ValueComment>,
     ) -> ActiveValue<SC> {
-        unsafe {
-            let s1_inner = s1.try_borrow().unwrap();
-            let s2_inner = s2.try_borrow().unwrap();
-            assert!(Rc::ptr_eq(&s1_inner.scfia.inner, &self_rc.inner));
-            let id = if let Some(id) = id { id } else { self.next_symbol_id() };
-            if let ActiveExpression::BVConcrete(s1) = &s1_inner.expression {
-                if let ActiveExpression::BVConcrete(s2) = &s2_inner.expression {
-                    let value = s1.value & s2.value;
-                    let sort = Z3_mk_bv_sort(self.z3_context, width);
-                    let z3_ast = Z3_mk_unsigned_int64(self.z3_context, value, sort);
-                    Z3_inc_ref(self.z3_context, z3_ast);
-                    return self.insert_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, self_rc, fork_sink, comment);
-                }
-            };
+        let s1_inner = s1.try_borrow().unwrap();
+        let s2_inner = s2.try_borrow().unwrap();
+        let id = if let Some(id) = id { id } else { self.next_symbol_id() };
+        if let ActiveExpression::BVConcrete(s1) = &s1_inner.expression {
+            if let ActiveExpression::BVConcrete(s2) = &s2_inner.expression {
+                let value = s1.value & s2.value;
+                let z3_ast = self.z3.new_bv_concrete(value, width);
+                return self.new_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, fork_sink, comment);
+            }
+        };
 
-            let z3_ast = Z3_mk_bvand(self.z3_context, s1.try_borrow().unwrap().z3_ast, s2.try_borrow().unwrap().z3_ast);
-            Z3_inc_ref(self.z3_context, z3_ast);
-            self.insert_active(
-                ActiveExpression::BVAndExpression(BVAndExpression {
-                    s1: s1.clone(),
-                    s2: s2.clone(),
-                    width,
-                }),
-                z3_ast,
-                id,
-                self_rc,
-                fork_sink,
-                comment,
-            )
-        }
+        let z3_ast = self.z3.new_bvand(&s1_inner.z3_ast, &s2_inner.z3_ast);
+        self.new_active(
+            ActiveExpression::BVAndExpression(BVAndExpression {
+                s1: s1.clone(),
+                s2: s2.clone(),
+                width,
+            }),
+            z3_ast,
+            id,
+            fork_sink,
+            comment,
+        )
     }
 
     pub fn new_bv_concat(
-        &mut self,
-        self_rc: Scfia<SC>,
+        &self,
         s1: ActiveValue<SC>,
         s2: ActiveValue<SC>,
         width: u32,
@@ -1007,53 +354,48 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         fork_sink: &mut Option<SC::ForkSink>,
         comment: Option<ValueComment>,
     ) -> ActiveValue<SC> {
-        unsafe {
-            let s1_inner = s1.try_borrow().unwrap();
-            let s2_inner = s2.try_borrow().unwrap();
-            assert!(Rc::ptr_eq(&s1_inner.scfia.inner, &self_rc.inner));
-            let id = if let Some(id) = id { id } else { self.next_symbol_id() };
-            if let ActiveExpression::BVConcrete(s1) = &s1_inner.expression {
-                if let ActiveExpression::BVConcrete(s2) = &s2_inner.expression {
-                    let e1_shifted = s1.value << s2.width;
-                    let value = e1_shifted | s2.value;
-                    let sort = Z3_mk_bv_sort(self.z3_context, width);
-                    let z3_ast = Z3_mk_unsigned_int64(self.z3_context, value, sort);
-                    Z3_inc_ref(self.z3_context, z3_ast);
-                    return self.insert_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, self_rc, fork_sink, comment);
-                }
-            };
+        let s1_inner = s1.try_borrow().unwrap();
+        let s2_inner = s2.try_borrow().unwrap();
+        let id = if let Some(id) = id { id } else { self.next_symbol_id() };
+        if let ActiveExpression::BVConcrete(s1) = &s1_inner.expression {
+            if let ActiveExpression::BVConcrete(s2) = &s2_inner.expression {
+                let e1_shifted = s1.value << s2.width;
+                let value = e1_shifted | s2.value;
+                let z3_ast = self.z3.new_bv_concrete(value, width);
+                return self.new_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, fork_sink, comment);
+            }
+        };
 
-            let z3_ast = Z3_mk_concat(self.z3_context, s1.try_borrow().unwrap().z3_ast, s2.try_borrow().unwrap().z3_ast);
-            Z3_inc_ref(self.z3_context, z3_ast);
-            self.insert_active(
-                ActiveExpression::BVConcatExpression(BVConcatExpression {
-                    s1: s1.clone(),
-                    s2: s2.clone(),
-                    width,
-                }),
-                z3_ast,
-                id,
-                self_rc,
-                fork_sink,
-                comment,
-            )
-        }
+        let z3_ast = self.z3.new_bvconcat(&s1_inner.z3_ast, &s2_inner.z3_ast);
+        self.new_active(
+            ActiveExpression::BVConcatExpression(BVConcatExpression {
+                s1: s1.clone(),
+                s2: s2.clone(),
+                width,
+            }),
+            z3_ast,
+            id,
+            fork_sink,
+            comment,
+        )
     }
 
-    pub fn new_bv_concrete(&mut self, self_rc: Scfia<SC>, value: u64, width: u32, id: Option<u64>, fork_sink: &mut Option<SC::ForkSink>, comment: Option<ValueComment>) -> ActiveValue<SC> {
-        unsafe {
-            //TODO assert value sticking to the width mask
-            let sort = Z3_mk_bv_sort(self.z3_context, width);
-            let z3_ast = Z3_mk_unsigned_int64(self.z3_context, value, sort);
-            Z3_inc_ref(self.z3_context, z3_ast);
-            let id = if let Some(id) = id { id } else { self.next_symbol_id() };
-            self.insert_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, self_rc, fork_sink, comment)
-        }
+    pub fn new_bv_concrete(
+        &self,
+        value: u64,
+        width: u32,
+        id: Option<u64>,
+        fork_sink: &mut Option<SC::ForkSink>,
+        comment: Option<ValueComment>,
+    ) -> ActiveValue<SC> {
+        //TODO assert value sticking to the width mask
+        let z3_ast = self.z3.new_bv_concrete(value, width);
+        let id = if let Some(id) = id { id } else { self.next_symbol_id() };
+        self.new_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, fork_sink, comment)
     }
 
     pub fn new_bv_multiply(
-        &mut self,
-        self_rc: Scfia<SC>,
+        &self,
         s1: ActiveValue<SC>,
         s2: ActiveValue<SC>,
         width: u32,
@@ -1061,45 +403,37 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         fork_sink: &mut Option<SC::ForkSink>,
         comment: Option<ValueComment>,
     ) -> ActiveValue<SC> {
-        unsafe {
-            let s1_inner = s1.try_borrow().unwrap();
-            let s2_inner = s2.try_borrow().unwrap();
-            assert!(Rc::ptr_eq(&s1_inner.scfia.inner, &self_rc.inner));
-            let id = if let Some(id) = id { id } else { self.next_symbol_id() };
-            if let ActiveExpression::BVConcrete(s1) = &s1_inner.expression {
-                if let ActiveExpression::BVConcrete(s2) = &s2_inner.expression {
-                    // TODO check
-                    let one: u64 = 1;
-                    let mask = one.rotate_left(s2.width).overflowing_sub(1).0;
-                    let product = s1.value.overflowing_mul(s2.value).0;
-                    let value = mask & product;
-                    let sort = Z3_mk_bv_sort(self.z3_context, width);
-                    let z3_ast = Z3_mk_unsigned_int64(self.z3_context, value, sort);
-                    Z3_inc_ref(self.z3_context, z3_ast);
-                    return self.insert_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, self_rc, fork_sink, comment);
-                }
-            };
+        let s1_inner = s1.try_borrow().unwrap();
+        let s2_inner = s2.try_borrow().unwrap();
+        let id = if let Some(id) = id { id } else { self.next_symbol_id() };
+        if let ActiveExpression::BVConcrete(s1) = &s1_inner.expression {
+            if let ActiveExpression::BVConcrete(s2) = &s2_inner.expression {
+                // TODO check
+                let one: u64 = 1;
+                let mask = one.rotate_left(s2.width).overflowing_sub(1).0;
+                let product = s1.value.overflowing_mul(s2.value).0;
+                let value = mask & product;
+                let z3_ast = self.z3.new_bv_concrete(value, width);
+                return self.new_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, fork_sink, comment);
+            }
+        };
 
-            let z3_ast = Z3_mk_bvmul(self.z3_context, s1.try_borrow().unwrap().z3_ast, s2.try_borrow().unwrap().z3_ast);
-            Z3_inc_ref(self.z3_context, z3_ast);
-            self.insert_active(
-                ActiveExpression::BVMultiplyExpression(BVMultiplyExpression {
-                    s1: s1.clone(),
-                    s2: s2.clone(),
-                    width,
-                }),
-                z3_ast,
-                id,
-                self_rc,
-                fork_sink,
-                comment,
-            )
-        }
+        let z3_ast = self.z3.new_bvmul(&s1_inner.z3_ast, &s2_inner.z3_ast);
+        self.new_active(
+            ActiveExpression::BVMultiplyExpression(BVMultiplyExpression {
+                s1: s1.clone(),
+                s2: s2.clone(),
+                width,
+            }),
+            z3_ast,
+            id,
+            fork_sink,
+            comment,
+        )
     }
 
     pub fn new_bv_or(
-        &mut self,
-        self_rc: Scfia<SC>,
+        &self,
         s1: ActiveValue<SC>,
         s2: ActiveValue<SC>,
         width: u32,
@@ -1107,41 +441,34 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         fork_sink: &mut Option<SC::ForkSink>,
         comment: Option<ValueComment>,
     ) -> ActiveValue<SC> {
-        unsafe {
-            let s1_inner = s1.try_borrow().unwrap();
-            let s2_inner = s2.try_borrow().unwrap();
-            assert!(Rc::ptr_eq(&s1_inner.scfia.inner, &self_rc.inner));
-            let id = if let Some(id) = id { id } else { self.next_symbol_id() };
-            if let ActiveExpression::BVConcrete(s1) = &s1_inner.expression {
-                if let ActiveExpression::BVConcrete(s2) = &s2_inner.expression {
-                    let value = s1.value | s2.value;
-                    let sort = Z3_mk_bv_sort(self.z3_context, width);
-                    let z3_ast = Z3_mk_unsigned_int64(self.z3_context, value, sort);
-                    Z3_inc_ref(self.z3_context, z3_ast);
-                    return self.insert_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, self_rc, fork_sink, comment);
-                }
-            };
+        let s1_inner = s1.try_borrow().unwrap();
+        let s2_inner = s2.try_borrow().unwrap();
+        let id = if let Some(id) = id { id } else { self.next_symbol_id() };
+        if let ActiveExpression::BVConcrete(s1) = &s1_inner.expression {
+            if let ActiveExpression::BVConcrete(s2) = &s2_inner.expression {
+                let value = s1.value | s2.value;
+                let z3_ast = self.z3.new_bv_concrete(value, width);
+                return self.new_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, fork_sink, comment);
+            }
+        };
 
-            let z3_ast = Z3_mk_bvor(self.z3_context, s1.try_borrow().unwrap().z3_ast, s2.try_borrow().unwrap().z3_ast);
-            Z3_inc_ref(self.z3_context, z3_ast);
-            self.insert_active(
-                ActiveExpression::BVOrExpression(BVOrExpression {
-                    s1: s1.clone(),
-                    s2: s2.clone(),
-                    width,
-                }),
-                z3_ast,
-                id,
-                self_rc,
-                fork_sink,
-                comment,
-            )
-        }
+        let z3_ast = self.z3.new_bvor(&s1_inner.z3_ast, &s2_inner.z3_ast);
+        self.new_active(
+            ActiveExpression::BVOrExpression(BVOrExpression {
+                s1: s1.clone(),
+                s2: s2.clone(),
+                width,
+            }),
+            z3_ast,
+            id,
+            fork_sink,
+            comment,
+        )
     }
-
+    /*
     pub fn new_bv_sign_extend(
         &mut self,
-        self_rc: Scfia<SC>,
+        self_rc: ScfiaOld<SC>,
         s1: ActiveValue<SC>,
         input_width: u32,
         output_width: u32,
@@ -1161,7 +488,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
                 let sort = Z3_mk_bv_sort(self.z3_context, output_width);
                 let z3_ast = Z3_mk_unsigned_int64(self.z3_context, value, sort);
                 Z3_inc_ref(self.z3_context, z3_ast);
-                return self.insert_active(
+                return self.new_active(
                     ActiveExpression::BVConcrete(BVConcrete { value, width: output_width }),
                     z3_ast,
                     id,
@@ -1173,7 +500,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
 
             let z3_ast = Z3_mk_sign_ext(self.z3_context, output_width - input_width, s1.try_borrow().unwrap().z3_ast);
             Z3_inc_ref(self.z3_context, z3_ast);
-            self.insert_active(
+            self.new_active(
                 ActiveExpression::BVSignExtendExpression(BVSignExtendExpression {
                     s1: s1.clone(),
                     width: output_width,
@@ -1190,7 +517,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
 
     pub fn new_bv_slice(
         &mut self,
-        self_rc: Scfia<SC>,
+        self_rc: ScfiaOld<SC>,
         s1: ActiveValue<SC>,
         high: u32,
         low: u32,
@@ -1210,12 +537,12 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
                 let sort = Z3_mk_bv_sort(self.z3_context, width);
                 let z3_ast = Z3_mk_unsigned_int64(self.z3_context, value, sort);
                 Z3_inc_ref(self.z3_context, z3_ast);
-                return self.insert_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, self_rc, fork_sink, comment);
+                return self.new_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, self_rc, fork_sink, comment);
             };
 
             let z3_ast = Z3_mk_extract(self.z3_context, high, low, s1.try_borrow().unwrap().z3_ast);
             Z3_inc_ref(self.z3_context, z3_ast);
-            self.insert_active(
+            self.new_active(
                 ActiveExpression::BVSliceExpression(BVSliceExpression {
                     s1: s1.clone(),
                     width,
@@ -1233,7 +560,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
 
     pub fn new_bv_sll(
         &mut self,
-        self_rc: Scfia<SC>,
+        self_rc: ScfiaOld<SC>,
         s1: ActiveValue<SC>,
         s2: ActiveValue<SC>,
         width: u32,
@@ -1255,13 +582,13 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
                     let sort = Z3_mk_bv_sort(self.z3_context, width);
                     let z3_ast = Z3_mk_unsigned_int64(self.z3_context, value, sort);
                     Z3_inc_ref(self.z3_context, z3_ast);
-                    return self.insert_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, self_rc, fork_sink, comment);
+                    return self.new_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, self_rc, fork_sink, comment);
                 }
             };
 
             let z3_ast = Z3_mk_bvshl(self.z3_context, s1_inner.z3_ast, s2_inner.z3_ast);
             Z3_inc_ref(self.z3_context, z3_ast);
-            self.insert_active(
+            self.new_active(
                 ActiveExpression::BVSllExpression(BVSllExpression {
                     s1: s1.clone(),
                     s2: s2.clone(),
@@ -1278,7 +605,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
 
     pub fn new_bv_srl(
         &mut self,
-        self_rc: Scfia<SC>,
+        self_rc: ScfiaOld<SC>,
         s1: ActiveValue<SC>,
         s2: ActiveValue<SC>,
         width: u32,
@@ -1300,13 +627,13 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
                     let sort = Z3_mk_bv_sort(self.z3_context, width);
                     let z3_ast = Z3_mk_unsigned_int64(self.z3_context, value, sort);
                     Z3_inc_ref(self.z3_context, z3_ast);
-                    return self.insert_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, self_rc, fork_sink, comment);
+                    return self.new_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, self_rc, fork_sink, comment);
                 }
             };
 
             let z3_ast = Z3_mk_bvlshr(self.z3_context, s1_inner.z3_ast, s2_inner.z3_ast);
             Z3_inc_ref(self.z3_context, z3_ast);
-            self.insert_active(
+            self.new_active(
                 ActiveExpression::BVSllExpression(BVSllExpression {
                     s1: s1.clone(),
                     s2: s2.clone(),
@@ -1323,7 +650,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
 
     pub fn new_bv_sub(
         &mut self,
-        self_rc: Scfia<SC>,
+        self_rc: ScfiaOld<SC>,
         s1: ActiveValue<SC>,
         s2: ActiveValue<SC>,
         width: u32,
@@ -1347,13 +674,13 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
                     let sort = Z3_mk_bv_sort(self.z3_context, width);
                     let z3_ast = Z3_mk_unsigned_int64(self.z3_context, value, sort);
                     Z3_inc_ref(self.z3_context, z3_ast);
-                    return self.insert_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, self_rc, fork_sink, comment);
+                    return self.new_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, self_rc, fork_sink, comment);
                 }
             };
 
             let z3_ast = Z3_mk_bvsub(self.z3_context, s1.try_borrow().unwrap().z3_ast, s2.try_borrow().unwrap().z3_ast);
             Z3_inc_ref(self.z3_context, z3_ast);
-            self.insert_active(
+            self.new_active(
                 ActiveExpression::BVSubExpression(BVSubExpression {
                     s1: s1.clone(),
                     s2: s2.clone(),
@@ -1368,19 +695,19 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         }
     }
 
-    pub fn new_bv_symbol(&mut self, self_rc: Scfia<SC>, width: u32, id: Option<u64>, fork_sink: &mut Option<SC::ForkSink>, comment: Option<ValueComment>) -> ActiveValue<SC> {
+    pub fn new_bv_symbol(&mut self, self_rc: ScfiaOld<SC>, width: u32, id: Option<u64>, fork_sink: &mut Option<SC::ForkSink>, comment: Option<ValueComment>) -> ActiveValue<SC> {
         unsafe {
             let id = if let Some(id) = id { id } else { self.next_symbol_id() };
             let z3_ast = Z3_mk_fresh_const(self.z3_context, PREFIX.as_ptr(), Z3_mk_bv_sort(self.z3_context, width));
             Z3_inc_ref(self.z3_context, z3_ast);
 
-            self.insert_active(ActiveExpression::BVSymbol(BVSymbol { width }), z3_ast, id, self_rc, fork_sink, comment)
+            self.new_active(ActiveExpression::BVSymbol(BVSymbol { width }), z3_ast, id, self_rc, fork_sink, comment)
         }
     }
 
     pub fn new_bv_unsigned_remainder(
         &mut self,
-        self_rc: Scfia<SC>,
+        self_rc: ScfiaOld<SC>,
         s1: ActiveValue<SC>,
         s2: ActiveValue<SC>,
         width: u32,
@@ -1403,13 +730,13 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
                     let sort = Z3_mk_bv_sort(self.z3_context, width);
                     let z3_ast = Z3_mk_unsigned_int64(self.z3_context, value, sort);
                     Z3_inc_ref(self.z3_context, z3_ast);
-                    return self.insert_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, self_rc, fork_sink, comment);
+                    return self.new_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, self_rc, fork_sink, comment);
                 }
             };
 
             let z3_ast = Z3_mk_bvurem(self.z3_context, s1.try_borrow().unwrap().z3_ast, s2.try_borrow().unwrap().z3_ast);
             Z3_inc_ref(self.z3_context, z3_ast);
-            self.insert_active(
+            self.new_active(
                 ActiveExpression::BVUnsignedRemainderExpression(BVUnsignedRemainderExpression {
                     s1: s1.clone(),
                     s2: s2.clone(),
@@ -1426,7 +753,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
 
     pub fn new_bv_xor(
         &mut self,
-        self_rc: Scfia<SC>,
+        self_rc: ScfiaOld<SC>,
         s1: ActiveValue<SC>,
         s2: ActiveValue<SC>,
         width: u32,
@@ -1447,13 +774,13 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
                     let sort = Z3_mk_bv_sort(self.z3_context, width);
                     let z3_ast = Z3_mk_unsigned_int64(self.z3_context, value, sort);
                     Z3_inc_ref(self.z3_context, z3_ast);
-                    return self.insert_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, self_rc, fork_sink, comment);
+                    return self.new_active(ActiveExpression::BVConcrete(BVConcrete { value, width }), z3_ast, id, self_rc, fork_sink, comment);
                 }
             };
 
             let z3_ast = Z3_mk_bvxor(self.z3_context, s1.try_borrow().unwrap().z3_ast, s2.try_borrow().unwrap().z3_ast);
             Z3_inc_ref(self.z3_context, z3_ast);
-            self.insert_active(
+            self.new_active(
                 ActiveExpression::BVXorExpression(BVXorExpression {
                     s1: s1.clone(),
                     s2: s2.clone(),
@@ -1467,19 +794,19 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
             )
         }
     }
+    */
 
-    fn next_symbol_id(&mut self) -> u64 {
-        let id = self.next_symbol_id;
-        self.next_symbol_id = id + 1;
+    fn next_symbol_id(&self) -> u64 {
+        let id = self.next_symbol_id.get();
+        self.next_symbol_id.set(id + 1);
         id
     }
 
-    fn insert_active(
-        &mut self,
+    fn new_active(
+        &self,
         expression: ActiveExpression<SC>,
-        z3_ast: Z3_ast,
+        z3_ast: Z3Ast,
         id: u64,
-        scfia: Scfia<SC>,
         fork_sink: &mut Option<SC::ForkSink>,
         comment: Option<ValueComment>,
     ) -> ActiveValue<SC> {
@@ -1489,27 +816,35 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
             expression,
             inherited_asts: BTreeMap::new(),
             discovered_asts: BTreeMap::new(),
-            scfia,
+            scfia: self.selff.get().unwrap().clone(),
             comment,
         }));
-        //trace!("Creating new expression ({:?})", value.try_borrow().unwrap());
         if let Some(fork_sink) = fork_sink {
             fork_sink.push_value(value.clone())
         }
-        self.active_symbols += 1;
         value
     }
 
-    pub fn insert_retired(&mut self, expression: RetiredExpression<SC>, z3_ast: Z3_ast, id: u64, scfia: Scfia<SC>) -> RetiredValue<SC> {
-        let value = Rc::new(RefCell::new(RetiredValueInner { id, z3_ast, expression, scfia }));
-        self.retired_symbols += 1;
+    pub fn new_inactive(&self, expression: RetiredExpression<SC>, z3_ast: Z3Ast, id: u64) -> RetiredValue<SC> {
+        let value = Rc::new(RefCell::new(RetiredValueInner {
+            id,
+            z3_ast,
+            expression,
+            scfia: self.selff.get().unwrap().clone(),
+        }));
         value
     }
-}
 
-impl<SC: ScfiaComposition> Drop for ScfiaInner<SC> {
-    fn drop(&mut self) {
-        debug!("Dropping ScfiaInner");
-        unsafe { Z3_del_context(self.z3_context) }
+    pub fn drop_active(&self, value: &ActiveValueInner<SC>) -> RetiredValue<SC> {
+        let expression = match &value.expression {
+            ActiveExpression::BoolConcrete(v) => RetiredExpression::BoolConcrete(RetiredBoolConcrete { value: v.value }),
+            _ => todo!(),
+        };
+
+        self.new_inactive(expression, value.z3_ast.clone(), value.id)
+    }
+
+    pub fn monomorphize_active(&self, value: &ActiveValueInner<SC>, candidates: &mut Vec<u64>) {
+        todo!()
     }
 }

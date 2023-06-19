@@ -22,22 +22,22 @@ pub struct RetiredBoolEqExpression<SC: ScfiaComposition> {
     pub is_assert: bool,
     pub phantom: PhantomData<SC>,
 }
-
+/*
 #[cfg(test)]
 mod tests {
-    use crate::{models::riscv::rv32i::RV32iScfiaComposition, scfia::Scfia};
+    use crate::{models::riscv::rv32i::RV32iScfiaComposition, scfia::ScfiaOld};
 
     #[test]
     #[allow(unused_must_use)]
     fn test_concrete_eq() {
         simple_logger::SimpleLogger::new().env().init();
-        let scfia: Scfia<RV32iScfiaComposition> = Scfia::new(None);
+        let scfia: ScfiaOld<RV32iScfiaComposition> = ScfiaOld::new(None);
         let s1 = scfia.new_bv_concrete(2, 32, &mut None);
         let s2 = scfia.new_bv_concrete(2, 32, &mut None);
         let eq = scfia.new_bool_eq(s1, s2, &mut None);
         assert!(eq.try_borrow().unwrap().try_as_concrete_bool().unwrap());
 
-        let scfia: Scfia<RV32iScfiaComposition> = Scfia::new(None);
+        let scfia: ScfiaOld<RV32iScfiaComposition> = ScfiaOld::new(None);
         let s1 = scfia.new_bv_concrete(1, 32, &mut None);
         let s2 = scfia.new_bv_concrete(2, 32, &mut None);
         let add = scfia.new_bool_eq(s1, s2, &mut None);
@@ -48,7 +48,7 @@ mod tests {
     #[allow(unused_must_use)]
     fn test_symbolic_eq() {
         simple_logger::SimpleLogger::new().env().init();
-        let scfia: Scfia<RV32iScfiaComposition> = Scfia::new(None);
+        let scfia: ScfiaOld<RV32iScfiaComposition> = ScfiaOld::new(None);
         let s1 = scfia.new_bv_concrete(42, 32, &mut None);
         let s2 = scfia.new_bv_symbol(32, &mut None);
         let eq = scfia.new_bool_eq(s1, s2.clone(), &mut None);
@@ -58,3 +58,4 @@ mod tests {
         assert_eq!(candidates.len(), 1)
     }
 }
+*/

@@ -7,7 +7,7 @@ use std::{
 use log::{error, trace, debug};
 use z3_sys::{Z3_ast, Z3_mk_true, Z3_mk_false, Z3_mk_bv_sort, Z3_mk_unsigned_int64, Z3_inc_ref, Z3_mk_eq, Z3_solver_assert, Z3_mk_not, Z3_mk_bvslt, Z3_mk_bvult, Z3_mk_bvadd, Z3_mk_bvand, Z3_mk_concat, Z3_mk_bvmul, Z3_mk_bvor, Z3_mk_sign_ext, Z3_mk_extract, Z3_mk_bvshl, Z3_mk_bvlshr, Z3_mk_bvsub, Z3_mk_fresh_const, Z3_string, Z3_mk_bvurem, Z3_mk_bvxor};
 
-use crate::{scfia::{Scfia, ScfiaInner, PREFIX}, ScfiaComposition};
+use crate::{scfia::{Scfia, PREFIX}, ScfiaComposition, z3_handle::Z3Ast};
 
 use super::{
     bool_concrete::RetiredBoolConcrete, bool_eq_expression::RetiredBoolEqExpression, bool_not_expresssion::RetiredBoolNotExpression,
@@ -24,9 +24,9 @@ pub type RetiredValueWeak<Model> = Weak<RefCell<RetiredValueInner<Model>>>;
 
 pub struct RetiredValueInner<SC: ScfiaComposition> {
     pub id: u64,
-    pub z3_ast: Z3_ast,
+    pub z3_ast: Z3Ast,
     pub expression: RetiredExpression<SC>,
-    pub scfia: Scfia<SC>,
+    pub scfia: Weak<Scfia<SC>>,
 }
 
 pub enum RetiredExpression<SC: ScfiaComposition> {
@@ -51,7 +51,8 @@ pub enum RetiredExpression<SC: ScfiaComposition> {
     BVXorExpression(RetiredBVXorExpression<SC>),
 }
 
-fn get_cloned_parent<SC: ScfiaComposition>(weak: &Weak<RefCell<ActiveValueInner<SC>>>, id: u64, cloned_scfia: &mut ScfiaInner<SC>, cloned_scfia_rc: &Scfia<SC>, cloned_actives: &mut BTreeMap<u64, ActiveValue<SC>>, cloned_retired: &mut BTreeMap<u64, RetiredValue<SC>>) -> (Weak<RefCell<ActiveValueInner<SC>>>, Z3_ast) {
+/* 
+fn get_cloned_parent<SC: ScfiaComposition>(weak: &Weak<RefCell<ActiveValueInner<SC>>>, id: u64, cloned_scfia: &mut Scfia<SC>, cloned_scfia_rc: &ScfiaOld<SC>, cloned_actives: &mut BTreeMap<u64, ActiveValue<SC>>, cloned_retired: &mut BTreeMap<u64, RetiredValue<SC>>) -> (Weak<RefCell<ActiveValueInner<SC>>>, Z3_ast) {
     if let Some(cloned_active) = cloned_actives.get(&id) { // Parent might be active and cloned...
         (Rc::downgrade(cloned_active), cloned_active.try_borrow().unwrap().z3_ast)
     } else if let Some(v) = weak.upgrade() { // ...or active and not yet cloned...
@@ -65,15 +66,17 @@ fn get_cloned_parent<SC: ScfiaComposition>(weak: &Weak<RefCell<ActiveValueInner<
         panic!();
     }
 }
+*/
 
 impl<SC: ScfiaComposition> RetiredValueInner<SC> {
-    pub(crate) fn clone_to_stdlib(&self, cloned_scfia: &mut ScfiaInner<SC>, cloned_scfia_rc: Scfia<SC>, cloned_actives: &mut BTreeMap<u64, ActiveValue<SC>>, cloned_retired: &mut BTreeMap<u64, RetiredValue<SC>>) -> RetiredValue<SC> {
+    pub(crate) fn clone_to_stdlib(&self, cloned_scfia: &mut Scfia<SC>, cloned_actives: &mut BTreeMap<u64, ActiveValue<SC>>, cloned_retired: &mut BTreeMap<u64, RetiredValue<SC>>) -> RetiredValue<SC> {
         unsafe {
             if let Some(value) = cloned_retired.get(&self.id)  {
                 return value.clone()
             }
 
             trace!("Cloning {:?}", self);
+            /* 
             let (cloned_value, cloned_z3_ast) = match &self.expression {
                 RetiredExpression::BoolConcrete(e) => {
                     let z3_ast = if e.value { Z3_mk_true(cloned_scfia.z3_context) } else { Z3_mk_false(cloned_scfia.z3_context) };
@@ -262,13 +265,15 @@ impl<SC: ScfiaComposition> RetiredValueInner<SC> {
                 }
             };
 
-            let cloned_value_rc = cloned_scfia.insert_retired(cloned_value, cloned_z3_ast, self.id, cloned_scfia_rc.clone());
+            let cloned_value_rc = cloned_scfia.new_inactive(cloned_value, cloned_z3_ast, self.id, cloned_scfia_rc.clone());
             let old = cloned_retired.insert(self.id, cloned_value_rc.clone());
             if old.is_some() {
                 error!("clone_to_stdlib {} twice for scfia {:?}", self.id, Rc::as_ptr(&cloned_scfia_rc.inner));
                 panic!();
             }
             cloned_value_rc
+            */
+            todo!()
         }
     }
 }
@@ -277,12 +282,6 @@ impl<SC: ScfiaComposition> Debug for RetiredValueInner<SC> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.expression.fmt(f)?;
         f.write_str(format!("[id={}]", self.id).as_str())
-    }
-}
-
-impl<SC: ScfiaComposition> Drop for RetiredValueInner<SC> {
-    fn drop(&mut self) {
-        self.scfia.drop_retired(self)
     }
 }
 

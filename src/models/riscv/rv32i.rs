@@ -1,15 +1,15 @@
-#![allow(clippy::all)]
+/*#![allow(clippy::all)]
 #![allow(non_snake_case)]
 #![allow(unused)]
 use log::debug;
 use std::{borrow::BorrowMut, fmt::Debug, collections::BTreeMap};
 
-use crate::{memory::Memory, scfia::Scfia, values::{active_value::ActiveValue, retired_value::RetiredValue}, GenericForkSink, ScfiaComposition, StepContext, SymbolicHints};
+use crate::{memory::Memory, scfia::ScfiaOld, values::{active_value::ActiveValue, retired_value::RetiredValue}, GenericForkSink, ScfiaComposition, StepContext, SymbolicHints};
 
 pub struct RV32i {
     pub state: SystemState,
     pub memory: Memory<RV32iScfiaComposition>,
-    pub scfia: Scfia<RV32iScfiaComposition>,
+    pub scfia: ScfiaOld<RV32iScfiaComposition>,
 }
 
 #[derive(Debug)]
@@ -102,7 +102,7 @@ impl RV32i {
     pub fn clone_model(&self) -> (RV32i, BTreeMap<u64, ActiveValue<RV32iScfiaComposition>>, BTreeMap<u64, RetiredValue<RV32iScfiaComposition>>) {
         unsafe {
             let own_scfia = self.scfia.inner.try_borrow().unwrap();
-            let cloned_scfia_rc: Scfia<RV32iScfiaComposition> = Scfia::new(Some(own_scfia.next_symbol_id));
+            let cloned_scfia_rc: ScfiaOld<RV32iScfiaComposition> = ScfiaOld::new(Some(own_scfia.next_symbol_id));
             let mut cloned_actives = BTreeMap::new();
             let mut cloned_retireds = BTreeMap::new();
             debug!("cloning scfia {:?} to {:?}", self.scfia.inner.as_ptr(), cloned_scfia_rc.inner.as_ptr());
@@ -159,7 +159,7 @@ pub struct SystemState {
 }
 
 impl SystemState {
-    fn clone_to_stdlib(&self, cloned_scfia_rc: Scfia<RV32iScfiaComposition>, cloned_actives: &mut BTreeMap<u64, ActiveValue<RV32iScfiaComposition>>, cloned_retired: &mut BTreeMap<u64, RetiredValue<RV32iScfiaComposition>>) -> SystemState {
+    fn clone_to_stdlib(&self, cloned_scfia_rc: ScfiaOld<RV32iScfiaComposition>, cloned_actives: &mut BTreeMap<u64, ActiveValue<RV32iScfiaComposition>>, cloned_retired: &mut BTreeMap<u64, RetiredValue<RV32iScfiaComposition>>) -> SystemState {
         let mut cloned_scfia = cloned_scfia_rc.inner.try_borrow_mut().unwrap();
         SystemState {
             x0: self.x0.try_borrow().unwrap().clone_to_stdlib(&mut cloned_scfia, cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
@@ -1938,3 +1938,4 @@ unsafe fn _execute_add32(
     let sum: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(s1.clone(), s2.clone(), 32, &mut (*context).fork_sink);
     _register_write_BV32(state, destination_id.clone(), sum.clone(), context);
 }
+*/

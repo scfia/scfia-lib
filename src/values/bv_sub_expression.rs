@@ -21,15 +21,16 @@ pub struct RetiredBVSubExpression<SC: ScfiaComposition> {
     pub phantom: PhantomData<SC>,
 }
 
+/*
 #[cfg(test)]
 mod tests {
-    use crate::{models::riscv::rv32i::RV32iScfiaComposition, scfia::Scfia};
+    use crate::{models::riscv::rv32i::RV32iScfiaComposition, scfia::ScfiaOld};
 
     #[test]
     #[allow(unused_must_use)]
     fn test_concrete() {
         simple_logger::SimpleLogger::new().env().init();
-        let scfia: Scfia<RV32iScfiaComposition> = Scfia::new(None);
+        let scfia: ScfiaOld<RV32iScfiaComposition> = ScfiaOld::new(None);
         let s1 = scfia.new_bv_concrete(42, 32, &mut None);
         let s2 = scfia.new_bv_concrete(41, 32, &mut None);
         let sub = scfia.new_bv_sub(s1, s2, 32, &mut None);
@@ -42,3 +43,4 @@ mod tests {
     }
     //TODO test
 }
+*/

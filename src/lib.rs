@@ -1,6 +1,6 @@
 use memory::Memory;
 use scfia::Scfia;
-use std::fmt::Debug;
+use std::{fmt::Debug, rc::Weak};
 use values::active_value::ActiveValue;
 
 pub mod memory;
@@ -21,7 +21,7 @@ pub trait GenericForkSink<SC: ScfiaComposition>: Debug {
 
 struct StepContext<SC: ScfiaComposition> {
     memory: *mut Memory<SC>,
-    scfia: Scfia<SC>,
+    scfia: Weak<Scfia<SC>>,
     hints: Option<SymbolicHints>,
     fork_sink: Option<SC::ForkSink>,
 }

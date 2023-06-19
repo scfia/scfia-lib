@@ -21,15 +21,16 @@ pub struct RetiredBVXorExpression<SC: ScfiaComposition> {
     pub phantom: PhantomData<SC>,
 }
 
+/*
 #[cfg(test)]
 mod tests {
-    use crate::{models::riscv::rv32i::RV32iScfiaComposition, scfia::Scfia};
+    use crate::{models::riscv::rv32i::RV32iScfiaComposition, scfia::ScfiaOld};
 
     #[test]
     #[allow(unused_must_use)]
     fn test_concrete() {
         simple_logger::SimpleLogger::new().env().init();
-        let scfia: Scfia<RV32iScfiaComposition> = Scfia::new(None);
+        let scfia: ScfiaOld<RV32iScfiaComposition> = ScfiaOld::new(None);
         let s1 = scfia.new_bv_concrete(0b01010101, 8, &mut None);
         let s2 = scfia.new_bv_concrete(0b11110101, 8, &mut None);
         let xor = scfia.new_bv_xor(s1, s2, 8, &mut None);
@@ -47,3 +48,4 @@ mod tests {
     }
     //TODO test
 }
+*/

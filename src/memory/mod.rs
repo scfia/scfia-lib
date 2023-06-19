@@ -9,7 +9,7 @@ use z3_sys::{
 };
 
 use crate::{
-    scfia::Scfia,
+    scfia::{Scfia},
     values::{active_value::{ActiveExpression, ActiveValue, ActiveValueInner}, retired_value::RetiredValue},
     ScfiaComposition, StepContext, SymbolicHints,
 };
@@ -35,16 +35,19 @@ impl<SC: ScfiaComposition> Memory<SC> {
         &mut self,
         address: ActiveValue<SC>,
         width: u32,
-        scfia: Scfia<SC>,
+        scfia: &Scfia<SC>,
         hints: &mut Option<SymbolicHints>,
         fork_sink: &mut Option<SC::ForkSink>,
     ) -> ActiveValue<SC> {
+        /*
         let address_inner = address.try_borrow().unwrap();
         if let ActiveExpression::BVConcrete(e) = &address_inner.expression {
             self.read_concrete(e.value, width, scfia, fork_sink)
         } else {
             self.read_symbolic(&address_inner, width, scfia, hints, fork_sink)
         }
+        */
+        todo!()
     }
 
     pub fn write(
@@ -52,16 +55,18 @@ impl<SC: ScfiaComposition> Memory<SC> {
         address: ActiveValue<SC>,
         value: ActiveValue<SC>,
         width: u32,
-        scfia: Scfia<SC>,
+        scfia: &Scfia<SC>,
         hints: &mut Option<SymbolicHints>,
         fork_sink: &mut Option<SC::ForkSink>,
     ) {
+        /*
         let address_inner = address.try_borrow().unwrap();
         if let ActiveExpression::BVConcrete(e) = &address_inner.expression {
             self.write_concrete(e.value, value, width, scfia, fork_sink)
         } else {
             self.write_symbolic(&address_inner, value, width, scfia, hints)
         }
+        */
     }
 
     // TODO fix refcounting
@@ -69,10 +74,11 @@ impl<SC: ScfiaComposition> Memory<SC> {
         &mut self,
         address: &ActiveValueInner<SC>,
         width: u32,
-        scfia: Scfia<SC>,
+        scfia: &Scfia<SC>,
         hints: &mut Option<SymbolicHints>,
         fork_sink: &mut Option<SC::ForkSink>,
     ) -> ActiveValue<SC> {
+        /*
         unsafe {
             // Symbolic reads can be symbolic volatile region reads or unanimous reads
             let z3_context = scfia.inner.try_borrow().unwrap().z3_context;
@@ -141,9 +147,12 @@ impl<SC: ScfiaComposition> Memory<SC> {
                 value
             }
         }
+        */
+        todo!()
     }
 
-    fn write_symbolic(&mut self, address: &ActiveValueInner<SC>, _value: ActiveValue<SC>, width: u32, scfia: Scfia<SC>, hints: &mut Option<SymbolicHints>) {
+    fn write_symbolic(&mut self, address: &ActiveValueInner<SC>, _value: ActiveValue<SC>, width: u32, scfia: &Scfia<SC>, hints: &mut Option<SymbolicHints>) {
+        /*
         unsafe {
             debug!("write_symbolic");
             // Symbolic writes can be symbolic volatile region writes or unanimous writes
@@ -201,9 +210,12 @@ impl<SC: ScfiaComposition> Memory<SC> {
                 panic!("Symbolic write is neither unanimous nor irrelevant{:x?}", candidates)
             }
         }
+        */
+        todo!()
     }
 
-    fn read_concrete(&mut self, address: u64, width: u32, scfia: Scfia<SC>, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
+    fn read_concrete(&mut self, address: u64, width: u32, scfia: &Scfia<SC>, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
+        /* 
         // Volatile regions may be inside larger stable regions, so we check them first
         for region in &self.volatiles {
             if address >= region.start_address && address < region.start_address + region.length {
@@ -217,9 +229,12 @@ impl<SC: ScfiaComposition> Memory<SC> {
             }
         }
         panic!("read_concrete failed to resolve 0x{:x}", address)
+        */
+        todo!()
     }
 
-    pub fn write_concrete(&mut self, address: u64, value: ActiveValue<SC>, width: u32, scfia: Scfia<SC>, fork_sink: &mut Option<SC::ForkSink>) {
+    pub fn write_concrete(&mut self, address: u64, value: ActiveValue<SC>, width: u32, scfia: &Scfia<SC>, fork_sink: &mut Option<SC::ForkSink>) {
+        /*
         for region in &mut self.stables {
             if address >= region.start_address && address < region.start_address + region.length {
                 return region.write(address, value, width, scfia.clone(), fork_sink);
@@ -233,9 +248,11 @@ impl<SC: ScfiaComposition> Memory<SC> {
         }
 
         panic!("{:?}", address)
+        */
+        todo!()
     }
 
-    pub(crate) fn clone_to_stdlib(&self, cloned_scfia: Scfia<SC>, cloned_actives: &mut BTreeMap<u64, ActiveValue<SC>>, cloned_retired: &mut BTreeMap<u64, RetiredValue<SC>>) -> Memory<SC> {
+    pub(crate) fn clone_to_stdlib(&self, cloned_scfia: &Scfia<SC>, cloned_actives: &mut BTreeMap<u64, ActiveValue<SC>>, cloned_retired: &mut BTreeMap<u64, RetiredValue<SC>>) -> Memory<SC> {
         let mut cloned_stables = vec![];
         let mut symbolic_volatiles = vec![];
 

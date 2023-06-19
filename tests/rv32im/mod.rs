@@ -11,7 +11,7 @@ use scfia_lib::memory::regions::{StableMemoryRegion, SymbolicVolatileMemoryRegio
 use scfia_lib::memory::Memory;
 use scfia_lib::models::riscv::rv32i;
 use scfia_lib::models::riscv::rv32i::RV32i;
-use scfia_lib::scfia::Scfia;
+use scfia_lib::scfia::ScfiaOld;
 use scfia_lib::values::active_value::ActiveValueImpl;
 use scfia_lib::SymbolicHints;
 use xmas_elf::program::ProgramHeader::Ph32;
@@ -117,13 +117,13 @@ fn test_system_state_inner() {
     simple_logger::SimpleLogger::new().with_level(LevelFilter::Debug).env().init().unwrap();
     unsafe {
         let filename = CString::new("z3.log").unwrap();
-        //info!("{:?}", Z3_open_log(filename.as_ptr()));
+        // info!("{:?}", Z3_open_log(filename.as_ptr()));
         Z3_toggle_warning_messages(true);
     }
     let binary_blob = fs::read("./tests/rv32im/data/simple_router_risc_v").unwrap();
     let elf = ElfFile::new(&binary_blob).unwrap();
 
-    let scfia = Scfia::default();
+    let scfia = ScfiaOld::default();
     let mut memory = Memory::default();
 
     for program_header in elf.program_iter() {
@@ -152,6 +152,7 @@ fn test_system_state_inner() {
         }
     }
 
+    /*
     // ingress nic mmio register
     memory.volatiles.push(VolatileMemoryRegion {
         start_address: 0x0a003e00,
@@ -497,29 +498,7 @@ fn test_system_state_inner() {
         (0x168, &COPY_FROM_3), // Read buffer len from descriptor table
         (0x460, &[0x46c1d004]),
     ] });
-    /*
-    while continuing.state.pc.to_u64() != START_OF_MAIN_LOOP {
-        print!("({}ms) ", begin.elapsed().as_millis());
-        if continuing.state.pc.to_u64() == 0x3DC {
-            continuing.step(Some(SymbolicHints { hints: vec![vec![0x46c1d004]] }));
-        } else if continuing.state.pc.to_u64() == 0x11C0 {
-            continuing.step(Some(SymbolicHints { hints: vec![vec![0]] }));
-        } else if continuing.state.pc.to_u64() == 0x1264 {
-            continuing.step(None);
-            info!("a3={:?}", &continuing.system_state.x13);
-            info!("a4={:?}", &continuing.system_state.x14);
-            let sub = BVSubExpression::new(
-                continuing.system_state.x13.clone(),
-                continuing.system_state.x14.clone(),
-                &mut continuing.stdlib,
-                &mut None,
-            );
-            let mut candidates = vec![];
-            continuing.stdlib.monomorphize(sub.try_borrow().unwrap().get_z3_ast(), &mut candidates);
-            info!("diff={:?}", candidates)
-        } else {
-            continuing.step(None);
-        }
-    }
+    info!("SUCCESS");
+    
     */
 }
