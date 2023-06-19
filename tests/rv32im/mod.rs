@@ -1,6 +1,7 @@
 mod constants;
 
 use std::collections::HashMap;
+use std::ffi::CString;
 use std::hash::Hash;
 use std::{fs, thread};
 use std::time::Instant;
@@ -18,11 +19,11 @@ use xmas_elf::{program, ElfFile};
 use z3_sys::{
     AstKind, SortKind, Z3_ast, Z3_context, Z3_dec_ref, Z3_get_ast_kind, Z3_get_bv_sort_size, Z3_get_numeral_uint64, Z3_get_sort, Z3_get_sort_kind, Z3_inc_ref,
     Z3_mk_bv_sort, Z3_mk_eq, Z3_mk_not, Z3_mk_unsigned_int64, Z3_model_eval, Z3_model_get_const_interp, Z3_solver, Z3_solver_check,
-    Z3_solver_check_assumptions, Z3_solver_get_model, Z3_L_FALSE, Z3_L_TRUE,
+    Z3_solver_check_assumptions, Z3_solver_get_model, Z3_L_FALSE, Z3_L_TRUE, Z3_open_log, Z3_toggle_warning_messages, Z3_append_log,
 };
 
 use crate::rv32im::constants::{
-    COPY_FROM_1, COPY_FROM_2, COPY_FROM_3, EGRESS_RECEIVEQUEUE_DRIVER_POSITIONS, EGRESS_SENDQUEUE_DRIVER_POSITIONS,
+    EGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_HIGHER_U32, EGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_LOWER_U32, COPY_FROM_3, EGRESS_RECEIVEQUEUE_DRIVER_POSITIONS, EGRESS_SENDQUEUE_DRIVER_POSITIONS,
     INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_HIGHER_U32, INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_LOWER_U32, INGRESS_RECEIVEQUEUE_DESCRIPTOR_LENGTH,
     INGRESS_RECEIVEQUEUE_DRIVER_POSITIONS, INGRESS_SENDQUEUE_DRIVER_POSITIONS, START_OF_MAIN_LOOP,
 };
@@ -91,7 +92,7 @@ fn dump_regs(state: &RV32i) {
     println!("x10 = {:x?}", state.state.x10);
     println!("x11 = {:x?}", state.state.x11);
     println!("x12 = {:x?}", state.state.x12);
-    println!("x13 = {:x?}", state.state.x13);
+    println!("x13 = {:#x?}", state.state.x13);
     println!("x14 = {:x?}", state.state.x14);
     println!("x15 = {:x?}", state.state.x15);
     println!("x16 = {:x?}", state.state.x16);
@@ -114,6 +115,11 @@ fn dump_regs(state: &RV32i) {
 
 fn test_system_state_inner() {
     simple_logger::SimpleLogger::new().with_level(LevelFilter::Debug).env().init().unwrap();
+    unsafe {
+        let filename = CString::new("z3.log").unwrap();
+        //info!("{:?}", Z3_open_log(filename.as_ptr()));
+        Z3_toggle_warning_messages(true);
+    }
     let binary_blob = fs::read("./tests/rv32im/data/simple_router_risc_v").unwrap();
     let elf = ElfFile::new(&binary_blob).unwrap();
 
@@ -426,7 +432,7 @@ fn test_system_state_inner() {
     info!("({}ms) Creating symbolic volatile memory regions", begin.elapsed().as_millis());
     let base_symbol = continuing.scfia.new_bv_constrained(32, 0xff, 0xffff0000);
     let sym_region = SymbolicVolatileMemoryRegion {
-        base_symbol: base_symbol,
+        base_symbol,
         length: 4096,
     };
 
@@ -445,7 +451,7 @@ fn test_system_state_inner() {
         );
 
         let egress_send_queue_pointer_address = 0x46c18000 + pointer_offset;
-        info!("({}ms) overwriting 0x{:x}", begin.elapsed().as_millis(), egress_send_queue_pointer_address);
+        debug!("({}ms) overwriting 0x{:x}", begin.elapsed().as_millis(), egress_send_queue_pointer_address);
         continuing.memory.write_concrete(
             egress_send_queue_pointer_address as u64,
             sym_region.base_symbol.clone(),
@@ -482,39 +488,20 @@ fn test_system_state_inner() {
     step_until_hinted(&mut returning, START_OF_MAIN_LOOP, &begin, &StepContext { hints: &[(0x3dc, &INGRESS_RECEIVEQUEUE_DRIVER_POSITIONS)] });
 
     info!("({}ms) stepping success until start of main loop", begin.elapsed().as_millis());
-    return;
-    step_until_hinted(&mut continuing, START_OF_MAIN_LOOP, &begin, &StepContext { hints: &[] });
+    step_until_hinted(&mut continuing, START_OF_MAIN_LOOP, &begin, &StepContext { hints: &[
+        (0x150, &EGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_HIGHER_U32),
+        (0x154, &EGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_LOWER_U32),
+        (0x158, &COPY_FROM_3), // Read buffer len from descriptor table
+        (0x160, &INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_HIGHER_U32),
+        (0x164, &INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_LOWER_U32),
+        (0x168, &COPY_FROM_3), // Read buffer len from descriptor table
+        (0x460, &[0x46c1d004]),
+    ] });
     /*
     while continuing.state.pc.to_u64() != START_OF_MAIN_LOOP {
         print!("({}ms) ", begin.elapsed().as_millis());
         if continuing.state.pc.to_u64() == 0x3DC {
             continuing.step(Some(SymbolicHints { hints: vec![vec![0x46c1d004]] }));
-        } else if continuing.state.pc.to_u64() == 0x460 {
-            continuing.step(Some(SymbolicHints { hints: vec![vec![0x46c1d004]] }));
-        } else if continuing.state.pc.to_u64() == 0x150 {
-            continuing.step(Some(SymbolicHints {
-                hints: vec![COPY_FROM_1.to_vec()],
-            }));
-        } else if continuing.state.pc.to_u64() == 0x154 {
-            continuing.step(Some(SymbolicHints {
-                hints: vec![COPY_FROM_2.to_vec()],
-            }));
-        } else if continuing.state.pc.to_u64() == 0x158 {
-            continuing.step(Some(SymbolicHints {
-                hints: vec![COPY_FROM_3.to_vec()],
-            }));
-        } else if continuing.state.pc.to_u64() == 0x160 {
-            continuing.step(Some(SymbolicHints {
-                hints: vec![INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_HIGHER_U32.to_vec()],
-            }));
-        } else if continuing.state.pc.to_u64() == 0x164 {
-            continuing.step(Some(SymbolicHints {
-                hints: vec![INGRESS_RECEIVEQUEUE_DESCRIPTOR_ADDRESS_LOWER_U32.to_vec()],
-            }));
-        } else if continuing.state.pc.to_u64() == 0x168 {
-            continuing.step(Some(SymbolicHints {
-                hints: vec![COPY_FROM_3.to_vec()],
-            }));
         } else if continuing.state.pc.to_u64() == 0x11C0 {
             continuing.step(Some(SymbolicHints { hints: vec![vec![0]] }));
         } else if continuing.state.pc.to_u64() == 0x1264 {

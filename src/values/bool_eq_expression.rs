@@ -1,35 +1,26 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, marker::PhantomData, cell::RefCell, rc::Weak};
+
+use z3_sys::Z3_ast;
 
 use crate::ScfiaComposition;
 
-use super::active_value::{ActiveValue, ActiveValueWeak};
+use super::active_value::{ActiveValue, ActiveValueWeak, ActiveValueInner};
 
+#[derive(Debug)]
 pub struct BoolEqExpression<SC: ScfiaComposition> {
     pub s1: ActiveValue<SC>,
     pub s2: ActiveValue<SC>,
     pub is_assert: bool,
 }
 
+#[derive(Debug)]
 pub struct RetiredBoolEqExpression<SC: ScfiaComposition> {
-    pub s1: ActiveValueWeak<SC>,
-    pub s2: ActiveValueWeak<SC>,
+    pub s1: Weak<RefCell<ActiveValueInner<SC>>>,
+    pub s1_id: u64,
+    pub s2: Weak<RefCell<ActiveValueInner<SC>>>,
+    pub s2_id: u64,
     pub is_assert: bool,
-}
-
-impl<SC: ScfiaComposition> Debug for BoolEqExpression<SC> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("(")?;
-        self.s1.try_borrow().unwrap().fmt(f)?;
-        f.write_str(" == ")?;
-        self.s2.try_borrow().unwrap().fmt(f)?;
-        f.write_str(")")
-    }
-}
-
-impl<SC: ScfiaComposition> Debug for RetiredBoolEqExpression<SC> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("RetiredBoolEqExpression")
-    }
+    pub phantom: PhantomData<SC>,
 }
 
 #[cfg(test)]

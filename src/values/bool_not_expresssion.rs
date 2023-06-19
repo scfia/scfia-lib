@@ -1,31 +1,21 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, marker::PhantomData, cell::RefCell, rc::Weak};
 
 use crate::ScfiaComposition;
 
-use super::active_value::{ActiveValue, ActiveValueWeak};
+use super::active_value::{ActiveValue, ActiveValueWeak, ActiveValueInner};
 
+#[derive(Debug)]
 pub struct BoolNotExpression<SC: ScfiaComposition> {
     pub s1: ActiveValue<SC>,
     pub is_assert: bool,
 }
 
+#[derive(Debug)]
 pub struct RetiredBoolNotExpression<SC: ScfiaComposition> {
-    pub s1: ActiveValueWeak<SC>,
+    pub s1: Weak<RefCell<ActiveValueInner<SC>>>,
+    pub s1_id: u64,
     pub is_assert: bool,
-}
-
-impl<SC: ScfiaComposition> Debug for BoolNotExpression<SC> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("(!")?;
-        self.s1.try_borrow().unwrap().fmt(f)?;
-        f.write_str(")")
-    }
-}
-
-impl<SC: ScfiaComposition> Debug for RetiredBoolNotExpression<SC> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("(!x)")
-    }
+    pub phantom: PhantomData<SC>,
 }
 
 #[cfg(test)]

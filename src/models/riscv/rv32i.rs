@@ -26,10 +26,12 @@ pub struct RV32iScfiaComposition {}
 impl GenericForkSink<RV32iScfiaComposition> for RV32iForkSink {
     fn fork(&mut self, fork_symbol: ActiveValue<RV32iScfiaComposition>) {
         // Clone the base state.
+        debug!("fork cloning base state");
         let (clone, mut cloned_actives, mut cloned_retired) = self.base_state.clone_model();
 
         // Clone all values that were created after self.base_state was created.
         // new_values keeps the values active until we have cloned fork_symbol.
+        debug!("fork cloning new values");
         let mut new_values = vec![];
         for new_value in &self.new_values_history {
             new_values.push(
@@ -39,16 +41,11 @@ impl GenericForkSink<RV32iScfiaComposition> for RV32iForkSink {
                     .clone_to_stdlib(&mut clone.scfia.inner.try_borrow_mut().unwrap(), clone.scfia.clone(), &mut cloned_actives, &mut cloned_retired),
             );
         }
+        debug!("fork asserting fork symbol");
         let fork_symbol_id = fork_symbol.try_borrow().unwrap().id;
         clone.scfia.inner.try_borrow_mut().unwrap().next_symbol_id = fork_symbol_id + 1;
-        let cloned_fork_symbol = fork_symbol.try_borrow().unwrap().clone_to_stdlib(&mut clone.scfia.inner.try_borrow_mut().unwrap(), clone.scfia.clone(), &mut cloned_actives, &mut cloned_retired);
+        let cloned_fork_symbol = cloned_actives.get(&fork_symbol_id).unwrap();// fork_symbol.try_borrow().unwrap().clone_to_stdlib(&mut clone.scfia.inner.try_borrow_mut().unwrap(), clone.scfia.clone(), &mut cloned_actives, &mut cloned_retired);
         cloned_fork_symbol.try_borrow_mut().unwrap().assert();
-        /*
-        let cloned_condition: ActiveValue<RV32iScfiaComposition> = fork_symbol
-            .try_borrow()
-            .unwrap()
-            .clone_to_stdlib(&mut clone.scfia.inner.try_borrow_mut().unwrap(), clone.scfia.clone());
-         */
         self.forks.push(clone);
     }
 
@@ -108,7 +105,7 @@ impl RV32i {
             let cloned_scfia_rc: Scfia<RV32iScfiaComposition> = Scfia::new(Some(own_scfia.next_symbol_id));
             let mut cloned_actives = BTreeMap::new();
             let mut cloned_retireds = BTreeMap::new();
-            debug!("cloning scfia {} to {}", self.scfia.inner.as_ptr() as u64, cloned_scfia_rc.inner.as_ptr() as u64);
+            debug!("cloning scfia {:?} to {:?}", self.scfia.inner.as_ptr(), cloned_scfia_rc.inner.as_ptr());
             (RV32i {
                 state: self.state.clone_to_stdlib(cloned_scfia_rc.clone(), &mut cloned_actives, &mut cloned_retireds),
                 memory: self.memory.clone_to_stdlib(cloned_scfia_rc.clone(), &mut cloned_actives, &mut cloned_retireds),
@@ -457,9 +454,10 @@ unsafe fn _step(state: *mut SystemState, context: *mut StepContext<RV32iScfiaCom
                 let shamt: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(instruction_32.clone(), 24, 20, &mut (*context).fork_sink);
                 let result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sll(
                     _register_read_BV32(state, rs1.clone(), context),
-                    shamt.clone(),
+                    (*context).scfia.new_bv_concat(
+                        (*context).scfia.new_bv_concrete(0, 32-5, &mut (*context).fork_sink),
+                        shamt.clone(), 32, &mut (*context).fork_sink),
                     32,
-                    5,
                     &mut (*context).fork_sink,
                 );
                 _register_write_BV32(state, rd.clone(), result.clone(), context);
@@ -507,7 +505,7 @@ unsafe fn _step(state: *mut SystemState, context: *mut StepContext<RV32iScfiaCom
                 let shamt: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(instruction_32.clone(), 24, 20, &mut (*context).fork_sink);
                 let result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_srl(
                     _register_read_BV32(state, rs1.clone(), context),
-                    shamt.clone(),
+                    (*context).scfia.new_bv_concat((*context).scfia.new_bv_concrete(0, 32-5, &mut (*context).fork_sink), shamt.clone(), 32, &mut (*context).fork_sink),
                     32,
                     5,
                     &mut (*context).fork_sink,
@@ -784,9 +782,8 @@ unsafe fn _step(state: *mut SystemState, context: *mut StepContext<RV32iScfiaCom
                         .new_bv_slice(_register_read_BV32(state, rs2.clone(), context), 4, 0, &mut (*context).fork_sink);
                 let result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sll(
                     _register_read_BV32(state, rs1.clone(), context),
-                    shamt.clone(),
+                    (*context).scfia.new_bv_concat((*context).scfia.new_bv_concrete(0, 32-5, &mut (*context).fork_sink), shamt.clone(), 32, &mut (*context).fork_sink),
                     32,
-                    5,
                     &mut (*context).fork_sink,
                 );
                 _register_write_BV32(state, rd.clone(), result.clone(), context);
@@ -888,7 +885,7 @@ unsafe fn _step(state: *mut SystemState, context: *mut StepContext<RV32iScfiaCom
                         .new_bv_slice(_register_read_BV32(state, rs2.clone(), context), 4, 0, &mut (*context).fork_sink);
                 let result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_srl(
                     _register_read_BV32(state, rs1.clone(), context),
-                    shamt.clone(),
+                    (*context).scfia.new_bv_concat((*context).scfia.new_bv_concrete(0, 32-5, &mut (*context).fork_sink), shamt.clone(), 32, &mut (*context).fork_sink),
                     32,
                     5,
                     &mut (*context).fork_sink,
@@ -1154,6 +1151,7 @@ unsafe fn _step(state: *mut SystemState, context: *mut StepContext<RV32iScfiaCom
             ),
             &mut (*context).fork_sink,
         ) {
+            // BLTU
             let lhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs1_32(instruction_32.clone(), context), context);
             let rhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs2_32(instruction_32.clone(), context), context);
             if (*context).scfia.check_condition(

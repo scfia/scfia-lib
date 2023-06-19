@@ -7,6 +7,7 @@ pub mod memory;
 pub mod models;
 pub mod scfia;
 pub mod values;
+pub mod z3_handle;
 
 pub trait ScfiaComposition: Debug + Clone + Sized {
     type Model: Debug;

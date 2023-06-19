@@ -1,8 +1,8 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, marker::PhantomData, cell::RefCell, rc::Weak};
 
 use crate::ScfiaComposition;
 
-use super::active_value::{ActiveValue, ActiveValueWeak};
+use super::active_value::{ActiveValue, ActiveValueWeak, ActiveValueInner};
 
 #[derive(Debug)]
 pub struct BVSrlExpression<SC: ScfiaComposition> {
@@ -12,17 +12,15 @@ pub struct BVSrlExpression<SC: ScfiaComposition> {
     pub shamt: u32,
 }
 
+#[derive(Debug)]
 pub struct RetiredBVSrlExpression<SC: ScfiaComposition> {
-    pub s1: ActiveValueWeak<SC>,
-    pub s2: ActiveValueWeak<SC>,
+    pub s1: Weak<RefCell<ActiveValueInner<SC>>>,
+    pub s1_id: u64,
+    pub s2: Weak<RefCell<ActiveValueInner<SC>>>,
+    pub s2_id: u64,
     pub width: u32,
     pub shamt: u32,
-}
-
-impl<SC: ScfiaComposition> Debug for RetiredBVSrlExpression<SC> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("RetiredBVSrlExpression)")
-    }
+    pub phantom: PhantomData<SC>,
 }
 
 #[cfg(test)]

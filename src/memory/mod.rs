@@ -64,6 +64,7 @@ impl<SC: ScfiaComposition> Memory<SC> {
         }
     }
 
+    // TODO fix refcounting
     fn read_symbolic(
         &mut self,
         address: &ActiveValueInner<SC>,
@@ -87,8 +88,11 @@ impl<SC: ScfiaComposition> Memory<SC> {
 
                 // address >= base_address + length
                 let sort = Z3_mk_bv_sort(z3_context, 32);
-                let add_ast = Z3_mk_unsigned_int64(z3_context, region.length, sort);
-                let ge = Z3_mk_bvuge(z3_context, address.z3_ast, Z3_mk_bvadd(z3_context, base_ast, add_ast));
+                let length_ast = Z3_mk_unsigned_int64(z3_context, region.length, sort);
+                Z3_inc_ref(z3_context, length_ast);
+                let add_ast = Z3_mk_bvadd(z3_context, base_ast, length_ast);
+                Z3_inc_ref(z3_context, add_ast);
+                let ge = Z3_mk_bvuge(z3_context, address.z3_ast, add_ast);
                 Z3_inc_ref(z3_context, ge);
                 let asts = [lt, ge];
                 let assumption = Z3_mk_or(z3_context, 2, asts.as_ptr());
@@ -118,10 +122,14 @@ impl<SC: ScfiaComposition> Memory<SC> {
                 let value = self.read_concrete(candidates[0], width, scfia.clone(), fork_sink);
                 for address in &candidates {
                     let other_value = self.read_concrete(*address, width, scfia.clone(), fork_sink);
-                    let assumptions = vec![Z3_mk_not(
+                    let eq = Z3_mk_eq(z3_context, value.try_borrow().unwrap().z3_ast, other_value.try_borrow().unwrap().z3_ast);
+                    Z3_inc_ref(z3_context, eq);
+                    let not = Z3_mk_not(
                         z3_context,
-                        Z3_mk_eq(z3_context, value.try_borrow().unwrap().z3_ast, other_value.try_borrow().unwrap().z3_ast),
-                    )];
+                        eq,
+                    );
+                    Z3_inc_ref(z3_context, not);
+                    let assumptions = vec![not];
                     if !Z3_solver_check_assumptions(z3_context, z3_solver, 1, assumptions.as_ptr()) == Z3_L_FALSE {
                         error!("Unequal values behind unimous read: *0x{:x} != *0x{:x}", candidates[0], address);
                         panic!("Could not resolve symbolic read: {:?} != {:?}", value, other_value);
@@ -152,8 +160,11 @@ impl<SC: ScfiaComposition> Memory<SC> {
 
                 // address >= base_address + length
                 let sort: *mut z3_sys::_Z3_sort = Z3_mk_bv_sort(z3_context, 32);
-                let add_ast = Z3_mk_unsigned_int64(z3_context, region.length, sort);
-                let ge = Z3_mk_bvuge(z3_context, address.z3_ast, Z3_mk_bvadd(z3_context, base_ast, add_ast));
+                let length_ast = Z3_mk_unsigned_int64(z3_context, region.length, sort);
+                Z3_inc_ref(z3_context, length_ast);
+                let add_ast = Z3_mk_bvadd(z3_context, base_ast, length_ast);
+                Z3_inc_ref(z3_context, add_ast);
+                let ge = Z3_mk_bvuge(z3_context, address.z3_ast, add_ast);
                 Z3_inc_ref(z3_context, ge);
                 let asts = [lt, ge];
                 let assumption = Z3_mk_or(z3_context, 2, asts.as_ptr());
@@ -163,20 +174,16 @@ impl<SC: ScfiaComposition> Memory<SC> {
                 if check_result == Z3_L_FALSE {
                     // If the address CAN NOT be outside the symbolic volatile region, we can skip the write
                     debug!("Symbolic offset write covered");
-                    let z3_ast_vector = Z3_solver_get_unsat_core(z3_context, z3_solver);
-                    Z3_ast_vector_inc_ref(z3_context, z3_ast_vector);
-                    Z3_ast_vector_dec_ref(z3_context, z3_ast_vector);
-
                     Z3_dec_ref(z3_context, assumption);
                     Z3_dec_ref(z3_context, ge);
-                    Z3_dec_ref(z3_context, add_ast);
+                    Z3_dec_ref(z3_context, length_ast);
                     Z3_dec_ref(z3_context, lt);
                     return;
                 }
 
                 Z3_dec_ref(z3_context, assumption);
                 Z3_dec_ref(z3_context, ge);
-                Z3_dec_ref(z3_context, add_ast);
+                Z3_dec_ref(z3_context, length_ast);
                 Z3_dec_ref(z3_context, lt);
             }
 

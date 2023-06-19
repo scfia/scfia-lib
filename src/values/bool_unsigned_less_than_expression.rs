@@ -1,8 +1,8 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, marker::PhantomData, cell::RefCell, rc::Weak};
 
 use crate::ScfiaComposition;
 
-use super::active_value::{ActiveValue, ActiveValueWeak};
+use super::active_value::{ActiveValue, ActiveValueWeak, ActiveValueInner};
 
 #[derive(Debug)]
 pub struct BoolUnsignedLessThanExpression<SC: ScfiaComposition> {
@@ -11,16 +11,14 @@ pub struct BoolUnsignedLessThanExpression<SC: ScfiaComposition> {
     pub is_assert: bool,
 }
 
+#[derive(Debug)]
 pub struct RetiredBoolUnsignedLessThanExpression<SC: ScfiaComposition> {
-    pub s1: ActiveValueWeak<SC>,
-    pub s2: ActiveValueWeak<SC>,
+    pub s1: Weak<RefCell<ActiveValueInner<SC>>>,
+    pub s1_id: u64,
+    pub s2: Weak<RefCell<ActiveValueInner<SC>>>,
+    pub s2_id: u64,
     pub is_assert: bool,
-}
-
-impl<SC: ScfiaComposition> Debug for RetiredBoolUnsignedLessThanExpression<SC> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("RetiredBoolUnsignedLessThanExpression")
-    }
+    pub phantom: PhantomData<SC>,
 }
 
 #[cfg(test)]

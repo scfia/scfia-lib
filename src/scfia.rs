@@ -1,16 +1,20 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::ffi::CString;
 use std::marker::PhantomData;
 use std::ptr;
 use std::rc::Rc;
+use std::time::Instant;
 
 use log::debug;
 use log::error;
+use log::info;
 use log::trace;
 use log::warn;
 
 use z3_sys::AstKind;
 use z3_sys::SortKind;
+use z3_sys::Z3_L_TRUE;
 use z3_sys::Z3_ast;
 use z3_sys::Z3_ast_vector_dec_ref;
 use z3_sys::Z3_ast_vector_inc_ref;
@@ -54,6 +58,7 @@ use z3_sys::Z3_model_eval;
 use z3_sys::Z3_model_inc_ref;
 use z3_sys::Z3_solver;
 use z3_sys::Z3_solver_assert;
+use z3_sys::Z3_solver_check;
 use z3_sys::Z3_solver_check_assumptions;
 use z3_sys::Z3_solver_get_model;
 use z3_sys::Z3_solver_get_unsat_core;
@@ -110,6 +115,8 @@ use crate::values::retired_value::RetiredValue;
 use crate::values::retired_value::RetiredValueInner;
 use crate::values::retired_value::RetiredValueWeak;
 
+pub const PREFIX: [i8; 4] = ['p' as i8, 'r' as i8, 'e' as i8, 0];
+
 #[derive(Clone)]
 pub struct Scfia<SC: ScfiaComposition> {
     pub inner: Rc<RefCell<ScfiaInner<SC>>>,
@@ -145,38 +152,38 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         }
     }
 
-    pub fn check_condition(&self, value: ActiveValue<SC>, fork_sink: &mut Option<SC::ForkSink>) -> bool {
+    pub fn check_condition(&self, condition: ActiveValue<SC>, fork_sink: &mut Option<SC::ForkSink>) -> bool {
         unsafe {
-            if let ActiveExpression::BoolConcrete(e) = &value.try_borrow().unwrap().expression {
+            if let ActiveExpression::BoolConcrete(e) = &condition.try_borrow().unwrap().expression {
                 return e.value;
             }
 
             let mut can_be_true = false;
             let mut can_be_false = false;
 
-            let neg_condition_symbol = self.new_bool_not(value.clone(), fork_sink);
+            let neg_condition_symbol = self.new_bool_not(condition.clone(), fork_sink);
             let neg_condition_ast = neg_condition_symbol.try_borrow().unwrap().z3_ast;
 
             {
                 let selff = self.inner.try_borrow_mut().unwrap();
-                if Z3_solver_check_assumptions(selff.z3_context, selff.z3_solver, 1, &value.try_borrow().unwrap().z3_ast) != Z3_L_FALSE {
+                let ast = condition.try_borrow().unwrap().z3_ast;
+                if Z3_solver_check_assumptions(selff.z3_context, selff.z3_solver, 1, &ast) != Z3_L_FALSE {
                     can_be_true = true
                 }
-
+                
                 if Z3_solver_check_assumptions(selff.z3_context, selff.z3_solver, 1, &neg_condition_ast) != Z3_L_FALSE {
                     can_be_false = true
                 }
             }
 
-            // warn!("{:?} {} {}", value, can_be_true, can_be_false);
             if can_be_true && can_be_false {
                 if let Some(fork_sink) = fork_sink {
-                    warn!("FORK");
+                    info!("FORK");
                     fork_sink.fork(neg_condition_symbol.clone());
-                    value.try_borrow_mut().unwrap().assert();
+                    condition.try_borrow_mut().unwrap().assert();
                     true
                 } else {
-                    warn!("unexpected fork");
+                    error!("unexpected fork");
                     panic!("unexpected fork")
                 }
             } else if can_be_true {
@@ -249,14 +256,14 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         selff.new_bv_slice(self.clone(), s1.clone(), high, low, None, fork_sink, None)
     }
 
-    pub fn new_bv_sll(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, shamt_width: u32, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
+    pub fn new_bv_sll(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
         let mut selff = self.inner.try_borrow_mut().unwrap();
-        selff.new_bv_sll(self.clone(), s1.clone(), s2.clone(), width, shamt_width, None, fork_sink, None)
+        selff.new_bv_sll(self.clone(), s1.clone(), s2.clone(), width, None, fork_sink, None)
     }
 
     pub fn new_bv_srl(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, shamt_width: u32, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
         let mut selff = self.inner.try_borrow_mut().unwrap();
-        selff.new_bv_srl(self.clone(), s1.clone(), s2.clone(), width, shamt_width, None, fork_sink, None)
+        selff.new_bv_srl(self.clone(), s1.clone(), s2.clone(), width, None, fork_sink, None)
     }
 
     pub fn new_bv_sub(&self, s1: ActiveValue<SC>, s2: ActiveValue<SC>, width: u32, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
@@ -280,13 +287,13 @@ impl<SC: ScfiaComposition> Scfia<SC> {
     }
 
     pub fn new_bv_constrained(&self, width: u32, align: u64, limit: u64) -> ActiveValue<SC> {
-        let base_symbol = self.inner.try_borrow_mut().unwrap().new_bv_symbol(self.clone(), width, None, &mut None, None);
+        let base_symbol = self.inner.try_borrow_mut().unwrap().new_bv_symbol(self.clone(), width, None, &mut None, Some(ValueComment { message: "constrained symbol".to_string() }));
 
         // Assert base_symbol & align == 0
         let align_bv = self.inner.try_borrow_mut().unwrap().new_bv_concrete(self.clone(), align, width, None, &mut None, None);
         let align_and = self.inner.try_borrow_mut().unwrap().new_bv_and(self.clone(), base_symbol.clone(), align_bv.clone(), width, None, &mut None, None);
         let zero = self.inner.try_borrow_mut().unwrap().new_bv_concrete(self.clone(), 0, width, None, &mut None, None);
-        // I swear to god the Drop behaviour is a nightmare
+        // I swear to whichever deity the Drop behaviour is a nightmare
         let _eq = self.inner.try_borrow_mut().unwrap().new_bool_eq(self.clone(), align_and.clone(), zero.clone(), None, true, &mut None, None);
 
         // Assert base_symbol < max
@@ -297,6 +304,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
     }
 
     pub fn drop_active(&self, value: &ActiveValueInner<SC>) -> RetiredValue<SC> {
+        trace!("drop_active {:?}", value);
         let mut selff = self.inner.try_borrow_mut().unwrap();
         selff.active_symbols -= 1;
         if value.comment.is_some() {
@@ -322,8 +330,11 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             ActiveExpression::BVAddExpression(e) => selff.insert_retired(
                 RetiredExpression::BVAddExpression(RetiredBVAddExpression {
                     s1: Rc::downgrade(&e.s1),
+                    s1_id: e.s1.try_borrow().unwrap().id,
                     s2: Rc::downgrade(&e.s2),
+                    s2_id: e.s2.try_borrow().unwrap().id,
                     width: e.width,
+                    phantom: PhantomData,
                 }),
                 value.z3_ast,
                 value.id,
@@ -337,9 +348,12 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             ),
             ActiveExpression::BoolEqExpression(e) => selff.insert_retired(
                 RetiredExpression::BoolEqExpression(RetiredBoolEqExpression {
-                    s1: Rc::downgrade(&e.s1),
-                    s2: Rc::downgrade(&e.s2),
                     is_assert: e.is_assert,
+                    s1: Rc::downgrade(&e.s1),
+                    s1_id: e.s1.try_borrow().unwrap().id,
+                    s2: Rc::downgrade(&e.s2),
+                    s2_id: e.s2.try_borrow().unwrap().id,
+                    phantom: PhantomData,
                 }),
                 value.z3_ast,
                 value.id,
@@ -348,7 +362,9 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             ActiveExpression::BoolNotExpression(e) => selff.insert_retired(
                 RetiredExpression::BoolNotExpression(RetiredBoolNotExpression {
                     s1: Rc::downgrade(&e.s1),
+                    s1_id: e.s1.try_borrow().unwrap().id,
                     is_assert: e.is_assert,
+                    phantom: PhantomData,
                 }),
                 value.z3_ast,
                 value.id,
@@ -357,8 +373,11 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             ActiveExpression::BoolSignedLessThanExpression(e) => selff.insert_retired(
                 RetiredExpression::BoolSignedLessThanExpression(RetiredBoolSignedLessThanExpression {
                     s1: Rc::downgrade(&e.s1),
+                    s1_id: e.s1.try_borrow().unwrap().id,
                     s2: Rc::downgrade(&e.s2),
+                    s2_id: e.s2.try_borrow().unwrap().id,
                     is_assert: e.is_assert,
+                    phantom: PhantomData,
                 }),
                 value.z3_ast,
                 value.id,
@@ -367,8 +386,11 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             ActiveExpression::BoolUnsignedLessThanExpression(e) => selff.insert_retired(
                 RetiredExpression::BoolUnsignedLessThanExpression(RetiredBoolUnsignedLessThanExpression {
                     s1: Rc::downgrade(&e.s1),
+                    s1_id: e.s1.try_borrow().unwrap().id,
                     s2: Rc::downgrade(&e.s2),
+                    s2_id: e.s2.try_borrow().unwrap().id,
                     is_assert: e.is_assert,
+                    phantom: PhantomData,
                 }),
                 value.z3_ast,
                 value.id,
@@ -377,8 +399,11 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             ActiveExpression::BVAndExpression(e) => selff.insert_retired(
                 RetiredExpression::BVAndExpression(RetiredBVAndExpression {
                     s1: Rc::downgrade(&e.s1),
+                    s1_id: e.s1.try_borrow().unwrap().id,
                     s2: Rc::downgrade(&e.s2),
+                    s2_id: e.s2.try_borrow().unwrap().id,
                     width: e.width,
+                    phantom: PhantomData,
                 }),
                 value.z3_ast,
                 value.id,
@@ -387,8 +412,11 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             ActiveExpression::BVConcatExpression(e) => selff.insert_retired(
                 RetiredExpression::BVConcatExpression(RetiredBVConcatExpression {
                     s1: Rc::downgrade(&e.s1),
+                    s1_id: e.s1.try_borrow().unwrap().id,
                     s2: Rc::downgrade(&e.s2),
+                    s2_id: e.s2.try_borrow().unwrap().id,
                     width: e.width,
+                    phantom: PhantomData,
                 }),
                 value.z3_ast,
                 value.id,
@@ -397,8 +425,11 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             ActiveExpression::BVMultiplyExpression(e) => selff.insert_retired(
                 RetiredExpression::BVMultiplyExpression(RetiredBVMultiplyExpression {
                     s1: Rc::downgrade(&e.s1),
+                    s1_id: e.s1.try_borrow().unwrap().id,
                     s2: Rc::downgrade(&e.s2),
+                    s2_id: e.s2.try_borrow().unwrap().id,
                     width: e.width,
+                    phantom: PhantomData,
                 }),
                 value.z3_ast,
                 value.id,
@@ -407,8 +438,11 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             ActiveExpression::BVOrExpression(e) => selff.insert_retired(
                 RetiredExpression::BVOrExpression(RetiredBVOrExpression {
                     s1: Rc::downgrade(&e.s1),
+                    s1_id: e.s1.try_borrow().unwrap().id,
                     s2: Rc::downgrade(&e.s2),
+                    s2_id: e.s2.try_borrow().unwrap().id,
                     width: e.width,
+                    phantom: PhantomData,
                 }),
                 value.z3_ast,
                 value.id,
@@ -417,7 +451,10 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             ActiveExpression::BVSignExtendExpression(e) => selff.insert_retired(
                 RetiredExpression::BVSignExtendExpression(RetiredBVSignExtendExpression {
                     s1: Rc::downgrade(&e.s1),
+                    s1_id: e.s1.try_borrow().unwrap().id,
                     width: e.width,
+                    input_width: e.input_width,
+                    phantom: PhantomData,
                 }),
                 value.z3_ast,
                 value.id,
@@ -426,9 +463,11 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             ActiveExpression::BVSliceExpression(e) => selff.insert_retired(
                 RetiredExpression::BVSliceExpression(RetiredBVSliceExpression {
                     s1: Rc::downgrade(&e.s1),
+                    s1_id: e.s1.try_borrow().unwrap().id,
                     width: e.width,
                     high: e.width,
                     low: e.width,
+                    phantom: PhantomData,
                 }),
                 value.z3_ast,
                 value.id,
@@ -437,9 +476,11 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             ActiveExpression::BVSllExpression(e) => selff.insert_retired(
                 RetiredExpression::BVSllExpression(RetiredBVSllExpression {
                     s1: Rc::downgrade(&e.s1),
+                    s1_id: e.s1.try_borrow().unwrap().id,
                     s2: Rc::downgrade(&e.s2),
+                    s2_id: e.s2.try_borrow().unwrap().id,
                     width: e.width,
-                    shamt: e.shamt_width,
+                    phantom: PhantomData,
                 }),
                 value.z3_ast,
                 value.id,
@@ -448,9 +489,12 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             ActiveExpression::BVSrlExpression(e) => selff.insert_retired(
                 RetiredExpression::BVSrlExpression(RetiredBVSrlExpression {
                     s1: Rc::downgrade(&e.s1),
+                    s1_id: e.s1.try_borrow().unwrap().id,
                     s2: Rc::downgrade(&e.s2),
+                    s2_id: e.s2.try_borrow().unwrap().id,
                     width: e.width,
                     shamt: e.shamt,
+                    phantom: PhantomData,
                 }),
                 value.z3_ast,
                 value.id,
@@ -459,8 +503,11 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             ActiveExpression::BVSubExpression(e) => selff.insert_retired(
                 RetiredExpression::BVSubExpression(RetiredBVSubExpression {
                     s1: Rc::downgrade(&e.s1),
+                    s1_id: e.s1.try_borrow().unwrap().id,
                     s2: Rc::downgrade(&e.s2),
+                    s2_id: e.s2.try_borrow().unwrap().id,
                     width: e.width,
+                    phantom: PhantomData,
                 }),
                 value.z3_ast,
                 value.id,
@@ -469,8 +516,11 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             ActiveExpression::BVUnsignedRemainderExpression(e) => selff.insert_retired(
                 RetiredExpression::BVXorExpression(RetiredBVXorExpression {
                     s1: Rc::downgrade(&e.s1),
+                    s1_id: e.s1.try_borrow().unwrap().id,
                     s2: Rc::downgrade(&e.s2),
+                    s2_id: e.s2.try_borrow().unwrap().id,
                     width: e.width,
+                    phantom: PhantomData,
                 }),
                 value.z3_ast,
                 value.id,
@@ -479,8 +529,11 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             ActiveExpression::BVXorExpression(e) => selff.insert_retired(
                 RetiredExpression::BVXorExpression(RetiredBVXorExpression {
                     s1: Rc::downgrade(&e.s1),
+                    s1_id: e.s1.try_borrow().unwrap().id,
                     s2: Rc::downgrade(&e.s2),
+                    s2_id: e.s2.try_borrow().unwrap().id,
                     width: e.width,
+                    phantom: PhantomData,
                 }),
                 value.z3_ast,
                 value.id,
@@ -491,25 +544,34 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         // Heirs are parents and discovered symbols
         let mut heirs = vec![];
         value.expression.get_parents(&mut heirs);
-        /*TODO enable inheritance to discoveries
         for discovered_ast in value.discovered_asts.values() {
             let acquaintance = discovered_ast.upgrade().unwrap();
-            let mut acquaintance_ref = acquaintance.try_borrow_mut().unwrap();
-            //trace!("Adding acquaintance {} to heir list", acquaintance_ref.id);
-            assert!(acquaintance_ref.discovered_asts.remove(&value.id).is_some());
+            let mut acquaintance_mut = acquaintance.try_borrow_mut().unwrap();
+            acquaintance_mut.discovered_asts.remove(&value.id);
             heirs.push(acquaintance.clone())
-        }*/
+        }
 
         // For each heir...
         for heir in &heirs {
             let mut heir_mut = heir.try_borrow_mut().unwrap();
+            trace!("{:?} attempting to inherit {:?}", heir_mut, retired_value);
             debug_assert!(Rc::ptr_eq(&heir_mut.scfia.inner, &value.scfia.inner));
 
             // Inherit
-            //TODO concretes should not inherit
-            heir_mut.inherited_asts.insert(value.id, retired_value.clone());
+            if !heir_mut.is_concrete() {
+                heir_mut.inherited_asts.insert(value.id, retired_value.clone());
 
-            //TODO pass on inherited values
+                // Pass on inherited symbols
+                for (inherited_value_id, inherited_value) in &value.inherited_asts {
+                    let old = heir_mut.inherited_asts.insert(*inherited_value_id, inherited_value.clone());
+                    if let Some(old) = old {
+                        if !Rc::ptr_eq(&old, inherited_value) {
+                            error!("{:?} tried to pass on {:?}, but {:?} already had {:?} (same id, different thing)", value, inherited_value, heir_mut, old);
+                            panic!();
+                        }
+                    }
+                }
+            }
 
             // Acquaint all heirs
             for other_heir in &heirs {
@@ -526,6 +588,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
 
     pub fn drop_retired(&self, value: &RetiredValueInner<SC>) {
         unsafe {
+            trace!("drop_retired {:?}", value);
             let mut selff = self.inner.try_borrow_mut().unwrap();
             selff.retired_symbols -= 1;
             Z3_dec_ref(selff.z3_context, value.z3_ast);
@@ -562,8 +625,9 @@ impl<SC: ScfiaComposition> Scfia<SC> {
     // TODO check refcounting
     pub fn monomorphize_active(&self, value: &ActiveValueInner<SC>, candidates: &mut Vec<u64>) {
         unsafe {
+            let begin = Instant::now();
             let selff = self.inner.try_borrow_mut().unwrap();
-            debug!("monomorphize_active {} active {} retired", selff.active_symbols, selff.retired_symbols);
+            debug!("monomorphize_active ({} active, {} retired)", selff.active_symbols, selff.retired_symbols);
             let sort = Z3_get_sort(selff.z3_context, value.z3_ast);
 
             // Fill assumptions with known candidates
@@ -624,7 +688,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
                 Z3_dec_ref(selff.z3_context, candidate_asts[i]);
             }
 
-            debug!("monomorphize_active done");
+            debug!("monomorphize_active done after {} ms", begin.elapsed().as_millis());
         }
     }
 }
@@ -636,6 +700,14 @@ impl<SC: ScfiaComposition> Default for Scfia<SC> {
 }
 
 impl<SC: ScfiaComposition> ScfiaInner<SC> {
+    pub fn assert_consistency(&self) {
+        unsafe {
+            debug!("assert_consistency");
+            assert_eq!(Z3_solver_check(self.z3_context, self.z3_solver), Z3_L_TRUE);
+            debug!("assert_consistency success");
+        }
+    }
+
     pub fn new_bool_concrete(&mut self, self_rc: Scfia<SC>, value: bool, id: Option<u64>, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
         unsafe {
             let id = if let Some(id) = id { id } else { self.next_symbol_id() };
@@ -1165,7 +1237,6 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         s1: ActiveValue<SC>,
         s2: ActiveValue<SC>,
         width: u32,
-        shamt_width: u32,
         id: Option<u64>,
         fork_sink: &mut Option<SC::ForkSink>,
         comment: Option<ValueComment>,
@@ -1188,22 +1259,13 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
                 }
             };
 
-            let shamt_ast = if width != shamt_width {
-                let ast = Z3_mk_zero_ext(self.z3_context, width - shamt_width, s2_inner.z3_ast);
-                Z3_inc_ref(self.z3_context, ast); //TODO decrement secondary ASTs
-                Some(ast)
-            } else {
-                None
-            };
-
-            let z3_ast = Z3_mk_bvshl(self.z3_context, s1_inner.z3_ast, shamt_ast.unwrap_or(s2_inner.z3_ast));
+            let z3_ast = Z3_mk_bvshl(self.z3_context, s1_inner.z3_ast, s2_inner.z3_ast);
             Z3_inc_ref(self.z3_context, z3_ast);
             self.insert_active(
                 ActiveExpression::BVSllExpression(BVSllExpression {
                     s1: s1.clone(),
                     s2: s2.clone(),
                     width,
-                    shamt_width,
                 }),
                 z3_ast,
                 id,
@@ -1220,7 +1282,6 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         s1: ActiveValue<SC>,
         s2: ActiveValue<SC>,
         width: u32,
-        shamt_width: u32,
         id: Option<u64>,
         fork_sink: &mut Option<SC::ForkSink>,
         comment: Option<ValueComment>,
@@ -1243,22 +1304,13 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
                 }
             };
 
-            let shamt_ast = if width != shamt_width {
-                let ast = Z3_mk_zero_ext(self.z3_context, width - shamt_width, s2_inner.z3_ast);
-                Z3_inc_ref(self.z3_context, ast); //TODO decrement secondary ASTs
-                Some(ast)
-            } else {
-                None
-            };
-
-            let z3_ast = Z3_mk_bvlshr(self.z3_context, s1_inner.z3_ast, shamt_ast.unwrap_or(s2_inner.z3_ast));
+            let z3_ast = Z3_mk_bvlshr(self.z3_context, s1_inner.z3_ast, s2_inner.z3_ast);
             Z3_inc_ref(self.z3_context, z3_ast);
             self.insert_active(
                 ActiveExpression::BVSllExpression(BVSllExpression {
                     s1: s1.clone(),
                     s2: s2.clone(),
                     width,
-                    shamt_width,
                 }),
                 z3_ast,
                 id,
@@ -1319,7 +1371,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
     pub fn new_bv_symbol(&mut self, self_rc: Scfia<SC>, width: u32, id: Option<u64>, fork_sink: &mut Option<SC::ForkSink>, comment: Option<ValueComment>) -> ActiveValue<SC> {
         unsafe {
             let id = if let Some(id) = id { id } else { self.next_symbol_id() };
-            let z3_ast = Z3_mk_fresh_const(self.z3_context, 0 as Z3_string, Z3_mk_bv_sort(self.z3_context, width));
+            let z3_ast = Z3_mk_fresh_const(self.z3_context, PREFIX.as_ptr(), Z3_mk_bv_sort(self.z3_context, width));
             Z3_inc_ref(self.z3_context, z3_ast);
 
             self.insert_active(ActiveExpression::BVSymbol(BVSymbol { width }), z3_ast, id, self_rc, fork_sink, comment)
@@ -1448,7 +1500,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
         value
     }
 
-    fn insert_retired(&mut self, expression: RetiredExpression<SC>, z3_ast: Z3_ast, id: u64, scfia: Scfia<SC>) -> RetiredValue<SC> {
+    pub fn insert_retired(&mut self, expression: RetiredExpression<SC>, z3_ast: Z3_ast, id: u64, scfia: Scfia<SC>) -> RetiredValue<SC> {
         let value = Rc::new(RefCell::new(RetiredValueInner { id, z3_ast, expression, scfia }));
         self.retired_symbols += 1;
         value
@@ -1457,7 +1509,7 @@ impl<SC: ScfiaComposition> ScfiaInner<SC> {
 
 impl<SC: ScfiaComposition> Drop for ScfiaInner<SC> {
     fn drop(&mut self) {
-        trace!("Dropping ScfiaInner");
+        debug!("Dropping ScfiaInner");
         unsafe { Z3_del_context(self.z3_context) }
     }
 }
