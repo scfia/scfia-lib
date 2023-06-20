@@ -18,7 +18,7 @@ pub struct Z3Handle {
     pub selff: OnceCell<Weak<Self>>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 // TODO clone or don't drop for actives
 pub struct Z3Ast {
     pub ast: Z3_ast,
@@ -294,5 +294,14 @@ impl Drop for Z3Ast {
                 Z3_dec_ref(z3.context, self.ast);
             }
         }
+    }
+}
+
+impl Clone for Z3Ast {
+    fn clone(&self) -> Self {
+        unsafe {
+            Z3_inc_ref(self.z3.upgrade().unwrap().context, self.ast)
+        }
+        Self { ast: self.ast.clone(), z3: self.z3.clone() }
     }
 }

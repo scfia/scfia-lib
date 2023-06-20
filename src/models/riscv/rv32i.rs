@@ -1,4 +1,4 @@
-/*#![allow(clippy::all)]
+#![allow(clippy::all)]
 #![allow(non_snake_case)]
 #![allow(unused)]
 use log::debug;
@@ -1938,4 +1938,3 @@ unsafe fn _execute_add32(
     let sum: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(s1.clone(), s2.clone(), 32, &mut (*context).fork_sink);
     _register_write_BV32(state, destination_id.clone(), sum.clone(), context);
 }
-*/
