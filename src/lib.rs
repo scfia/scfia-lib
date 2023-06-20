@@ -19,9 +19,9 @@ pub trait GenericForkSink<SC: ScfiaComposition>: Debug {
     fn push_value(&mut self, value: ActiveValue<SC>);
 }
 
-struct StepContext<SC: ScfiaComposition> {
+struct StepContext<'a, SC: ScfiaComposition> {
     memory: *mut Memory<SC>,
-    scfia: Weak<Scfia<SC>>,
+    scfia: &'a Scfia<SC>,
     hints: Option<SymbolicHints>,
     fork_sink: Option<SC::ForkSink>,
 }

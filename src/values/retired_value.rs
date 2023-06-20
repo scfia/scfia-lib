@@ -24,7 +24,7 @@ pub type RetiredValueWeak<Model> = Weak<RefCell<RetiredValueInner<Model>>>;
 
 pub struct RetiredValueInner<SC: ScfiaComposition> {
     pub id: u64,
-    pub z3_ast: Z3Ast,
+    pub z3_ast: Z3Ast<SC>,
     pub expression: RetiredExpression<SC>,
     pub scfia: Weak<Scfia<SC>>,
 }
@@ -69,7 +69,7 @@ fn get_cloned_parent<SC: ScfiaComposition>(weak: &Weak<RefCell<ActiveValueInner<
 */
 
 impl<SC: ScfiaComposition> RetiredValueInner<SC> {
-    pub(crate) fn clone_to_stdlib(&self, cloned_scfia: &mut Scfia<SC>, cloned_actives: &mut BTreeMap<u64, ActiveValue<SC>>, cloned_retired: &mut BTreeMap<u64, RetiredValue<SC>>) -> RetiredValue<SC> {
+    pub(crate) fn clone_to_stdlib(&self, cloned_scfia: &Scfia<SC>, cloned_actives: &mut BTreeMap<u64, ActiveValue<SC>>, cloned_retired: &mut BTreeMap<u64, RetiredValue<SC>>) -> RetiredValue<SC> {
         unsafe {
             if let Some(value) = cloned_retired.get(&self.id)  {
                 return value.clone()

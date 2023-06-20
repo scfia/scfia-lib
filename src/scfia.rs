@@ -69,13 +69,24 @@ use crate::z3_handle::Z3Handle;
 pub const PREFIX: [i8; 4] = ['p' as i8, 'r' as i8, 'e' as i8, 0];
 
 pub struct Scfia<SC: ScfiaComposition> {
-    pub(crate) z3: Rc<Z3Handle>,
+    pub(crate) z3: Rc<Z3Handle<SC>>,
     pub next_symbol_id: Cell<u64>,
-    selff: OnceCell<Weak<Self>>,
+    pub selff: OnceCell<Weak<Self>>,
     phantom: PhantomData<SC>,
 }
 
 impl<SC: ScfiaComposition> Scfia<SC> {
+    pub fn new(next_symbol_id: Option<u64>) -> Rc<Self> {
+        let scfia = Rc::new(Scfia {
+            z3: Z3Handle::new(),
+            next_symbol_id: Cell::new(next_symbol_id.unwrap_or_default()),
+            selff: OnceCell::new(),
+            phantom: PhantomData,
+        });
+        scfia.selff.set(Rc::downgrade(&scfia));
+        scfia
+    }
+
     pub fn new_bool_concrete(&self, value: bool, id: Option<u64>, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
         let id = if let Some(id) = id { id } else { self.next_symbol_id() };
         let z3_ast = self.z3.new_bool_concrete(value);
@@ -222,8 +233,8 @@ impl<SC: ScfiaComposition> Scfia<SC> {
 
     pub fn new_bv_add(
         &self,
-        s1: ActiveValue<SC>,
-        s2: ActiveValue<SC>,
+        s1: &ActiveValue<SC>,
+        s2: &ActiveValue<SC>,
         width: u32,
         id: Option<u64>,
         fork_sink: &mut Option<SC::ForkSink>,
@@ -259,8 +270,8 @@ impl<SC: ScfiaComposition> Scfia<SC> {
 
     pub fn new_bv_and(
         &self,
-        s1: ActiveValue<SC>,
-        s2: ActiveValue<SC>,
+        s1: &ActiveValue<SC>,
+        s2: &ActiveValue<SC>,
         width: u32,
         id: Option<u64>,
         fork_sink: &mut Option<SC::ForkSink>,
@@ -293,8 +304,8 @@ impl<SC: ScfiaComposition> Scfia<SC> {
 
     pub fn new_bv_concat(
         &self,
-        s1: ActiveValue<SC>,
-        s2: ActiveValue<SC>,
+        s1: &ActiveValue<SC>,
+        s2: &ActiveValue<SC>,
         width: u32,
         id: Option<u64>,
         fork_sink: &mut Option<SC::ForkSink>,
@@ -342,8 +353,8 @@ impl<SC: ScfiaComposition> Scfia<SC> {
 
     pub fn new_bv_multiply(
         &self,
-        s1: ActiveValue<SC>,
-        s2: ActiveValue<SC>,
+        s1: &ActiveValue<SC>,
+        s2: &ActiveValue<SC>,
         width: u32,
         id: Option<u64>,
         fork_sink: &mut Option<SC::ForkSink>,
@@ -380,8 +391,8 @@ impl<SC: ScfiaComposition> Scfia<SC> {
 
     pub fn new_bv_or(
         &self,
-        s1: ActiveValue<SC>,
-        s2: ActiveValue<SC>,
+        s1: &ActiveValue<SC>,
+        s2: &ActiveValue<SC>,
         width: u32,
         id: Option<u64>,
         fork_sink: &mut Option<SC::ForkSink>,
@@ -414,7 +425,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
 
     pub fn new_bv_sign_extend(
         &self,
-        s1: ActiveValue<SC>,
+        s1: &ActiveValue<SC>,
         input_width: u32,
         output_width: u32,
         id: Option<u64>,
@@ -453,8 +464,8 @@ impl<SC: ScfiaComposition> Scfia<SC> {
     }
 
     pub fn new_bv_slice(
-        &mut self,
-        s1: ActiveValue<SC>,
+        &self,
+        s1: &ActiveValue<SC>,
         high: u32,
         low: u32,
         id: Option<u64>,
@@ -488,9 +499,9 @@ impl<SC: ScfiaComposition> Scfia<SC> {
     }
 
     pub fn new_bv_sll(
-        &mut self,
-        s1: ActiveValue<SC>,
-        s2: ActiveValue<SC>,
+        &self,
+        s1: &ActiveValue<SC>,
+        s2: &ActiveValue<SC>,
         width: u32,
         id: Option<u64>,
         fork_sink: &mut Option<SC::ForkSink>,
@@ -524,9 +535,9 @@ impl<SC: ScfiaComposition> Scfia<SC> {
     }
 
     pub fn new_bv_srl(
-        &mut self,
-        s1: ActiveValue<SC>,
-        s2: ActiveValue<SC>,
+        &self,
+        s1: &ActiveValue<SC>,
+        s2: &ActiveValue<SC>,
         width: u32,
         id: Option<u64>,
         fork_sink: &mut Option<SC::ForkSink>,
@@ -560,9 +571,9 @@ impl<SC: ScfiaComposition> Scfia<SC> {
     }
 
     pub fn new_bv_sub(
-        &mut self,
-        s1: ActiveValue<SC>,
-        s2: ActiveValue<SC>,
+        &self,
+        s1: &ActiveValue<SC>,
+        s2: &ActiveValue<SC>,
         width: u32,
         id: Option<u64>,
         fork_sink: &mut Option<SC::ForkSink>,
@@ -597,16 +608,16 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         )
     }
 
-    pub fn new_bv_symbol(&mut self, width: u32, id: Option<u64>, fork_sink: &mut Option<SC::ForkSink>, comment: Option<ValueComment>) -> ActiveValue<SC> {
+    pub fn new_bv_symbol(&self, width: u32, id: Option<u64>, fork_sink: &mut Option<SC::ForkSink>, comment: Option<ValueComment>) -> ActiveValue<SC> {
         let id = if let Some(id) = id { id } else { self.next_symbol_id() };
         let z3_ast = self.z3.new_fresh_const(width);
         self.new_active(ActiveExpression::BVSymbol(BVSymbol { width }), z3_ast, id, fork_sink, comment)
     }
 
     pub fn new_bv_unsigned_remainder(
-        &mut self,
-        s1: ActiveValue<SC>,
-        s2: ActiveValue<SC>,
+        &self,
+        s1: &ActiveValue<SC>,
+        s2: &ActiveValue<SC>,
         width: u32,
         id: Option<u64>,
         fork_sink: &mut Option<SC::ForkSink>,
@@ -642,9 +653,9 @@ impl<SC: ScfiaComposition> Scfia<SC> {
     }
 
     pub fn new_bv_xor(
-        &mut self,
-        s1: ActiveValue<SC>,
-        s2: ActiveValue<SC>,
+        &self,
+        s1: &ActiveValue<SC>,
+        s2: &ActiveValue<SC>,
         width: u32,
         id: Option<u64>,
         fork_sink: &mut Option<SC::ForkSink>,
@@ -685,7 +696,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
     fn new_active(
         &self,
         expression: ActiveExpression<SC>,
-        z3_ast: Z3Ast,
+        z3_ast: Z3Ast<SC>,
         id: u64,
         fork_sink: &mut Option<SC::ForkSink>,
         comment: Option<ValueComment>,
@@ -705,7 +716,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         value
     }
 
-    pub fn new_inactive(&self, expression: RetiredExpression<SC>, z3_ast: Z3Ast, id: u64) -> RetiredValue<SC> {
+    pub fn new_inactive(&self, expression: RetiredExpression<SC>, z3_ast: Z3Ast<SC>, id: u64) -> RetiredValue<SC> {
         let value = Rc::new(RefCell::new(RetiredValueInner {
             id,
             z3_ast,
@@ -722,6 +733,10 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         };
 
         self.new_inactive(expression, value.z3_ast.clone(), value.id)
+    }
+
+    pub fn check_condition(&self, condition: &ActiveValue<SC>, fork_sink: &mut Option<SC::ForkSink>) -> bool {
+        return self.z3.check_condition(self, condition, fork_sink);
     }
 
     pub fn monomorphize_active(&self, value: &ActiveValueInner<SC>, candidates: &mut Vec<u64>) {

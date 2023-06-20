@@ -33,7 +33,7 @@ impl<SC: ScfiaComposition> Memory<SC> {
 
     pub fn read(
         &mut self,
-        address: ActiveValue<SC>,
+        address: &ActiveValue<SC>,
         width: u32,
         scfia: &Scfia<SC>,
         hints: &mut Option<SymbolicHints>,
@@ -52,8 +52,8 @@ impl<SC: ScfiaComposition> Memory<SC> {
 
     pub fn write(
         &mut self,
-        address: ActiveValue<SC>,
-        value: ActiveValue<SC>,
+        address: &ActiveValue<SC>,
+        value: &ActiveValue<SC>,
         width: u32,
         scfia: &Scfia<SC>,
         hints: &mut Option<SymbolicHints>,

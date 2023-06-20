@@ -47,7 +47,7 @@ impl ValueComment {
 
 pub struct ActiveValueInner<SC: ScfiaComposition> {
     pub id: u64,
-    pub z3_ast: Z3Ast,
+    pub z3_ast: Z3Ast<SC>,
     pub expression: ActiveExpression<SC>,
     pub inherited_asts: BTreeMap<u64, RetiredValue<SC>>,
     pub discovered_asts: BTreeMap<u64, ActiveValueWeak<SC>>,
@@ -179,7 +179,7 @@ impl<SC: ScfiaComposition> ActiveValueInner<SC> {
         todo!()
     }
 
-    pub(crate) fn clone_to_stdlib(&self, cloned_scfia: &mut Scfia<SC>, cloned_actives: &mut BTreeMap<u64, ActiveValue<SC>>, cloned_retired: &mut BTreeMap<u64, RetiredValue<SC>>) -> ActiveValue<SC> {
+    pub(crate) fn clone_to_stdlib(&self, cloned_scfia: &Scfia<SC>, cloned_actives: &mut BTreeMap<u64, ActiveValue<SC>>, cloned_retired: &mut BTreeMap<u64, RetiredValue<SC>>) -> ActiveValue<SC> {
         if let Some(value) = cloned_actives.get(&self.id)  {
             return value.clone()
         }
