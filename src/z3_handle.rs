@@ -4,10 +4,12 @@ use std::{
 };
 
 use z3_sys::{
-    Z3_ast, Z3_context, Z3_dec_ref, Z3_del_config, Z3_del_context, Z3_inc_ref, Z3_mk_bv_sort, Z3_mk_bvadd, Z3_mk_bvslt, Z3_mk_bvult, Z3_mk_config,
-    Z3_mk_context_rc, Z3_mk_eq, Z3_mk_false, Z3_mk_not, Z3_mk_solver, Z3_mk_true, Z3_mk_unsigned_int64, Z3_solver, Z3_solver_assert, Z3_solver_check,
-    Z3_solver_inc_ref, Z3_L_TRUE, Z3_mk_bvand, Z3_mk_concat, Z3_mk_bvmul, Z3_mk_bvor,
+    Z3_ast, Z3_context, Z3_dec_ref, Z3_del_config, Z3_del_context, Z3_inc_ref, Z3_mk_bv_sort, Z3_mk_bvadd, Z3_mk_bvand, Z3_mk_bvlshr, Z3_mk_bvmul, Z3_mk_bvor,
+    Z3_mk_bvshl, Z3_mk_bvslt, Z3_mk_bvsub, Z3_mk_bvult, Z3_mk_bvurem, Z3_mk_concat, Z3_mk_config, Z3_mk_context_rc, Z3_mk_eq, Z3_mk_extract, Z3_mk_false,
+    Z3_mk_not, Z3_mk_sign_ext, Z3_mk_solver, Z3_mk_true, Z3_mk_unsigned_int64, Z3_solver, Z3_solver_assert, Z3_solver_check, Z3_solver_inc_ref, Z3_L_TRUE, Z3_mk_bvxor, Z3_mk_fresh_const,
 };
+
+pub const PREFIX: [i8; 4] = ['p' as i8, 'r' as i8, 'e' as i8, 0];
 
 #[derive(Debug)]
 pub struct Z3Handle {
@@ -17,6 +19,7 @@ pub struct Z3Handle {
 }
 
 #[derive(Clone, Debug)]
+// TODO clone or don't drop for actives
 pub struct Z3Ast {
     pub ast: Z3_ast,
     pub z3: Weak<Z3Handle>,
@@ -172,6 +175,94 @@ impl Z3Handle {
     pub fn new_bvor(&self, s1: &Z3Ast, s2: &Z3Ast) -> Z3Ast {
         unsafe {
             let ast = Z3_mk_bvor(self.context, s1.ast, s2.ast);
+            Z3_inc_ref(self.context, ast);
+            Z3Ast {
+                ast,
+                z3: self.selff.get().unwrap().clone(),
+            }
+        }
+    }
+
+    pub fn new_sign_ext(&self, extension_width: u32, s1: &Z3Ast) -> Z3Ast {
+        unsafe {
+            let ast = Z3_mk_sign_ext(self.context, extension_width, s1.ast);
+            Z3_inc_ref(self.context, ast);
+            Z3Ast {
+                ast,
+                z3: self.selff.get().unwrap().clone(),
+            }
+        }
+    }
+
+    pub fn new_extract(&self, high: u32, low: u32, s1: &Z3Ast) -> Z3Ast {
+        unsafe {
+            let ast = Z3_mk_extract(self.context, high, low, s1.ast);
+            Z3_inc_ref(self.context, ast);
+            Z3Ast {
+                ast,
+                z3: self.selff.get().unwrap().clone(),
+            }
+        }
+    }
+
+    pub fn new_bvshl(&self, s1: &Z3Ast, s2: &Z3Ast) -> Z3Ast {
+        unsafe {
+            let ast = Z3_mk_bvshl(self.context, s1.ast, s2.ast);
+            Z3_inc_ref(self.context, ast);
+            Z3Ast {
+                ast,
+                z3: self.selff.get().unwrap().clone(),
+            }
+        }
+    }
+
+    pub fn new_bvlshr(&self, s1: &Z3Ast, s2: &Z3Ast) -> Z3Ast {
+        unsafe {
+            let ast = Z3_mk_bvlshr(self.context, s1.ast, s2.ast);
+            Z3_inc_ref(self.context, ast);
+            Z3Ast {
+                ast,
+                z3: self.selff.get().unwrap().clone(),
+            }
+        }
+    }
+
+    pub fn new_bvsub(&self, s1: &Z3Ast, s2: &Z3Ast) -> Z3Ast {
+        unsafe {
+            let ast = Z3_mk_bvsub(self.context, s1.ast, s2.ast);
+            Z3_inc_ref(self.context, ast);
+            Z3Ast {
+                ast,
+                z3: self.selff.get().unwrap().clone(),
+            }
+        }
+    }
+
+    pub fn new_fresh_const(&self, width: u32) -> Z3Ast {
+        unsafe {
+            let ast = Z3_mk_fresh_const(self.context, PREFIX.as_ptr(), Z3_mk_bv_sort(self.context, width));
+            Z3_inc_ref(self.context, ast);
+            Z3Ast {
+                ast,
+                z3: self.selff.get().unwrap().clone(),
+            }
+        }
+    }
+
+    pub fn new_bvurem(&self, s1: &Z3Ast, s2: &Z3Ast) -> Z3Ast {
+        unsafe {
+            let ast = Z3_mk_bvurem(self.context, s1.ast, s2.ast);
+            Z3_inc_ref(self.context, ast);
+            Z3Ast {
+                ast,
+                z3: self.selff.get().unwrap().clone(),
+            }
+        }
+    }
+
+    pub fn new_bvxor(&self, s1: &Z3Ast, s2: &Z3Ast) -> Z3Ast {
+        unsafe {
+            let ast = Z3_mk_bvxor(self.context, s1.ast, s2.ast);
             Z3_inc_ref(self.context, ast);
             Z3Ast {
                 ast,
