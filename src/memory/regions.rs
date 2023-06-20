@@ -49,7 +49,6 @@ impl<SC: ScfiaComposition> StableMemoryRegion<SC> {
     }
 
     pub(crate) fn read(&self, address: u64, width: u32, scfia: &Scfia<SC>, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
-        /*
         assert_eq!(width % 8, 0);
         let bytes = width / 8;
         let mut byte_values = VecDeque::new();
@@ -60,7 +59,7 @@ impl<SC: ScfiaComposition> StableMemoryRegion<SC> {
             } else {
                 warn!("Region {:#x} (len={:#x}) reading from uninitialized {:#x}", self.start_address, self.length, address + i as u64);
                 uninitialized = true;
-                byte_values.push_back(scfia.inner.try_borrow_mut().unwrap().new_bv_symbol(scfia.clone(), 8, None, fork_sink, Some(ValueComment::new(format!("Read from uninitialized address {:#x}", address + i as u64).to_string()))))
+                byte_values.push_back(scfia.new_bv_symbol(8, None, fork_sink, Some(ValueComment::new(format!("Read from uninitialized address {:#x}", address + i as u64).to_string()))))
             }
         }
 
@@ -68,38 +67,29 @@ impl<SC: ScfiaComposition> StableMemoryRegion<SC> {
         let mut value = byte_values.pop_front().unwrap();
         while !byte_values.is_empty() {
             let rhs = byte_values.pop_front().unwrap();
-            let new_value = if uninitialized {
-                scfia.inner.try_borrow_mut().unwrap().new_bv_concat(scfia.clone(), rhs.clone(), value.clone(), width - (byte_values.len() * 8) as u32, None, fork_sink, Some(ValueComment::new("StableMemmoryRegion::read concat".to_string())))
+            value = if uninitialized {
+                scfia.new_bv_concat(&rhs, &value, width - (byte_values.len() * 8) as u32, None, fork_sink, Some(ValueComment::new("StableMemmoryRegion::read concat".to_string())))
             } else {
-                scfia.new_bv_concat(rhs.clone(), value.clone(), width - (byte_values.len() * 8) as u32, fork_sink)
+                scfia.new_bv_concat(&rhs, &value, width - (byte_values.len() * 8) as u32, None, fork_sink, None)
             };
-            // Seriously, fuck Rust's drop behaviour/lifetimes.
-            // If we directly assign, the drop (of value's previous content) will be executed **before** the release of scfia.inner.try_borrow_mut().
-            value = new_value;
         }
 
-        //debug!("? = *{:x} ({:?})", address, value);
-
+        trace!("? = *{:x} ({:?})", address, value);
         value
-        */
-        todo!()
     }
 
-    pub(crate) fn write(&mut self, address: u64, value: ActiveValue<SC>, width: u32, scfia: &Scfia<SC>, fork_sink: &mut Option<SC::ForkSink>) {
-        /*
+    pub(crate) fn write(&mut self, address: u64, value: &ActiveValue<SC>, width: u32, scfia: &Scfia<SC>, fork_sink: &mut Option<SC::ForkSink>) {
         assert_eq!(width % 8, 0);
-        debug!("*{:x} = {:?}", address, value);
+        trace!("*{:x} = {:?}", address, value);
         let bytes = width / 8;
         for byte in 0..bytes {
-            let v = scfia.new_bv_slice(value.clone(), (byte * 8) + 7, byte * 8, fork_sink);
-            //debug!("*{:x} = {:?}", address, v);
+            let v = scfia.new_bv_slice(value, (byte * 8) + 7, byte * 8, None, fork_sink, None);
+            trace!("*{:x} = {:?}", address, v);
             self.memory.insert(address + byte as u64, v);
         }
-        */
     }
 
-    pub(crate) fn clone_to_stdlib(&self, cloned_scfia_rc: &Scfia<SC>, cloned_actives: &mut BTreeMap<u64, ActiveValue<SC>>, cloned_retired: &mut BTreeMap<u64, RetiredValue<SC>>) -> StableMemoryRegion<SC> {
-        /*
+    pub(crate) fn clone_to_stdlib(&self, cloned_scfia: &Scfia<SC>, cloned_actives: &mut BTreeMap<u64, ActiveValue<SC>>, cloned_retired: &mut BTreeMap<u64, RetiredValue<SC>>) -> StableMemoryRegion<SC> {
         let mut clone = StableMemoryRegion {
             length: self.length,
             memory: BTreeMap::new(),
@@ -113,12 +103,10 @@ impl<SC: ScfiaComposition> StableMemoryRegion<SC> {
                 value
                     .try_borrow()
                     .unwrap()
-                    .clone_to_stdlib(&mut cloned_scfia_rc.inner.try_borrow_mut().unwrap(), cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
+                    .clone_to_stdlib(cloned_scfia, cloned_actives, cloned_retired),
             );
         }
 
         clone
-        */
-        todo!()
     }
 }

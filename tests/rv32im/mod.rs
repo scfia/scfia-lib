@@ -3,15 +3,15 @@ mod constants;
 use std::collections::HashMap;
 use std::ffi::CString;
 use std::hash::Hash;
+use std::rc::Rc;
 use std::{fs, thread};
 use std::time::Instant;
 
 use log::{debug, info, trace, warn, LevelFilter};
 use scfia_lib::memory::regions::{StableMemoryRegion, SymbolicVolatileMemoryRegion, VolatileMemoryRegion};
 use scfia_lib::memory::Memory;
-use scfia_lib::models::riscv::rv32i;
-use scfia_lib::models::riscv::rv32i::RV32i;
-use scfia_lib::scfia::ScfiaOld;
+use scfia_lib::models::riscv::rv32i::{RV32i, RV32iScfiaComposition, self};
+use scfia_lib::scfia::Scfia;
 use scfia_lib::values::active_value::ActiveValueImpl;
 use scfia_lib::SymbolicHints;
 use xmas_elf::program::ProgramHeader::Ph32;
@@ -123,7 +123,7 @@ fn test_system_state_inner() {
     let binary_blob = fs::read("./tests/rv32im/data/simple_router_risc_v").unwrap();
     let elf = ElfFile::new(&binary_blob).unwrap();
 
-    let scfia = ScfiaOld::default();
+    let scfia: Rc<Scfia<RV32iScfiaComposition>> = Scfia::new(None);
     let mut memory = Memory::default();
 
     for program_header in elf.program_iter() {
@@ -137,10 +137,10 @@ fn test_system_state_inner() {
 
                     for b in ph32.raw_data(&elf) {
                         memory.write(
-                            scfia.new_bv_concrete(ph32.virtual_addr as u64 + i, 8, &mut None),
-                            scfia.new_bv_concrete(*b as u64, 8, &mut None),
+                            &scfia.new_bv_concrete(ph32.virtual_addr as u64 + i, 8, None,&mut None, None),
+                            &scfia.new_bv_concrete(*b as u64, 8, None, &mut None, None),
                             8,
-                            scfia.clone(),
+                            &scfia,
                             &mut None,
                             &mut None,
                         );
@@ -152,7 +152,7 @@ fn test_system_state_inner() {
         }
     }
 
-    /*
+    
     // ingress nic mmio register
     memory.volatiles.push(VolatileMemoryRegion {
         start_address: 0x0a003e00,
@@ -239,39 +239,39 @@ fn test_system_state_inner() {
 
     let mut rv32i_system_state = RV32i {
         state: rv32i::SystemState {
-            x0: scfia.new_bv_concrete(0b0, 32, &mut None),
-            x1: scfia.new_bv_concrete(0b0, 32, &mut None),
-            x2: scfia.new_bv_concrete(0b0, 32, &mut None),
-            x3: scfia.new_bv_concrete(0b0, 32, &mut None),
-            x4: scfia.new_bv_concrete(0b0, 32, &mut None),
-            x5: scfia.new_bv_concrete(0b0, 32, &mut None),
-            x6: scfia.new_bv_concrete(0b0, 32, &mut None),
-            x7: scfia.new_bv_concrete(0b0, 32, &mut None),
-            x8: scfia.new_bv_concrete(0b0, 32, &mut None),
-            x9: scfia.new_bv_concrete(0b0, 32, &mut None),
-            x10: scfia.new_bv_concrete(0b0, 32, &mut None),
-            x11: scfia.new_bv_concrete(0b0, 32, &mut None),
-            x12: scfia.new_bv_concrete(0b0, 32, &mut None),
-            x13: scfia.new_bv_concrete(0b0, 32, &mut None),
-            x14: scfia.new_bv_concrete(0b0, 32, &mut None),
-            x15: scfia.new_bv_concrete(0b0, 32, &mut None),
-            x16: scfia.new_bv_concrete(0b0, 32, &mut None),
-            x17: scfia.new_bv_concrete(0b0, 32, &mut None),
-            x18: scfia.new_bv_concrete(0b0, 32, &mut None),
-            x19: scfia.new_bv_concrete(0b0, 32, &mut None),
-            x20: scfia.new_bv_concrete(0b0, 32, &mut None),
-            x21: scfia.new_bv_concrete(0b0, 32, &mut None),
-            x22: scfia.new_bv_concrete(0b0, 32, &mut None),
-            x23: scfia.new_bv_concrete(0b0, 32, &mut None),
-            x24: scfia.new_bv_concrete(0b0, 32, &mut None),
-            x25: scfia.new_bv_concrete(0b0, 32, &mut None),
-            x26: scfia.new_bv_concrete(0b0, 32, &mut None),
-            x27: scfia.new_bv_concrete(0b0, 32, &mut None),
-            x28: scfia.new_bv_concrete(0b0, 32, &mut None),
-            x29: scfia.new_bv_concrete(0b0, 32, &mut None),
-            x30: scfia.new_bv_concrete(0b0, 32, &mut None),
-            x31: scfia.new_bv_concrete(0b0, 32, &mut None),
-            pc: scfia.new_bv_concrete(0x4f4, 32, &mut None),
+            x0: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
+            x1: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
+            x2: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
+            x3: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
+            x4: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
+            x5: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
+            x6: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
+            x7: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
+            x8: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
+            x9: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
+            x10: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
+            x11: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
+            x12: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
+            x13: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
+            x14: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
+            x15: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
+            x16: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
+            x17: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
+            x18: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
+            x19: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
+            x20: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
+            x21: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
+            x22: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
+            x23: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
+            x24: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
+            x25: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
+            x26: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
+            x27: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
+            x28: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
+            x29: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
+            x30: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
+            x31: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
+            pc: scfia.new_bv_concrete(0x4f4, 32, None, &mut None, None),
         },
         memory,
         scfia,
@@ -281,6 +281,7 @@ fn test_system_state_inner() {
     info!("Stepping until NIC1 receivequeue queue_pfn check");
     step_until(&mut rv32i_system_state, 0x24, &begin);
 
+    
     let mut successors = rv32i_system_state.step_forking(None);
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
@@ -304,6 +305,7 @@ fn test_system_state_inner() {
     let mut successors = continuing.step_forking(None);
     let mut panicking = successors.remove(0);
     let mut continuing = successors.remove(0);
+
 
     info!("({}ms) Stepping panic until loop", begin.elapsed().as_millis());
     step_until(&mut panicking, 0x508, &begin);
@@ -428,8 +430,9 @@ fn test_system_state_inner() {
     let mut monomorphizing_candidates = vec![0x46005004];
     continuing.scfia.monomorphize_active(&continuing.state.x14.try_borrow().unwrap(), &mut monomorphizing_candidates);
     assert_eq!(monomorphizing_candidates.len(), 1);
-    continuing.state.x14 = continuing.scfia.new_bv_concrete(monomorphizing_candidates[0], 32, &mut None);
+    continuing.state.x14 = continuing.scfia.new_bv_concrete(monomorphizing_candidates[0], 32, None, &mut None, None);
 
+    /* 
     info!("({}ms) Creating symbolic volatile memory regions", begin.elapsed().as_millis());
     let base_symbol = continuing.scfia.new_bv_constrained(32, 0xff, 0xffff0000);
     let sym_region = SymbolicVolatileMemoryRegion {
@@ -445,9 +448,9 @@ fn test_system_state_inner() {
         debug!("({}ms) overwriting 0x{:x}", begin.elapsed().as_millis(), ingress_receive_queue_pointer_address);
         continuing.memory.write_concrete(
             ingress_receive_queue_pointer_address as u64,
-            sym_region.base_symbol.clone(),
+            &sym_region.base_symbol,
             32,
-            continuing.scfia.clone(),
+            &continuing.scfia,
             &mut None,
         );
 
@@ -455,9 +458,9 @@ fn test_system_state_inner() {
         debug!("({}ms) overwriting 0x{:x}", begin.elapsed().as_millis(), egress_send_queue_pointer_address);
         continuing.memory.write_concrete(
             egress_send_queue_pointer_address as u64,
-            sym_region.base_symbol.clone(),
+            &sym_region.base_symbol,
             32,
-            continuing.scfia.clone(),
+            &continuing.scfia,
             &mut None,
         );
     }
@@ -499,6 +502,5 @@ fn test_system_state_inner() {
         (0x460, &[0x46c1d004]),
     ] });
     info!("SUCCESS");
-    
     */
 }

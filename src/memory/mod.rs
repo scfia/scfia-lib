@@ -39,15 +39,12 @@ impl<SC: ScfiaComposition> Memory<SC> {
         hints: &mut Option<SymbolicHints>,
         fork_sink: &mut Option<SC::ForkSink>,
     ) -> ActiveValue<SC> {
-        /*
         let address_inner = address.try_borrow().unwrap();
         if let ActiveExpression::BVConcrete(e) = &address_inner.expression {
             self.read_concrete(e.value, width, scfia, fork_sink)
         } else {
             self.read_symbolic(&address_inner, width, scfia, hints, fork_sink)
         }
-        */
-        todo!()
     }
 
     pub fn write(
@@ -59,14 +56,12 @@ impl<SC: ScfiaComposition> Memory<SC> {
         hints: &mut Option<SymbolicHints>,
         fork_sink: &mut Option<SC::ForkSink>,
     ) {
-        /*
         let address_inner = address.try_borrow().unwrap();
         if let ActiveExpression::BVConcrete(e) = &address_inner.expression {
             self.write_concrete(e.value, value, width, scfia, fork_sink)
         } else {
             self.write_symbolic(&address_inner, value, width, scfia, hints)
         }
-        */
     }
 
     // TODO fix refcounting
@@ -151,7 +146,7 @@ impl<SC: ScfiaComposition> Memory<SC> {
         todo!()
     }
 
-    fn write_symbolic(&mut self, address: &ActiveValueInner<SC>, _value: ActiveValue<SC>, width: u32, scfia: &Scfia<SC>, hints: &mut Option<SymbolicHints>) {
+    fn write_symbolic(&mut self, address: &ActiveValueInner<SC>, _value: &ActiveValue<SC>, width: u32, scfia: &Scfia<SC>, hints: &mut Option<SymbolicHints>) {
         /*
         unsafe {
             debug!("write_symbolic");
@@ -215,12 +210,11 @@ impl<SC: ScfiaComposition> Memory<SC> {
     }
 
     fn read_concrete(&mut self, address: u64, width: u32, scfia: &Scfia<SC>, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
-        /* 
         // Volatile regions may be inside larger stable regions, so we check them first
         for region in &self.volatiles {
             if address >= region.start_address && address < region.start_address + region.length {
                 trace!("Volatile region 0x{:x} yielding fresh symbol", region.start_address);
-                return scfia.new_bv_symbol(width, fork_sink);
+                return scfia.new_bv_symbol(width, None, fork_sink, None);
             }
         }
         for region in &self.stables {
@@ -229,15 +223,12 @@ impl<SC: ScfiaComposition> Memory<SC> {
             }
         }
         panic!("read_concrete failed to resolve 0x{:x}", address)
-        */
-        todo!()
     }
 
-    pub fn write_concrete(&mut self, address: u64, value: ActiveValue<SC>, width: u32, scfia: &Scfia<SC>, fork_sink: &mut Option<SC::ForkSink>) {
-        /*
+    pub fn write_concrete(&mut self, address: u64, value: &ActiveValue<SC>, width: u32, scfia: &Scfia<SC>, fork_sink: &mut Option<SC::ForkSink>) {
         for region in &mut self.stables {
-            if address >= region.start_address && address < region.start_address + region.length {
-                return region.write(address, value, width, scfia.clone(), fork_sink);
+            if address >= region.start_address && address < region.start_address + region.length { // TODO add width
+                return region.write(address, value, width, scfia, fork_sink);
             }
         }
         for region in &self.volatiles {
@@ -248,8 +239,6 @@ impl<SC: ScfiaComposition> Memory<SC> {
         }
 
         panic!("{:?}", address)
-        */
-        todo!()
     }
 
     pub(crate) fn clone_to_stdlib(&self, cloned_scfia: &Scfia<SC>, cloned_actives: &mut BTreeMap<u64, ActiveValue<SC>>, cloned_retired: &mut BTreeMap<u64, RetiredValue<SC>>) -> Memory<SC> {
@@ -257,11 +246,11 @@ impl<SC: ScfiaComposition> Memory<SC> {
         let mut symbolic_volatiles = vec![];
 
         for stable in &self.stables {
-            cloned_stables.push(stable.clone_to_stdlib(cloned_scfia.clone(), cloned_actives, cloned_retired))
+            cloned_stables.push(stable.clone_to_stdlib(cloned_scfia, cloned_actives, cloned_retired))
         }
 
         for symbolic_volatile in &self.symbolic_volatiles {
-            symbolic_volatiles.push(symbolic_volatile.clone_to_stdlib(cloned_scfia.clone(), cloned_actives, cloned_retired))
+            symbolic_volatiles.push(symbolic_volatile.clone_to_stdlib(cloned_scfia, cloned_actives, cloned_retired))
         }
 
         Memory {

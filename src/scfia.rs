@@ -57,6 +57,7 @@ use crate::values::bv_sub_expression::RetiredBVSubExpression;
 use crate::values::bv_symbol::BVSymbol;
 use crate::values::bv_symbol::RetiredBVSymbol;
 use crate::values::bv_unsigned_remainder_expression::BVUnsignedRemainderExpression;
+use crate::values::bv_unsigned_remainder_expression::RetiredBVUnsignedRemainderExpression;
 use crate::values::bv_xor_expression::BVXorExpression;
 use crate::values::bv_xor_expression::RetiredBVXorExpression;
 use crate::values::retired_value::RetiredExpression;
@@ -728,11 +729,145 @@ impl<SC: ScfiaComposition> Scfia<SC> {
 
     pub fn drop_active(&self, value: &ActiveValueInner<SC>) -> RetiredValue<SC> {
         let expression = match &value.expression {
-            ActiveExpression::BoolConcrete(v) => RetiredExpression::BoolConcrete(RetiredBoolConcrete { value: v.value }),
-            _ => todo!(),
+            ActiveExpression::BoolConcrete(e) => RetiredExpression::BoolConcrete(RetiredBoolConcrete { value: e.value }),
+            ActiveExpression::BoolEqExpression(e) => RetiredExpression::BoolEqExpression(RetiredBoolEqExpression {
+                s1: Rc::downgrade(&e.s1),
+                s1_id: e.s1.try_borrow().unwrap().id,
+                s2: Rc::downgrade(&e.s2),
+                s2_id: e.s2.try_borrow().unwrap().id,
+                is_assert: e.is_assert,
+                phantom: PhantomData,
+            }),
+            ActiveExpression::BoolNotExpression(e) => RetiredExpression::BoolNotExpression(RetiredBoolNotExpression {
+                s1: Rc::downgrade(&e.s1),
+                s1_id: e.s1.try_borrow().unwrap().id,
+                is_assert: e.is_assert,
+                phantom: PhantomData,
+            }),
+            ActiveExpression::BoolSignedLessThanExpression(e) => RetiredExpression::BoolSignedLessThanExpression(RetiredBoolSignedLessThanExpression {
+                s1: Rc::downgrade(&e.s1),
+                s1_id: e.s1.try_borrow().unwrap().id,
+                s2: Rc::downgrade(&e.s2),
+                s2_id: e.s2.try_borrow().unwrap().id,
+                is_assert: e.is_assert,
+                phantom: PhantomData,
+            }),
+            ActiveExpression::BoolUnsignedLessThanExpression(e) => RetiredExpression::BoolUnsignedLessThanExpression(RetiredBoolUnsignedLessThanExpression {
+                s1: Rc::downgrade(&e.s1),
+                s1_id: e.s1.try_borrow().unwrap().id,
+                s2: Rc::downgrade(&e.s2),
+                s2_id: e.s2.try_borrow().unwrap().id,
+                is_assert: e.is_assert,
+                phantom: PhantomData,
+            }),
+            ActiveExpression::BVAddExpression(e) => RetiredExpression::BVAddExpression(RetiredBVAddExpression {
+                s1: Rc::downgrade(&e.s1),
+                s1_id: e.s1.try_borrow().unwrap().id,
+                s2: Rc::downgrade(&e.s2),
+                s2_id: e.s2.try_borrow().unwrap().id,
+                width: e.width,
+                phantom: PhantomData,
+            }),
+            ActiveExpression::BVAndExpression(e) => RetiredExpression::BVAndExpression(RetiredBVAndExpression {
+                s1: Rc::downgrade(&e.s1),
+                s1_id: e.s1.try_borrow().unwrap().id,
+                s2: Rc::downgrade(&e.s2),
+                s2_id: e.s2.try_borrow().unwrap().id,
+                width: e.width,
+                phantom: PhantomData,
+            }),
+            ActiveExpression::BVConcatExpression(e) => RetiredExpression::BVConcatExpression(RetiredBVConcatExpression {
+                s1: Rc::downgrade(&e.s1),
+                s1_id: e.s1.try_borrow().unwrap().id,
+                s2: Rc::downgrade(&e.s2),
+                s2_id: e.s2.try_borrow().unwrap().id,
+                width: e.width,
+                phantom: PhantomData,
+            }),
+            ActiveExpression::BVConcrete(e) => RetiredExpression::BVConcrete(RetiredBVConcrete {
+                value: e.value,
+                width: e.width,
+            }),
+            ActiveExpression::BVMultiplyExpression(e) => RetiredExpression::BVMultiplyExpression(RetiredBVMultiplyExpression {
+                s1: Rc::downgrade(&e.s1),
+                s1_id: e.s1.try_borrow().unwrap().id,
+                s2: Rc::downgrade(&e.s2),
+                s2_id: e.s2.try_borrow().unwrap().id,
+                width: e.width,
+                phantom: PhantomData,
+            }),
+            ActiveExpression::BVOrExpression(e) => RetiredExpression::BVOrExpression(RetiredBVOrExpression {
+                s1: Rc::downgrade(&e.s1),
+                s1_id: e.s1.try_borrow().unwrap().id,
+                s2: Rc::downgrade(&e.s2),
+                s2_id: e.s2.try_borrow().unwrap().id,
+                width: e.width,
+                phantom: PhantomData,
+            }),
+            ActiveExpression::BVSignExtendExpression(e) => RetiredExpression::BVSignExtendExpression(RetiredBVSignExtendExpression {
+                s1: Rc::downgrade(&e.s1),
+                s1_id: e.s1.try_borrow().unwrap().id,
+                input_width: e.width,
+                width: e.width,
+                phantom: PhantomData,
+            }),
+            ActiveExpression::BVSliceExpression(e) => RetiredExpression::BVSliceExpression(RetiredBVSliceExpression {
+                s1: Rc::downgrade(&e.s1),
+                s1_id: e.s1.try_borrow().unwrap().id,
+                high: e.high,
+                low: e.low,
+                width: e.width,
+                phantom: PhantomData,
+            }),
+            ActiveExpression::BVSllExpression(e) => RetiredExpression::BVSllExpression(RetiredBVSllExpression {
+                s1: Rc::downgrade(&e.s1),
+                s1_id: e.s1.try_borrow().unwrap().id,
+                s2: Rc::downgrade(&e.s2),
+                s2_id: e.s2.try_borrow().unwrap().id,
+                width: e.width,
+                phantom: PhantomData,
+            }),
+            ActiveExpression::BVSrlExpression(e) => RetiredExpression::BVSrlExpression(RetiredBVSrlExpression {
+                s1: Rc::downgrade(&e.s1),
+                s1_id: e.s1.try_borrow().unwrap().id,
+                s2: Rc::downgrade(&e.s2),
+                s2_id: e.s2.try_borrow().unwrap().id,
+                shamt: e.shamt,
+                width: e.width,
+                phantom: PhantomData,
+            }),
+            ActiveExpression::BVSubExpression(e) => RetiredExpression::BVSubExpression(RetiredBVSubExpression {
+                s1: Rc::downgrade(&e.s1),
+                s1_id: e.s1.try_borrow().unwrap().id,
+                s2: Rc::downgrade(&e.s2),
+                s2_id: e.s2.try_borrow().unwrap().id,
+                width: e.width,
+                phantom: PhantomData,
+            }),
+            ActiveExpression::BVSymbol(e) => RetiredExpression::BVSymbol(RetiredBVSymbol {
+                width: e.width,
+            }),
+            ActiveExpression::BVUnsignedRemainderExpression(e) => RetiredExpression::BVUnsignedRemainderExpression(RetiredBVUnsignedRemainderExpression {
+                s1: Rc::downgrade(&e.s1),
+                s1_id: e.s1.try_borrow().unwrap().id,
+                s2: Rc::downgrade(&e.s2),
+                s2_id: e.s2.try_borrow().unwrap().id,
+                width: e.width,
+                phantom: PhantomData,
+            }),
+            ActiveExpression::BVXorExpression(e) => RetiredExpression::BVXorExpression(RetiredBVXorExpression {
+                s1: Rc::downgrade(&e.s1),
+                s1_id: e.s1.try_borrow().unwrap().id,
+                s2: Rc::downgrade(&e.s2),
+                s2_id: e.s2.try_borrow().unwrap().id,
+                width: e.width,
+                phantom: PhantomData,
+            }),
         };
 
-        self.new_inactive(expression, value.z3_ast.clone(), value.id)
+        let inactive = self.new_inactive(expression, value.z3_ast.clone(), value.id);
+        // TODO inheritance
+        inactive
     }
 
     pub fn check_condition(&self, condition: &ActiveValue<SC>, fork_sink: &mut Option<SC::ForkSink>) -> bool {
