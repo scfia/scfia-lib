@@ -2,7 +2,14 @@ use std::collections::{BTreeMap, VecDeque};
 
 use log::{debug, trace, warn};
 
-use crate::{values::{active_value::{ActiveValue, ValueComment}, retired_value::RetiredValue}, ScfiaComposition, StepContext, scfia::Scfia};
+use crate::{
+    scfia::Scfia,
+    values::{
+        active_value::{ActiveValue, ValueComment},
+        retired_value::RetiredValue,
+    },
+    ScfiaComposition,
+};
 
 #[derive(Debug)]
 pub struct StableMemoryRegion<SC: ScfiaComposition> {
@@ -23,18 +30,20 @@ pub struct SymbolicVolatileMemoryRegion<SC: ScfiaComposition> {
     pub length: u64,
 }
 impl<SC: ScfiaComposition> SymbolicVolatileMemoryRegion<SC> {
-    pub(crate) fn clone_to_stdlib(&self, cloned_scfia_rc: &Scfia<SC>, cloned_actives: &mut BTreeMap<u64, ActiveValue<SC>>, cloned_retired: &mut BTreeMap<u64, RetiredValue<SC>>) -> SymbolicVolatileMemoryRegion<SC> {
-        /*
+    pub(crate) fn clone_to_stdlib(
+        &self,
+        cloned_scfia: &Scfia<SC>,
+        cloned_actives: &mut BTreeMap<u64, ActiveValue<SC>>,
+        cloned_retired: &mut BTreeMap<u64, RetiredValue<SC>>,
+    ) -> SymbolicVolatileMemoryRegion<SC> {
         SymbolicVolatileMemoryRegion {
             base_symbol: self
                 .base_symbol
                 .try_borrow()
                 .unwrap()
-                .clone_to_stdlib(&mut cloned_scfia_rc.inner.try_borrow_mut().unwrap(), cloned_scfia_rc.clone(), cloned_actives, cloned_retired),
+                .clone_to_stdlib(cloned_scfia, cloned_actives, cloned_retired),
             length: self.length,
         }
-        */
-        todo!()
     }
 }
 
@@ -57,9 +66,21 @@ impl<SC: ScfiaComposition> StableMemoryRegion<SC> {
             if let Some(byte) = self.memory.get(&(address + i as u64)) {
                 byte_values.push_back(byte.clone());
             } else {
-                warn!("Region {:#x} (len={:#x}) reading from uninitialized {:#x}", self.start_address, self.length, address + i as u64);
+                warn!(
+                    "Region {:#x} (len={:#x}) reading from uninitialized {:#x}",
+                    self.start_address,
+                    self.length,
+                    address + i as u64
+                );
                 uninitialized = true;
-                byte_values.push_back(scfia.new_bv_symbol(8, None, fork_sink, Some(ValueComment::new(format!("Read from uninitialized address {:#x}", address + i as u64).to_string()))))
+                byte_values.push_back(scfia.new_bv_symbol(
+                    8,
+                    None,
+                    fork_sink,
+                    Some(ValueComment::new(
+                        format!("Read from uninitialized address {:#x}", address + i as u64).to_string(),
+                    )),
+                ))
             }
         }
 
@@ -68,7 +89,14 @@ impl<SC: ScfiaComposition> StableMemoryRegion<SC> {
         while !byte_values.is_empty() {
             let rhs = byte_values.pop_front().unwrap();
             value = if uninitialized {
-                scfia.new_bv_concat(&rhs, &value, width - (byte_values.len() * 8) as u32, None, fork_sink, Some(ValueComment::new("StableMemmoryRegion::read concat".to_string())))
+                scfia.new_bv_concat(
+                    &rhs,
+                    &value,
+                    width - (byte_values.len() * 8) as u32,
+                    None,
+                    fork_sink,
+                    Some(ValueComment::new("StableMemmoryRegion::read concat".to_string())),
+                )
             } else {
                 scfia.new_bv_concat(&rhs, &value, width - (byte_values.len() * 8) as u32, None, fork_sink, None)
             };
@@ -89,7 +117,12 @@ impl<SC: ScfiaComposition> StableMemoryRegion<SC> {
         }
     }
 
-    pub(crate) fn clone_to_stdlib(&self, cloned_scfia: &Scfia<SC>, cloned_actives: &mut BTreeMap<u64, ActiveValue<SC>>, cloned_retired: &mut BTreeMap<u64, RetiredValue<SC>>) -> StableMemoryRegion<SC> {
+    pub(crate) fn clone_to_stdlib(
+        &self,
+        cloned_scfia: &Scfia<SC>,
+        cloned_actives: &mut BTreeMap<u64, ActiveValue<SC>>,
+        cloned_retired: &mut BTreeMap<u64, RetiredValue<SC>>,
+    ) -> StableMemoryRegion<SC> {
         let mut clone = StableMemoryRegion {
             length: self.length,
             memory: BTreeMap::new(),
@@ -100,10 +133,7 @@ impl<SC: ScfiaComposition> StableMemoryRegion<SC> {
             trace!("memcloning {:?}", value);
             clone.memory.insert(
                 *offset,
-                value
-                    .try_borrow()
-                    .unwrap()
-                    .clone_to_stdlib(cloned_scfia, cloned_actives, cloned_retired),
+                value.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_retired),
             );
         }
 

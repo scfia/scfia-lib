@@ -2,23 +2,16 @@ use std::cell::Cell;
 use std::cell::OnceCell;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::ffi::CString;
 use std::marker::PhantomData;
-use std::ptr;
 use std::rc::Rc;
 use std::rc::Weak;
-use std::time::Instant;
 
-use log::debug;
 use log::error;
-use log::info;
 use log::trace;
-use log::warn;
 
 use crate::values::active_value::ActiveExpression;
 use crate::values::active_value::ActiveValue;
 use crate::values::active_value::ActiveValueInner;
-use crate::values::active_value::ActiveValueWeak;
 use crate::values::active_value::ValueComment;
 use crate::values::bool_concrete::BoolConcrete;
 use crate::values::bool_eq_expression::BoolEqExpression;
@@ -31,7 +24,6 @@ use crate::values::bv_concat_expression::BVConcatExpression;
 use crate::values::bv_concrete::BVConcrete;
 use crate::GenericForkSink;
 use crate::ScfiaComposition;
-
 use crate::values::bool_concrete::RetiredBoolConcrete;
 use crate::values::bool_eq_expression::RetiredBoolEqExpression;
 use crate::values::bool_not_expresssion::RetiredBoolNotExpression;
@@ -63,14 +55,11 @@ use crate::values::bv_xor_expression::RetiredBVXorExpression;
 use crate::values::retired_value::RetiredExpression;
 use crate::values::retired_value::RetiredValue;
 use crate::values::retired_value::RetiredValueInner;
-use crate::values::retired_value::RetiredValueWeak;
 use crate::z3_handle::Z3Ast;
 use crate::z3_handle::Z3Handle;
 
-pub const PREFIX: [i8; 4] = ['p' as i8, 'r' as i8, 'e' as i8, 0];
-
 pub struct Scfia<SC: ScfiaComposition> {
-    pub(crate) z3: Rc<Z3Handle<SC>>,
+    pub z3: Rc<Z3Handle<SC>>,
     pub next_symbol_id: Cell<u64>,
     pub selff: OnceCell<Weak<Self>>,
     phantom: PhantomData<SC>,
@@ -84,7 +73,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             selff: OnceCell::new(),
             phantom: PhantomData,
         });
-        scfia.selff.set(Rc::downgrade(&scfia));
+        scfia.selff.set(Rc::downgrade(&scfia)).unwrap();
         scfia
     }
 
@@ -189,7 +178,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             ActiveExpression::BoolSignedLessThanExpression(BoolSignedLessThanExpression {
                 s1: s1.clone(),
                 s2: s2.clone(),
-                is_assert: is_assert,
+                is_assert,
             }),
             z3_ast,
             id,
@@ -723,6 +712,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             z3_ast,
             expression,
             scfia: self.selff.get().unwrap().clone(),
+            comment: None,
         }));
         value
     }
@@ -844,9 +834,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
                 width: e.width,
                 phantom: PhantomData,
             }),
-            ActiveExpression::BVSymbol(e) => RetiredExpression::BVSymbol(RetiredBVSymbol {
-                width: e.width,
-            }),
+            ActiveExpression::BVSymbol(e) => RetiredExpression::BVSymbol(RetiredBVSymbol { width: e.width }),
             ActiveExpression::BVUnsignedRemainderExpression(e) => RetiredExpression::BVUnsignedRemainderExpression(RetiredBVUnsignedRemainderExpression {
                 s1: Rc::downgrade(&e.s1),
                 s1_id: e.s1.try_borrow().unwrap().id,
@@ -866,15 +854,115 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         };
 
         let inactive = self.new_inactive(expression, value.z3_ast.clone(), value.id);
-        // TODO inheritance
+
+        // Heirs are parents and discovered symbols
+        let mut heirs = vec![];
+        value.expression.get_parents(&mut heirs);
+        for discovered_ast in value.discovered_asts.values() {
+            let acquaintance = discovered_ast.upgrade().unwrap();
+            let mut acquaintance_mut = acquaintance.try_borrow_mut().unwrap();
+            acquaintance_mut.discovered_asts.remove(&value.id);
+            heirs.push(acquaintance.clone())
+        }
+
+        // For each heir...
+        for heir in &heirs {
+            let mut heir_mut = heir.try_borrow_mut().unwrap();
+            trace!("{:?} attempting to inherit {:?}", heir_mut, inactive);
+
+            // Inherit
+            if !heir_mut.is_concrete() {
+                heir_mut.inherited_asts.insert(value.id, inactive.clone());
+
+                // Pass on inherited symbols
+                for (inherited_value_id, inherited_value) in &value.inherited_asts {
+                    let old = heir_mut.inherited_asts.insert(*inherited_value_id, inherited_value.clone());
+                    if let Some(old) = old {
+                        if !Rc::ptr_eq(&old, inherited_value) {
+                            error!(
+                                "{:?} tried to pass on {:?}, but {:?} already had {:?} (same id, different thing)",
+                                value, inherited_value, heir_mut, old
+                            );
+                            panic!();
+                        }
+                    }
+                }
+            }
+
+            // Acquaint all heirs
+            for other_heir in &heirs {
+                if !Rc::ptr_eq(heir, other_heir) {
+                    let mut other_heir_mut = other_heir.try_borrow_mut().unwrap();
+                    other_heir_mut.discovered_asts.insert(heir_mut.id, Rc::downgrade(heir));
+                    heir_mut.discovered_asts.insert(other_heir_mut.id, Rc::downgrade(other_heir));
+                }
+            }
+        }
+
         inactive
     }
 
     pub fn check_condition(&self, condition: &ActiveValue<SC>, fork_sink: &mut Option<SC::ForkSink>) -> bool {
-        return self.z3.check_condition(self, condition, fork_sink);
+        self.z3.check_condition(self, condition, fork_sink)
     }
 
-    pub fn monomorphize_active(&self, value: &ActiveValueInner<SC>, candidates: &mut Vec<u64>) {
-        todo!()
+    pub fn monomorphize_active(&self, value: &ActiveValue<SC>, candidates: &mut Vec<u64>) {
+        self.z3.monomorphize(&value.try_borrow().unwrap().z3_ast, candidates);
+    }
+
+    pub fn new_bv_constrained(&self, width: u32, align: u64, limit: u64) -> ActiveValue<SC> {
+        let base_symbol = self.new_bv_symbol(
+            width,
+            None,
+            &mut None,
+            Some(ValueComment {
+                message: "constrained symbol".to_string(),
+            }),
+        );
+
+        // Assert base_symbol & align == 0
+        let align_bv = self.new_bv_concrete(align, width, None, &mut None, None);
+        let align_and = self.new_bv_and(&base_symbol, &align_bv, width, None, &mut None, None);
+        let zero = self.new_bv_concrete(0, width, None, &mut None, None);
+        // I swear to whichever deity the Drop behaviour is a nightmare
+        let _eq = self.new_bool_eq(&align_and, &zero, None, true, &mut None, None);
+
+        // Assert base_symbol < max
+        let limit_bv = self.new_bv_concrete(limit, width, None, &mut None, None);
+        let _lt = self.new_bool_unsigned_less_than(&base_symbol, &limit_bv, None, true, &mut None, None);
+
+        base_symbol
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{rc::Rc, collections::BTreeMap};
+
+    use crate::{models::riscv::rv32i::RV32iScfiaComposition, scfia::Scfia};
+
+    #[test]
+    pub fn test_scfia() {
+        let scfia: Rc<Scfia<RV32iScfiaComposition>> = Scfia::new(None);
+        let s1 = scfia.new_bv_symbol(32, None, &mut None, None);
+        let s2 = scfia.new_bv_concrete(0x0f, 32, None, &mut None, None);
+        let s3 = scfia.new_bv_symbol(32, None, &mut None, None);
+        let s4 = scfia.new_bv_multiply(&s3, &s3, 32, None, &mut None, None);
+        let s5 = scfia.new_bool_eq(&s4, &s3, None, true, &mut None, None);
+        {
+            let s5 = s5.try_borrow().unwrap().z3_ast.clone();
+        }
+        assert_eq!(scfia.z3.ast_refs.get(), 5);
+        let and = scfia.new_bv_and(&s1, &s2, 32, None, &mut None, None);
+        let mut candidates = vec![];
+        scfia.monomorphize_active(&and, &mut candidates);
+        assert_eq!(scfia.z3.ast_refs.get(), 6);
+
+        let cloned_scfia: Rc<Scfia<RV32iScfiaComposition>> = Scfia::new(Some(scfia.next_symbol_id.get()));
+        let mut cloned_actives = BTreeMap::new();
+        let mut cloned_inactives = BTreeMap::new();
+        let cloned_add = and.try_borrow().unwrap().clone_to_stdlib(&cloned_scfia, &mut cloned_actives, &mut cloned_inactives);
+        let cloned_s5 = s5.try_borrow().unwrap().clone_to_stdlib(&cloned_scfia, &mut cloned_actives, &mut cloned_inactives);
+        assert_eq!(cloned_scfia.z3.ast_refs.get(), 6);
     }
 }

@@ -1,4 +1,4 @@
-use std::{fmt::Debug, marker::PhantomData, cell::RefCell, rc::Weak};
+use std::{cell::RefCell, fmt::Debug, marker::PhantomData, rc::Weak};
 
 use crate::ScfiaComposition;
 

@@ -1,6 +1,6 @@
 use memory::Memory;
 use scfia::Scfia;
-use std::{fmt::Debug, rc::Weak};
+use std::fmt::Debug;
 use values::active_value::ActiveValue;
 
 pub mod memory;
