@@ -699,6 +699,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             discovered_asts: BTreeMap::new(),
             scfia: self.selff.get().unwrap().clone(),
             comment,
+            can_inherit: true,
         }));
         if let Some(fork_sink) = fork_sink {
             fork_sink.push_value(value.clone())
@@ -871,7 +872,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             trace!("{:?} attempting to inherit {:?}", heir_mut, inactive);
 
             // Inherit
-            if !heir_mut.is_concrete() {
+            if !heir_mut.is_concrete() && heir_mut.can_inherit {
                 heir_mut.inherited_asts.insert(value.id, inactive.clone());
 
                 // Pass on inherited symbols
@@ -911,26 +912,30 @@ impl<SC: ScfiaComposition> Scfia<SC> {
     }
 
     pub fn new_bv_constrained(&self, width: u32, align: u64, limit: u64) -> ActiveValue<SC> {
-        let base_symbol = self.new_bv_symbol(
-            width,
-            None,
-            &mut None,
-            Some(ValueComment {
-                message: "constrained symbol".to_string(),
-            }),
-        );
+        let base_symbol = {
+            let base_symbol = self.new_bv_symbol(
+                width,
+                None,
+                &mut None,
+                Some(ValueComment {
+                    message: "constrained symbol".to_string(),
+                }),
+            );
 
-        // Assert base_symbol & align == 0
-        let align_bv = self.new_bv_concrete(align, width, None, &mut None, None);
-        let align_and = self.new_bv_and(&base_symbol, &align_bv, width, None, &mut None, None);
-        let zero = self.new_bv_concrete(0, width, None, &mut None, None);
-        // I swear to whichever deity the Drop behaviour is a nightmare
-        let _eq = self.new_bool_eq(&align_and, &zero, None, true, &mut None, None);
+            // Assert base_symbol & align == 0
+            let align_bv = self.new_bv_concrete(align, width, None, &mut None, None);
+            let align_and = self.new_bv_and(&base_symbol, &align_bv, width, None, &mut None, None);
+            let zero = self.new_bv_concrete(0, width, None, &mut None, None);
+            // I swear to whichever deity the Drop behaviour is a nightmare
+            self.new_bool_eq(&align_and, &zero, None, true, &mut None, None);
 
-        // Assert base_symbol < max
-        let limit_bv = self.new_bv_concrete(limit, width, None, &mut None, None);
-        let _lt = self.new_bool_unsigned_less_than(&base_symbol, &limit_bv, None, true, &mut None, None);
+            // Assert base_symbol < max
+            let limit_bv = self.new_bv_concrete(limit, width, None, &mut None, None);
+            self.new_bool_unsigned_less_than(&base_symbol, &limit_bv, None, true, &mut None, None);
 
+            base_symbol
+        };
+        base_symbol.try_borrow_mut().unwrap().can_inherit = false;
         base_symbol
     }
 }
@@ -950,7 +955,7 @@ mod tests {
         let s4 = scfia.new_bv_multiply(&s3, &s3, 32, None, &mut None, None);
         let s5 = scfia.new_bool_eq(&s4, &s3, None, true, &mut None, None);
         {
-            let s5 = s5.try_borrow().unwrap().z3_ast.clone();
+            let _s5 = s5.try_borrow().unwrap().z3_ast.clone();
         }
         assert_eq!(scfia.z3.ast_refs.get(), 5);
         let and = scfia.new_bv_and(&s1, &s2, 32, None, &mut None, None);
@@ -961,8 +966,8 @@ mod tests {
         let cloned_scfia: Rc<Scfia<RV32iScfiaComposition>> = Scfia::new(Some(scfia.next_symbol_id.get()));
         let mut cloned_actives = BTreeMap::new();
         let mut cloned_inactives = BTreeMap::new();
-        let cloned_add = and.try_borrow().unwrap().clone_to_stdlib(&cloned_scfia, &mut cloned_actives, &mut cloned_inactives);
-        let cloned_s5 = s5.try_borrow().unwrap().clone_to_stdlib(&cloned_scfia, &mut cloned_actives, &mut cloned_inactives);
+        let _cloned_add = and.try_borrow().unwrap().clone_to_stdlib(&cloned_scfia, &mut cloned_actives, &mut cloned_inactives);
+        let _cloned_s5 = s5.try_borrow().unwrap().clone_to_stdlib(&cloned_scfia, &mut cloned_actives, &mut cloned_inactives);
         assert_eq!(cloned_scfia.z3.ast_refs.get(), 6);
     }
 }

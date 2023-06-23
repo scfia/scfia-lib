@@ -31,6 +31,22 @@ impl<SC: ScfiaComposition> Memory<SC> {
         }
     }
 
+    pub fn get_highest_depth(&self) -> Option<(u64, usize)> {
+        let mut highest = None;
+        for stable in &self.stables {
+            for (address, value) in &stable.memory {
+                if let Some((_, highest_depth)) = highest {
+                    if value.try_borrow().unwrap().get_depth() > highest_depth {
+                        highest = Some((*address, value.try_borrow().unwrap().get_depth()))
+                    }
+                } else {
+                    highest = Some((*address, value.try_borrow().unwrap().get_depth()))
+                }
+            }
+        }
+        highest
+    }
+
     pub fn read(
         &mut self,
         address: &ActiveValue<SC>,
@@ -163,6 +179,7 @@ impl<SC: ScfiaComposition> Memory<SC> {
 
     fn read_concrete(&mut self, address: u64, width: u32, scfia: &Scfia<SC>, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
         // Volatile regions may be inside larger stable regions, so we check them first
+        //debug!("*{:x}", address);
         for region in &self.volatiles {
             if address >= region.start_address && address < region.start_address + region.length {
                 trace!("Volatile region 0x{:x} yielding fresh symbol", region.start_address);
@@ -178,6 +195,7 @@ impl<SC: ScfiaComposition> Memory<SC> {
     }
 
     pub fn write_concrete(&mut self, address: u64, value: &ActiveValue<SC>, width: u32, scfia: &Scfia<SC>, fork_sink: &mut Option<SC::ForkSink>) {
+        //debug!("*{:x} = {:?}", address, value);
         for region in &mut self.stables {
             if address >= region.start_address && address < region.start_address + region.length {
                 // TODO add width

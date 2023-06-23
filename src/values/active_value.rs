@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::fmt::Debug;
 use std::{
     cell::RefCell,
@@ -52,6 +53,7 @@ pub struct ActiveValueInner<SC: ScfiaComposition> {
     pub discovered_asts: BTreeMap<u64, ActiveValueWeak<SC>>,
     pub scfia: Weak<Scfia<SC>>,
     pub comment: Option<ValueComment>,
+    pub can_inherit: bool,
 }
 
 pub enum ActiveExpression<SC: ScfiaComposition> {
@@ -170,6 +172,34 @@ impl<SC: ScfiaComposition> ActiveValueInner<SC> {
         self.z3_ast.assert()
     }
 
+    pub fn get_inactives(&self) -> usize {
+        self.inherited_asts.len()
+    }
+
+    pub fn get_depth(&self) -> usize {
+        match &self.expression {
+            ActiveExpression::BoolConcrete(_) => 1,
+            ActiveExpression::BoolEqExpression(e) => 1 + max(e.s1.try_borrow().unwrap().get_depth(), e.s2.try_borrow().unwrap().get_depth()),
+            ActiveExpression::BoolNotExpression(e) => 1 + e.s1.try_borrow().unwrap().get_depth(),
+            ActiveExpression::BoolSignedLessThanExpression(e) => 1 + max(e.s1.try_borrow().unwrap().get_depth(), e.s2.try_borrow().unwrap().get_depth()),
+            ActiveExpression::BoolUnsignedLessThanExpression(e) => 1 + max(e.s1.try_borrow().unwrap().get_depth(), e.s2.try_borrow().unwrap().get_depth()),
+            ActiveExpression::BVAddExpression(e) => 1 + max(e.s1.try_borrow().unwrap().get_depth(), e.s2.try_borrow().unwrap().get_depth()),
+            ActiveExpression::BVAndExpression(e) => 1 + max(e.s1.try_borrow().unwrap().get_depth(), e.s2.try_borrow().unwrap().get_depth()),
+            ActiveExpression::BVConcatExpression(e) => 1 + max(e.s1.try_borrow().unwrap().get_depth(), e.s2.try_borrow().unwrap().get_depth()),
+            ActiveExpression::BVConcrete(_) => 1,
+            ActiveExpression::BVMultiplyExpression(e) => 1 + max(e.s1.try_borrow().unwrap().get_depth(), e.s2.try_borrow().unwrap().get_depth()),
+            ActiveExpression::BVOrExpression(e) => 1 + max(e.s1.try_borrow().unwrap().get_depth(), e.s2.try_borrow().unwrap().get_depth()),
+            ActiveExpression::BVSignExtendExpression(e) => 1 + e.s1.try_borrow().unwrap().get_depth(),
+            ActiveExpression::BVSliceExpression(e) => 1 + e.s1.try_borrow().unwrap().get_depth(),
+            ActiveExpression::BVSllExpression(e) => 1 + max(e.s1.try_borrow().unwrap().get_depth(), e.s2.try_borrow().unwrap().get_depth()),
+            ActiveExpression::BVSrlExpression(e) => 1 + max(e.s1.try_borrow().unwrap().get_depth(), e.s2.try_borrow().unwrap().get_depth()),
+            ActiveExpression::BVSubExpression(e) => 1 + max(e.s1.try_borrow().unwrap().get_depth(), e.s2.try_borrow().unwrap().get_depth()),
+            ActiveExpression::BVSymbol(_) => 1,
+            ActiveExpression::BVUnsignedRemainderExpression(e) => 1 + max(e.s1.try_borrow().unwrap().get_depth(), e.s2.try_borrow().unwrap().get_depth()),
+            ActiveExpression::BVXorExpression(e) => 1 + max(e.s1.try_borrow().unwrap().get_depth(), e.s2.try_borrow().unwrap().get_depth()),
+        }
+    }
+
     pub(crate) fn clone_to_stdlib(
         &self,
         cloned_scfia: &Scfia<SC>,
@@ -264,6 +294,9 @@ impl<SC: ScfiaComposition> ActiveValueInner<SC> {
             }
         };
 
+        if !self.can_inherit {
+            cloned_value.try_borrow_mut().unwrap().can_inherit = false;
+        }
         cloned_actives.insert(self.id, cloned_value.clone());
 
         // Clone inherited values

@@ -114,6 +114,47 @@ impl RV32i {
             }, cloned_actives, cloned_retireds)
         }
     }
+
+    pub fn debug(&self) {
+        debug!("Register depths:");
+        debug!("x0:\tdepth={}, inactives={}", self.state.x0.try_borrow().unwrap().get_depth(), self.state.x0.try_borrow().unwrap().get_inactives());
+        debug!("x1:\tdepth={}, inactives={}", self.state.x1.try_borrow().unwrap().get_depth(), self.state.x1.try_borrow().unwrap().get_inactives());
+        debug!("x2:\tdepth={}, inactives={}", self.state.x2.try_borrow().unwrap().get_depth(), self.state.x2.try_borrow().unwrap().get_inactives());
+        debug!("x3:\tdepth={}, inactives={}", self.state.x3.try_borrow().unwrap().get_depth(), self.state.x3.try_borrow().unwrap().get_inactives());
+        debug!("x4:\tdepth={}, inactives={}", self.state.x4.try_borrow().unwrap().get_depth(), self.state.x4.try_borrow().unwrap().get_inactives());
+        debug!("x5:\tdepth={}, inactives={}", self.state.x5.try_borrow().unwrap().get_depth(), self.state.x5.try_borrow().unwrap().get_inactives());
+        debug!("x6:\tdepth={}, inactives={}", self.state.x6.try_borrow().unwrap().get_depth(), self.state.x6.try_borrow().unwrap().get_inactives());
+        debug!("x7:\tdepth={}, inactives={}", self.state.x7.try_borrow().unwrap().get_depth(), self.state.x7.try_borrow().unwrap().get_inactives());
+        debug!("x8:\tdepth={}, inactives={}", self.state.x8.try_borrow().unwrap().get_depth(), self.state.x8.try_borrow().unwrap().get_inactives());
+        debug!("x9:\tdepth={}, inactives={}", self.state.x9.try_borrow().unwrap().get_depth(), self.state.x9.try_borrow().unwrap().get_inactives());
+        debug!("x10:\tdepth={}, inactives={}", self.state.x10.try_borrow().unwrap().get_depth(), self.state.x10.try_borrow().unwrap().get_inactives());
+        debug!("x11:\tdepth={}, inactives={}", self.state.x11.try_borrow().unwrap().get_depth(), self.state.x11.try_borrow().unwrap().get_inactives());
+        debug!("x12:\tdepth={}, inactives={}", self.state.x12.try_borrow().unwrap().get_depth(), self.state.x12.try_borrow().unwrap().get_inactives());
+        debug!("x13:\tdepth={}, inactives={}", self.state.x13.try_borrow().unwrap().get_depth(), self.state.x13.try_borrow().unwrap().get_inactives());
+        debug!("x14:\tdepth={}, inactives={}", self.state.x14.try_borrow().unwrap().get_depth(), self.state.x14.try_borrow().unwrap().get_inactives());
+        debug!("x15:\tdepth={}, inactives={}", self.state.x15.try_borrow().unwrap().get_depth(), self.state.x15.try_borrow().unwrap().get_inactives());
+        debug!("x16:\tdepth={}, inactives={}", self.state.x16.try_borrow().unwrap().get_depth(), self.state.x16.try_borrow().unwrap().get_inactives());
+        debug!("x17:\tdepth={}, inactives={}", self.state.x17.try_borrow().unwrap().get_depth(), self.state.x17.try_borrow().unwrap().get_inactives());
+        debug!("x18:\tdepth={}, inactives={}", self.state.x18.try_borrow().unwrap().get_depth(), self.state.x18.try_borrow().unwrap().get_inactives());
+        debug!("x19:\tdepth={}, inactives={}", self.state.x19.try_borrow().unwrap().get_depth(), self.state.x19.try_borrow().unwrap().get_inactives());
+        debug!("x20:\tdepth={}, inactives={}", self.state.x20.try_borrow().unwrap().get_depth(), self.state.x20.try_borrow().unwrap().get_inactives());
+        debug!("x21:\tdepth={}, inactives={}", self.state.x21.try_borrow().unwrap().get_depth(), self.state.x21.try_borrow().unwrap().get_inactives());
+        debug!("x22:\tdepth={}, inactives={}", self.state.x22.try_borrow().unwrap().get_depth(), self.state.x22.try_borrow().unwrap().get_inactives());
+        debug!("x23:\tdepth={}, inactives={}", self.state.x23.try_borrow().unwrap().get_depth(), self.state.x23.try_borrow().unwrap().get_inactives());
+        debug!("x24:\tdepth={}, inactives={}", self.state.x24.try_borrow().unwrap().get_depth(), self.state.x24.try_borrow().unwrap().get_inactives());
+        debug!("x25:\tdepth={}, inactives={}", self.state.x25.try_borrow().unwrap().get_depth(), self.state.x25.try_borrow().unwrap().get_inactives());
+        debug!("x26:\tdepth={}, inactives={}", self.state.x26.try_borrow().unwrap().get_depth(), self.state.x26.try_borrow().unwrap().get_inactives());
+        debug!("x27:\tdepth={}, inactives={}", self.state.x27.try_borrow().unwrap().get_depth(), self.state.x27.try_borrow().unwrap().get_inactives());
+        debug!("x28:\tdepth={}, inactives={}", self.state.x28.try_borrow().unwrap().get_depth(), self.state.x28.try_borrow().unwrap().get_inactives());
+        debug!("x29:\tdepth={}, inactives={}", self.state.x29.try_borrow().unwrap().get_depth(), self.state.x29.try_borrow().unwrap().get_inactives());
+        debug!("x30:\tdepth={}, inactives={}", self.state.x30.try_borrow().unwrap().get_depth(), self.state.x30.try_borrow().unwrap().get_inactives());
+        debug!("x31:\tdepth={}, inactives={}", self.state.x31.try_borrow().unwrap().get_depth(), self.state.x31.try_borrow().unwrap().get_inactives());
+        debug!("pc:\tdepth={}, inactives={}", self.state.pc.try_borrow().unwrap().get_depth(), self.state.pc.try_borrow().unwrap().get_inactives());
+        debug!("Stable memory cells: {}", self.memory.stables.iter().map(|e|e.memory.len()).sum::<usize>());
+        let (worst_cell, depth) = self.memory.get_highest_depth().unwrap();
+        debug!("Worst memory cell: {:x} depth={}", worst_cell, depth);
+    }
+
 }
 
 impl Debug for RV32i {
