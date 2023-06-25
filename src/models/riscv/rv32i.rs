@@ -1,2344 +1,1013 @@
-use z3_sys::Z3_solver_assert;
+#![allow(clippy::all)]
+#![allow(non_snake_case)]
+#![allow(unused)]
+use log::debug;
+use std::{borrow::BorrowMut, fmt::Debug, collections::BTreeMap, rc::Rc};
 
-use crate::ScfiaStdlib;
-use crate::SymbolicHints;
-use std::cell::RefCell;
-use std::collections::BTreeMap;
-use std::collections::HashMap;
-use std::fmt;
-use std::ops::Deref;
-use std::rc::Rc;
+use crate::{memory::Memory, scfia::Scfia, values::{active_value::ActiveValue, retired_value::RetiredValue}, GenericForkSink, ScfiaComposition, StepContext, SymbolicHints};
 
-use crate::expressions::bool_eq_expression::BoolEqExpression;
-use crate::expressions::bool_less_than_signed_expression::BoolLessThanSignedExpression;
-use crate::expressions::bool_less_than_uint_expression::BoolLessThanUIntExpression;
-use crate::expressions::bool_neq_expression::BoolNEqExpression;
-use crate::expressions::bv_add_expression::BVAddExpression;
-use crate::expressions::bv_and_expression::BVAndExpression;
-use crate::expressions::bv_concat_expression::BVConcatExpression;
-use crate::expressions::bv_multiply_expression::BVMultiplyExpression;
-use crate::expressions::bv_or_expression::BVOrExpression;
-use crate::expressions::bv_shift_left_logical_expression::BVShiftLeftLogicalExpression;
-use crate::expressions::bv_shift_right_logical_expression::BVShiftRightLogicalExpression;
-use crate::expressions::bv_sign_extend_expression::BVSignExtendExpression;
-use crate::expressions::bv_slice_expression::BVSliceExpression;
-use crate::expressions::bv_sub_expression::BVSubExpression;
-use crate::expressions::bv_unsigned_remainder_expression::BVUnsignedRemainderExpression;
-use crate::expressions::bv_xor_expression::BVXorExpression;
-use crate::memory::memory32::Memory32;
-use crate::values::bit_vector_concrete::BitVectorConcrete;
-use crate::values::ActiveValue;
-use crate::values::RetiredValue;
-
-pub struct RV32iSystemState {
-    pub system_state: SystemState,
-    pub memory: Memory32,
-    pub stdlib: ScfiaStdlib,
+pub struct RV32i {
+    pub state: SystemState,
+    pub memory: Memory<RV32iScfiaComposition>,
+    pub scfia: Rc<Scfia<RV32iScfiaComposition>>,
 }
 
 #[derive(Debug)]
-pub struct ForkSink {
-    pub base_state: RV32iSystemState,
-    pub new_values: Vec<Rc<RefCell<ActiveValue>>>,
-    pub forks: Vec<RV32iSystemState>,
+pub struct RV32iForkSink {
+    base_state: RV32i,
+    new_values_history: Vec<ActiveValue<RV32iScfiaComposition>>,
+    forks: Vec<RV32i>,
 }
 
-impl fmt::Debug for RV32iSystemState {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "RV32iSystemState {{ system_state = {:?} }}", &self.system_state)
+#[derive(Debug, Clone)]
+pub struct RV32iScfiaComposition {}
+
+
+impl GenericForkSink<RV32iScfiaComposition> for RV32iForkSink {
+    fn fork(&mut self, fork_symbol: ActiveValue<RV32iScfiaComposition>) {
+        // Clone the base state.
+        debug!("fork cloning base state");
+        let (clone, mut cloned_actives, mut cloned_retired) = self.base_state.clone_model();
+
+        // Clone all values that were created after self.base_state was created.
+        // new_values keeps the values active until we have cloned fork_symbol.
+        debug!("fork cloning new values");
+        let mut new_values = vec![];
+        for new_value in &self.new_values_history {
+            new_values.push(
+                new_value
+                    .try_borrow()
+                    .unwrap()
+                    .clone_to_stdlib(&clone.scfia, &mut cloned_actives, &mut cloned_retired),
+            );
+        }
+        debug!("fork asserting fork symbol");
+        let fork_symbol_id = fork_symbol.try_borrow().unwrap().id;
+        clone.scfia.next_symbol_id.set(fork_symbol_id + 1);
+        let cloned_fork_symbol = cloned_actives.get(&fork_symbol_id).unwrap();
+        cloned_fork_symbol.try_borrow_mut().unwrap().assert();
+        self.forks.push(clone);
+    }
+
+    fn push_value(&mut self, value: ActiveValue<RV32iScfiaComposition>) {
+        self.new_values_history.push(value)
     }
 }
 
-impl ForkSink {
-    pub fn new(base_state: RV32iSystemState) -> Self {
-        ForkSink {
-            base_state,
-            new_values: vec![],
-            forks: vec![],
+impl ScfiaComposition for RV32iScfiaComposition {
+    type Model = RV32i;
+    type ForkSink = RV32iForkSink;
+}
+
+impl RV32i {
+    pub fn step(&mut self, mut hints: Option<SymbolicHints>) {
+        unsafe {
+            let mut context = StepContext {
+                memory: &mut self.memory,
+                scfia: &self.scfia,
+                hints,
+                fork_sink: None,
+            };
+            _step(&mut self.state, &mut context);
         }
     }
 
-    pub fn fork(&mut self, fork_condition: Rc<RefCell<ActiveValue>>) {
-        let cloned_stdlib_id = format!("{}_{}", self.base_state.stdlib.id.clone(), self.base_state.stdlib.get_clone_id());
-        println!("{} creating {}", self.base_state.stdlib.id, cloned_stdlib_id);
-        let cloned_stdlib = ScfiaStdlib::new_with_next_id(cloned_stdlib_id, fork_condition.try_borrow().unwrap().get_id());
-        let mut cloned_active_values = BTreeMap::new();
-        let mut cloned_retired_values = BTreeMap::new();
+    pub fn step_forking(self, mut hints: Option<SymbolicHints>) -> Vec<RV32i> {
+        unsafe {
+            let mut states: Vec<RV32i> = vec![self];
+            let mut results = vec![];
 
-        let mut fork = self
-            .base_state
-            .clone_to_stdlib(cloned_stdlib, &mut cloned_active_values, &mut cloned_retired_values);
-        for new_value in &self.new_values {
-            new_value
-                .try_borrow()
-                .unwrap()
-                .clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut fork.stdlib);
+            while let Some(mut state) = states.pop() {
+                let mut context = StepContext {
+                    memory: &mut state.memory,
+                    scfia: &state.scfia,
+                    hints: hints.clone(),
+                    fork_sink: Some(RV32iForkSink {
+                        base_state: state.clone_model().0,
+                        new_values_history: vec![],
+                        forks: vec![],
+                    }),
+                };
+                debug!("forking step start");
+                _step(&mut state.state, &mut context);
+                debug!("forking step done");
+                states.append(&mut context.fork_sink.unwrap().forks);
+                results.push(state)
+            }
+
+            results
         }
+    }
 
-        // cloned_condition will reside in cloned_active_values and thus stay active until forking is complete
-        let cloned_condition =
-            fork_condition
-                .try_borrow()
-                .unwrap()
-                .clone_to_stdlib(&mut cloned_active_values, &mut cloned_retired_values, &mut &mut fork.stdlib);
-        cloned_condition.try_borrow_mut().unwrap().assert(&mut fork.stdlib);
+    pub fn clone_model(&self) -> (RV32i, BTreeMap<u64, ActiveValue<RV32iScfiaComposition>>, BTreeMap<u64, RetiredValue<RV32iScfiaComposition>>) {
+        unsafe {
+            let cloned_scfia = Scfia::new(Some(self.scfia.next_symbol_id.get()));
+            let mut cloned_actives = BTreeMap::new();
+            let mut cloned_retireds = BTreeMap::new();
+            debug!("cloning scfia {:?} to {:?}",
+                Rc::as_ptr(&self.scfia.selff.get().unwrap().upgrade().unwrap()),
+                Rc::as_ptr(&cloned_scfia.selff.get().unwrap().upgrade().unwrap()));
+            (RV32i {
+                state: self.state.clone_to_stdlib(&cloned_scfia, &mut cloned_actives, &mut cloned_retireds),
+                memory: self.memory.clone_to_stdlib(&cloned_scfia, &mut cloned_actives, &mut cloned_retireds),
+                scfia: cloned_scfia,
+            }, cloned_actives, cloned_retireds)
+        }
+    }
 
-        self.forks.push(fork);
+    pub fn debug(&self) {
+        debug!("Register depths:");
+        debug!("x0:\tdepth={}, inactives={}", self.state.x0.try_borrow().unwrap().get_depth(), self.state.x0.try_borrow().unwrap().get_inactives());
+        debug!("x1:\tdepth={}, inactives={}", self.state.x1.try_borrow().unwrap().get_depth(), self.state.x1.try_borrow().unwrap().get_inactives());
+        debug!("x2:\tdepth={}, inactives={}", self.state.x2.try_borrow().unwrap().get_depth(), self.state.x2.try_borrow().unwrap().get_inactives());
+        debug!("x3:\tdepth={}, inactives={}", self.state.x3.try_borrow().unwrap().get_depth(), self.state.x3.try_borrow().unwrap().get_inactives());
+        debug!("x4:\tdepth={}, inactives={}", self.state.x4.try_borrow().unwrap().get_depth(), self.state.x4.try_borrow().unwrap().get_inactives());
+        debug!("x5:\tdepth={}, inactives={}", self.state.x5.try_borrow().unwrap().get_depth(), self.state.x5.try_borrow().unwrap().get_inactives());
+        debug!("x6:\tdepth={}, inactives={}", self.state.x6.try_borrow().unwrap().get_depth(), self.state.x6.try_borrow().unwrap().get_inactives());
+        debug!("x7:\tdepth={}, inactives={}", self.state.x7.try_borrow().unwrap().get_depth(), self.state.x7.try_borrow().unwrap().get_inactives());
+        debug!("x8:\tdepth={}, inactives={}", self.state.x8.try_borrow().unwrap().get_depth(), self.state.x8.try_borrow().unwrap().get_inactives());
+        debug!("x9:\tdepth={}, inactives={}", self.state.x9.try_borrow().unwrap().get_depth(), self.state.x9.try_borrow().unwrap().get_inactives());
+        debug!("x10:\tdepth={}, inactives={}", self.state.x10.try_borrow().unwrap().get_depth(), self.state.x10.try_borrow().unwrap().get_inactives());
+        debug!("x11:\tdepth={}, inactives={}", self.state.x11.try_borrow().unwrap().get_depth(), self.state.x11.try_borrow().unwrap().get_inactives());
+        debug!("x12:\tdepth={}, inactives={}", self.state.x12.try_borrow().unwrap().get_depth(), self.state.x12.try_borrow().unwrap().get_inactives());
+        debug!("x13:\tdepth={}, inactives={}", self.state.x13.try_borrow().unwrap().get_depth(), self.state.x13.try_borrow().unwrap().get_inactives());
+        debug!("x14:\tdepth={}, inactives={}", self.state.x14.try_borrow().unwrap().get_depth(), self.state.x14.try_borrow().unwrap().get_inactives());
+        debug!("x15:\tdepth={}, inactives={}", self.state.x15.try_borrow().unwrap().get_depth(), self.state.x15.try_borrow().unwrap().get_inactives());
+        debug!("x16:\tdepth={}, inactives={}", self.state.x16.try_borrow().unwrap().get_depth(), self.state.x16.try_borrow().unwrap().get_inactives());
+        debug!("x17:\tdepth={}, inactives={}", self.state.x17.try_borrow().unwrap().get_depth(), self.state.x17.try_borrow().unwrap().get_inactives());
+        debug!("x18:\tdepth={}, inactives={}", self.state.x18.try_borrow().unwrap().get_depth(), self.state.x18.try_borrow().unwrap().get_inactives());
+        debug!("x19:\tdepth={}, inactives={}", self.state.x19.try_borrow().unwrap().get_depth(), self.state.x19.try_borrow().unwrap().get_inactives());
+        debug!("x20:\tdepth={}, inactives={}", self.state.x20.try_borrow().unwrap().get_depth(), self.state.x20.try_borrow().unwrap().get_inactives());
+        debug!("x21:\tdepth={}, inactives={}", self.state.x21.try_borrow().unwrap().get_depth(), self.state.x21.try_borrow().unwrap().get_inactives());
+        debug!("x22:\tdepth={}, inactives={}", self.state.x22.try_borrow().unwrap().get_depth(), self.state.x22.try_borrow().unwrap().get_inactives());
+        debug!("x23:\tdepth={}, inactives={}", self.state.x23.try_borrow().unwrap().get_depth(), self.state.x23.try_borrow().unwrap().get_inactives());
+        debug!("x24:\tdepth={}, inactives={}", self.state.x24.try_borrow().unwrap().get_depth(), self.state.x24.try_borrow().unwrap().get_inactives());
+        debug!("x25:\tdepth={}, inactives={}", self.state.x25.try_borrow().unwrap().get_depth(), self.state.x25.try_borrow().unwrap().get_inactives());
+        debug!("x26:\tdepth={}, inactives={}", self.state.x26.try_borrow().unwrap().get_depth(), self.state.x26.try_borrow().unwrap().get_inactives());
+        debug!("x27:\tdepth={}, inactives={}", self.state.x27.try_borrow().unwrap().get_depth(), self.state.x27.try_borrow().unwrap().get_inactives());
+        debug!("x28:\tdepth={}, inactives={}", self.state.x28.try_borrow().unwrap().get_depth(), self.state.x28.try_borrow().unwrap().get_inactives());
+        debug!("x29:\tdepth={}, inactives={}", self.state.x29.try_borrow().unwrap().get_depth(), self.state.x29.try_borrow().unwrap().get_inactives());
+        debug!("x30:\tdepth={}, inactives={}", self.state.x30.try_borrow().unwrap().get_depth(), self.state.x30.try_borrow().unwrap().get_inactives());
+        debug!("x31:\tdepth={}, inactives={}", self.state.x31.try_borrow().unwrap().get_depth(), self.state.x31.try_borrow().unwrap().get_inactives());
+        debug!("pc:\tdepth={}, inactives={}", self.state.pc.try_borrow().unwrap().get_depth(), self.state.pc.try_borrow().unwrap().get_inactives());
+        debug!("Stable memory cells: {}", self.memory.stables.iter().map(|e|e.memory.len()).sum::<usize>());
+        let (worst_cell, depth) = self.memory.get_highest_depth().unwrap();
+        debug!("Worst memory cell: {:x} depth={}", worst_cell, depth);
+    }
+
+}
+
+impl Debug for RV32i {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RV32i").field("state", &self.state).finish()
     }
 }
+
 
 #[derive(Debug)]
 pub struct SystemState {
-    pub x0: Rc<RefCell<ActiveValue>>,
-    pub x1: Rc<RefCell<ActiveValue>>,
-    pub x2: Rc<RefCell<ActiveValue>>,
-    pub x3: Rc<RefCell<ActiveValue>>,
-    pub x4: Rc<RefCell<ActiveValue>>,
-    pub x5: Rc<RefCell<ActiveValue>>,
-    pub x6: Rc<RefCell<ActiveValue>>,
-    pub x7: Rc<RefCell<ActiveValue>>,
-    pub x8: Rc<RefCell<ActiveValue>>,
-    pub x9: Rc<RefCell<ActiveValue>>,
-    pub x10: Rc<RefCell<ActiveValue>>,
-    pub x11: Rc<RefCell<ActiveValue>>,
-    pub x12: Rc<RefCell<ActiveValue>>,
-    pub x13: Rc<RefCell<ActiveValue>>,
-    pub x14: Rc<RefCell<ActiveValue>>,
-    pub x15: Rc<RefCell<ActiveValue>>,
-    pub x16: Rc<RefCell<ActiveValue>>,
-    pub x17: Rc<RefCell<ActiveValue>>,
-    pub x18: Rc<RefCell<ActiveValue>>,
-    pub x19: Rc<RefCell<ActiveValue>>,
-    pub x20: Rc<RefCell<ActiveValue>>,
-    pub x21: Rc<RefCell<ActiveValue>>,
-    pub x22: Rc<RefCell<ActiveValue>>,
-    pub x23: Rc<RefCell<ActiveValue>>,
-    pub x24: Rc<RefCell<ActiveValue>>,
-    pub x25: Rc<RefCell<ActiveValue>>,
-    pub x26: Rc<RefCell<ActiveValue>>,
-    pub x27: Rc<RefCell<ActiveValue>>,
-    pub x28: Rc<RefCell<ActiveValue>>,
-    pub x29: Rc<RefCell<ActiveValue>>,
-    pub x30: Rc<RefCell<ActiveValue>>,
-    pub x31: Rc<RefCell<ActiveValue>>,
-    pub pc: Rc<RefCell<ActiveValue>>,
+    pub x0: ActiveValue<RV32iScfiaComposition>,
+    pub x1: ActiveValue<RV32iScfiaComposition>,
+    pub x2: ActiveValue<RV32iScfiaComposition>,
+    pub x3: ActiveValue<RV32iScfiaComposition>,
+    pub x4: ActiveValue<RV32iScfiaComposition>,
+    pub x5: ActiveValue<RV32iScfiaComposition>,
+    pub x6: ActiveValue<RV32iScfiaComposition>,
+    pub x7: ActiveValue<RV32iScfiaComposition>,
+    pub x8: ActiveValue<RV32iScfiaComposition>,
+    pub x9: ActiveValue<RV32iScfiaComposition>,
+    pub x10: ActiveValue<RV32iScfiaComposition>,
+    pub x11: ActiveValue<RV32iScfiaComposition>,
+    pub x12: ActiveValue<RV32iScfiaComposition>,
+    pub x13: ActiveValue<RV32iScfiaComposition>,
+    pub x14: ActiveValue<RV32iScfiaComposition>,
+    pub x15: ActiveValue<RV32iScfiaComposition>,
+    pub x16: ActiveValue<RV32iScfiaComposition>,
+    pub x17: ActiveValue<RV32iScfiaComposition>,
+    pub x18: ActiveValue<RV32iScfiaComposition>,
+    pub x19: ActiveValue<RV32iScfiaComposition>,
+    pub x20: ActiveValue<RV32iScfiaComposition>,
+    pub x21: ActiveValue<RV32iScfiaComposition>,
+    pub x22: ActiveValue<RV32iScfiaComposition>,
+    pub x23: ActiveValue<RV32iScfiaComposition>,
+    pub x24: ActiveValue<RV32iScfiaComposition>,
+    pub x25: ActiveValue<RV32iScfiaComposition>,
+    pub x26: ActiveValue<RV32iScfiaComposition>,
+    pub x27: ActiveValue<RV32iScfiaComposition>,
+    pub x28: ActiveValue<RV32iScfiaComposition>,
+    pub x29: ActiveValue<RV32iScfiaComposition>,
+    pub x30: ActiveValue<RV32iScfiaComposition>,
+    pub x31: ActiveValue<RV32iScfiaComposition>,
+    pub pc: ActiveValue<RV32iScfiaComposition>,
+}
+
+impl SystemState {
+    fn clone_to_stdlib(&self, cloned_scfia: &Scfia<RV32iScfiaComposition>, cloned_actives: &mut BTreeMap<u64, ActiveValue<RV32iScfiaComposition>>, cloned_inactives: &mut BTreeMap<u64, RetiredValue<RV32iScfiaComposition>>) -> SystemState {
+        SystemState {
+            x0: self.x0.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+            x1: self.x1.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+            x2: self.x2.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+            x3: self.x3.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+            x4: self.x4.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+            x5: self.x5.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+            x6: self.x6.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+            x7: self.x7.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+            x8: self.x8.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+            x9: self.x9.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+            x10: self.x10.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+            x11: self.x11.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+            x12: self.x12.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+            x13: self.x13.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+            x14: self.x14.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+            x15: self.x15.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+            x16: self.x16.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+            x17: self.x17.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+            x18: self.x18.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+            x19: self.x19.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+            x20: self.x20.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+            x21: self.x21.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+            x22: self.x22.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+            x23: self.x23.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+            x24: self.x24.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+            x25: self.x25.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+            x26: self.x26.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+            x27: self.x27.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+            x28: self.x28.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+            x29: self.x29.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+            x30: self.x30.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+            x31: self.x31.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+            pc: self.pc.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+        }
+    }
 }
 
 #[derive(Debug)]
 pub struct ComplexSpecialStruct {
-    pub some_flag: Rc<RefCell<ActiveValue>>,
+    pub some_flag: ActiveValue<RV32iScfiaComposition>,
 }
 
-pub unsafe fn reset(
-    state: *mut SystemState,
-    _stdlib: *mut ScfiaStdlib,
-    _fork_sink: &mut Option<&mut ForkSink>,
-    _memory: &mut Memory32,
-    hints: &mut Option<SymbolicHints>,
-) {
-    (*state).x0 = BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-    (*state).x1 = BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-    (*state).x2 = BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-    (*state).x3 = BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-    (*state).x4 = BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-    (*state).x5 = BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-    (*state).x6 = BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-    (*state).x7 = BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-    (*state).x8 = BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-    (*state).x9 = BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-    (*state).x10 = BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-    (*state).x11 = BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-    (*state).x12 = BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-    (*state).x13 = BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-    (*state).x14 = BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-    (*state).x15 = BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-    (*state).x16 = BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-    (*state).x17 = BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-    (*state).x18 = BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-    (*state).x19 = BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-    (*state).x20 = BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-    (*state).x21 = BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-    (*state).x22 = BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-    (*state).x23 = BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-    (*state).x24 = BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-    (*state).x25 = BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-    (*state).x26 = BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-    (*state).x27 = BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-    (*state).x28 = BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-    (*state).x29 = BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-    (*state).x30 = BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-    (*state).x31 = BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink);
+impl ComplexSpecialStruct {
+    fn clone_to_stdlib(&self, cloned_scfia: &Scfia<RV32iScfiaComposition>, cloned_actives: &mut BTreeMap<u64, ActiveValue<RV32iScfiaComposition>>, cloned_inactives: &mut BTreeMap<u64, RetiredValue<RV32iScfiaComposition>>) -> ComplexSpecialStruct {
+        ComplexSpecialStruct {
+            some_flag: self.some_flag.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+        }
+    }
 }
 
-pub unsafe fn sum(
-    state: *mut SystemState,
-    _stdlib: *mut ScfiaStdlib,
-    _fork_sink: &mut Option<&mut ForkSink>,
-    _memory: &mut Memory32,
-    hints: &mut Option<SymbolicHints>,
-) -> Rc<RefCell<ActiveValue>> {
-    return BVAddExpression::new((*state).x1.clone(), (*state).x2.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
+unsafe fn _reset(state: *mut SystemState, context: *mut StepContext<RV32iScfiaComposition>) {
+    (*state).x0 = (*context).scfia.new_bv_concrete(0b0, 32, None, &mut (*context).fork_sink, None);
+    (*state).x1 = (*context).scfia.new_bv_concrete(0b0, 32, None, &mut (*context).fork_sink, None);
+    (*state).x2 = (*context).scfia.new_bv_concrete(0b0, 32, None, &mut (*context).fork_sink, None);
+    (*state).x3 = (*context).scfia.new_bv_concrete(0b0, 32, None, &mut (*context).fork_sink, None);
+    (*state).x4 = (*context).scfia.new_bv_concrete(0b0, 32, None, &mut (*context).fork_sink, None);
+    (*state).x5 = (*context).scfia.new_bv_concrete(0b0, 32, None, &mut (*context).fork_sink, None);
+    (*state).x6 = (*context).scfia.new_bv_concrete(0b0, 32, None, &mut (*context).fork_sink, None);
+    (*state).x7 = (*context).scfia.new_bv_concrete(0b0, 32, None, &mut (*context).fork_sink, None);
+    (*state).x8 = (*context).scfia.new_bv_concrete(0b0, 32, None, &mut (*context).fork_sink, None);
+    (*state).x9 = (*context).scfia.new_bv_concrete(0b0, 32, None, &mut (*context).fork_sink, None);
+    (*state).x10 = (*context).scfia.new_bv_concrete(0b0, 32, None, &mut (*context).fork_sink, None);
+    (*state).x11 = (*context).scfia.new_bv_concrete(0b0, 32, None, &mut (*context).fork_sink, None);
+    (*state).x12 = (*context).scfia.new_bv_concrete(0b0, 32, None, &mut (*context).fork_sink, None);
+    (*state).x13 = (*context).scfia.new_bv_concrete(0b0, 32, None, &mut (*context).fork_sink, None);
+    (*state).x14 = (*context).scfia.new_bv_concrete(0b0, 32, None, &mut (*context).fork_sink, None);
+    (*state).x15 = (*context).scfia.new_bv_concrete(0b0, 32, None, &mut (*context).fork_sink, None);
+    (*state).x16 = (*context).scfia.new_bv_concrete(0b0, 32, None, &mut (*context).fork_sink, None);
+    (*state).x17 = (*context).scfia.new_bv_concrete(0b0, 32, None, &mut (*context).fork_sink, None);
+    (*state).x18 = (*context).scfia.new_bv_concrete(0b0, 32, None, &mut (*context).fork_sink, None);
+    (*state).x19 = (*context).scfia.new_bv_concrete(0b0, 32, None, &mut (*context).fork_sink, None);
+    (*state).x20 = (*context).scfia.new_bv_concrete(0b0, 32, None, &mut (*context).fork_sink, None);
+    (*state).x21 = (*context).scfia.new_bv_concrete(0b0, 32, None, &mut (*context).fork_sink, None);
+    (*state).x22 = (*context).scfia.new_bv_concrete(0b0, 32, None, &mut (*context).fork_sink, None);
+    (*state).x23 = (*context).scfia.new_bv_concrete(0b0, 32, None, &mut (*context).fork_sink, None);
+    (*state).x24 = (*context).scfia.new_bv_concrete(0b0, 32, None, &mut (*context).fork_sink, None);
+    (*state).x25 = (*context).scfia.new_bv_concrete(0b0, 32, None, &mut (*context).fork_sink, None);
+    (*state).x26 = (*context).scfia.new_bv_concrete(0b0, 32, None, &mut (*context).fork_sink, None);
+    (*state).x27 = (*context).scfia.new_bv_concrete(0b0, 32, None, &mut (*context).fork_sink, None);
+    (*state).x28 = (*context).scfia.new_bv_concrete(0b0, 32, None, &mut (*context).fork_sink, None);
+    (*state).x29 = (*context).scfia.new_bv_concrete(0b0, 32, None, &mut (*context).fork_sink, None);
+    (*state).x30 = (*context).scfia.new_bv_concrete(0b0, 32, None, &mut (*context).fork_sink, None);
+    (*state).x31 = (*context).scfia.new_bv_concrete(0b0, 32, None, &mut (*context).fork_sink, None);
 }
 
-pub unsafe fn test(
-    state: *mut SystemState,
-    _stdlib: *mut ScfiaStdlib,
-    _fork_sink: &mut Option<&mut ForkSink>,
-    _memory: &mut Memory32,
-    hints: &mut Option<SymbolicHints>,
-) {
-    (*state).x3 = BVAddExpression::new(
-        sum(state, _stdlib, _fork_sink, _memory, hints),
-        sum(state, _stdlib, _fork_sink, _memory, hints),
-        _stdlib.as_mut().unwrap(),
-        _fork_sink,
-    );
+unsafe fn _sum(state: *mut SystemState, context: *mut StepContext<RV32iScfiaComposition>) -> ActiveValue<RV32iScfiaComposition> {
+    return (*context).scfia.new_bv_add(&(*state).x1.clone(), &(*state).x2.clone(), 32, None, &mut (*context).fork_sink, None);
 }
 
-pub unsafe fn step(
-    state: *mut SystemState,
-    _stdlib: *mut ScfiaStdlib,
-    _fork_sink: &mut Option<&mut ForkSink>,
-    _memory: &mut Memory32,
-    hints: &mut Option<SymbolicHints>,
-) {
-    let instruction_32: Rc<RefCell<ActiveValue>> = _memory.read((*state).pc.clone(), 32, _stdlib.as_mut().unwrap(), _fork_sink, hints);
-    let opcode: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 6, 0, _stdlib.as_mut().unwrap(), _fork_sink);
-    if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            opcode.clone(),
-            BitVectorConcrete::new(0b11, 7, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
-        let funct3: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 14, 12, _stdlib.as_mut().unwrap(), _fork_sink);
-        if _stdlib.as_mut().unwrap().do_condition(
-            BoolEqExpression::new(
-                funct3.clone(),
-                BitVectorConcrete::new(0b1, 3, _stdlib.as_mut().unwrap(), _fork_sink),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            ),
-            _fork_sink,
-        ) {
-            let rd: Rc<RefCell<ActiveValue>> = extract_rd_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-            let rs1: Rc<RefCell<ActiveValue>> = extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-            let imm: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 20, _stdlib.as_mut().unwrap(), _fork_sink);
-            let imm32: Rc<RefCell<ActiveValue>> = BVSignExtendExpression::new(imm.clone(), 12, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-            let base_address: Rc<RefCell<ActiveValue>> = register_read_BV32(state, rs1.clone(), _stdlib, _fork_sink, _memory, hints);
-            let address: Rc<RefCell<ActiveValue>> = BVAddExpression::new(base_address.clone(), imm32.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-            let value16: Rc<RefCell<ActiveValue>> = _memory.read(address.clone(), 16, _stdlib.as_mut().unwrap(), _fork_sink, hints);
-            let value: Rc<RefCell<ActiveValue>> = BVSignExtendExpression::new(value16.clone(), 16, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-            register_write_BV32(state, rd.clone(), value.clone(), _stdlib, _fork_sink, _memory, hints);
-            progress_pc_4(state, _stdlib, _fork_sink, _memory, hints);
-        } else if _stdlib.as_mut().unwrap().do_condition(
-            BoolEqExpression::new(
-                funct3.clone(),
-                BitVectorConcrete::new(0b10, 3, _stdlib.as_mut().unwrap(), _fork_sink),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            ),
-            _fork_sink,
-        ) {
-            let rd: Rc<RefCell<ActiveValue>> = extract_rd_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-            let rs1: Rc<RefCell<ActiveValue>> = extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-            let imm: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 20, _stdlib.as_mut().unwrap(), _fork_sink);
-            let imm32: Rc<RefCell<ActiveValue>> = BVSignExtendExpression::new(imm.clone(), 12, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-            let base_address: Rc<RefCell<ActiveValue>> = register_read_BV32(state, rs1.clone(), _stdlib, _fork_sink, _memory, hints);
-            let address: Rc<RefCell<ActiveValue>> = BVAddExpression::new(base_address.clone(), imm32.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-            let value: Rc<RefCell<ActiveValue>> = _memory.read(address.clone(), 32, _stdlib.as_mut().unwrap(), _fork_sink, hints);
-            register_write_BV32(state, rd.clone(), value.clone(), _stdlib, _fork_sink, _memory, hints);
-            progress_pc_4(state, _stdlib, _fork_sink, _memory, hints);
-        } else if _stdlib.as_mut().unwrap().do_condition(
-            BoolEqExpression::new(
-                funct3.clone(),
-                BitVectorConcrete::new(0b100, 3, _stdlib.as_mut().unwrap(), _fork_sink),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            ),
-            _fork_sink,
-        ) {
-            let rd: Rc<RefCell<ActiveValue>> = extract_rd_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-            let rs1: Rc<RefCell<ActiveValue>> = extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-            let imm: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 20, _stdlib.as_mut().unwrap(), _fork_sink);
-            let imm32: Rc<RefCell<ActiveValue>> = BVSignExtendExpression::new(imm.clone(), 12, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-            let base_address: Rc<RefCell<ActiveValue>> = register_read_BV32(state, rs1.clone(), _stdlib, _fork_sink, _memory, hints);
-            let address: Rc<RefCell<ActiveValue>> = BVAddExpression::new(base_address.clone(), imm32.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-            let value8: Rc<RefCell<ActiveValue>> = _memory.read(address.clone(), 8, _stdlib.as_mut().unwrap(), _fork_sink, hints);
-            let value: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(
-                BitVectorConcrete::new(0b0, 24, _stdlib.as_mut().unwrap(), _fork_sink),
-                value8.clone(),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            );
-            register_write_BV32(state, rd.clone(), value.clone(), _stdlib, _fork_sink, _memory, hints);
-            progress_pc_4(state, _stdlib, _fork_sink, _memory, hints);
-        } else if _stdlib.as_mut().unwrap().do_condition(
-            BoolEqExpression::new(
-                funct3.clone(),
-                BitVectorConcrete::new(0b101, 3, _stdlib.as_mut().unwrap(), _fork_sink),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            ),
-            _fork_sink,
-        ) {
-            let rd: Rc<RefCell<ActiveValue>> = extract_rd_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-            let rs1: Rc<RefCell<ActiveValue>> = extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-            let imm: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 20, _stdlib.as_mut().unwrap(), _fork_sink);
-            let imm32: Rc<RefCell<ActiveValue>> = BVSignExtendExpression::new(imm.clone(), 12, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-            let base_address: Rc<RefCell<ActiveValue>> = register_read_BV32(state, rs1.clone(), _stdlib, _fork_sink, _memory, hints);
-            let address: Rc<RefCell<ActiveValue>> = BVAddExpression::new(base_address.clone(), imm32.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-            let value16: Rc<RefCell<ActiveValue>> = _memory.read(address.clone(), 16, _stdlib.as_mut().unwrap(), _fork_sink, hints);
-            let value: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(
-                BitVectorConcrete::new(0b0, 16, _stdlib.as_mut().unwrap(), _fork_sink),
-                value16.clone(),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            );
-            register_write_BV32(state, rd.clone(), value.clone(), _stdlib, _fork_sink, _memory, hints);
-            progress_pc_4(state, _stdlib, _fork_sink, _memory, hints);
-        } else {
+unsafe fn _step(state: *mut SystemState, context: *mut StepContext<RV32iScfiaComposition>) {
+    let instruction_32: ActiveValue<RV32iScfiaComposition> = (*(*context).memory).read(&(*state).pc.clone(), 32, (*context).scfia.clone(), &mut (*context).hints, &mut (*context).fork_sink);
+    let opcode: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 6, 0, None, &mut (*context).fork_sink, None);
+    if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&opcode.clone(), &(*context).scfia.new_bv_concrete(0b11, 7, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+        let funct3: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 14, 12, None, &mut (*context).fork_sink, None);
+        if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b1, 3, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+            let rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
+            let rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
+            let imm: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 20, None, &mut (*context).fork_sink, None);
+            let imm32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm.clone(), 12, 32, None, &mut (*context).fork_sink, None);
+            let base_address: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs1.clone(), context);
+            let address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&base_address.clone(), &imm32.clone(), 32, None, &mut (*context).fork_sink, None);
+            let value16: ActiveValue<RV32iScfiaComposition> = (*(*context).memory).read(&address.clone(), 16, (*context).scfia.clone(), &mut (*context).hints, &mut (*context).fork_sink);
+            let value: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&value16.clone(), 16, 32, None, &mut (*context).fork_sink, None);
+            _register_write_BV32(state, rd.clone(), value.clone(), context);
+            _progress_pc_4(state, context);
+        }
+        else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b10, 3, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+            let rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
+            let rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
+            let imm: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 20, None, &mut (*context).fork_sink, None);
+            let imm32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm.clone(), 12, 32, None, &mut (*context).fork_sink, None);
+            let base_address: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs1.clone(), context);
+            let address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&base_address.clone(), &imm32.clone(), 32, None, &mut (*context).fork_sink, None);
+            let value: ActiveValue<RV32iScfiaComposition> = (*(*context).memory).read(&address.clone(), 32, (*context).scfia.clone(), &mut (*context).hints, &mut (*context).fork_sink);
+            _register_write_BV32(state, rd.clone(), value.clone(), context);
+            _progress_pc_4(state, context);
+        }
+        else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b100, 3, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+            let rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
+            let rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
+            let imm: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 20, None, &mut (*context).fork_sink, None);
+            let imm32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm.clone(), 12, 32, None, &mut (*context).fork_sink, None);
+            let base_address: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs1.clone(), context);
+            let address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&base_address.clone(), &imm32.clone(), 32, None, &mut (*context).fork_sink, None);
+            let value8: ActiveValue<RV32iScfiaComposition> = (*(*context).memory).read(&address.clone(), 8, (*context).scfia.clone(), &mut (*context).hints, &mut (*context).fork_sink);
+            let value: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&(*context).scfia.new_bv_concrete(0b0, 24, None, &mut (*context).fork_sink, None), &value8.clone(), 32, None, &mut (*context).fork_sink, None);
+            _register_write_BV32(state, rd.clone(), value.clone(), context);
+            _progress_pc_4(state, context);
+        }
+        else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b101, 3, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+            let rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
+            let rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
+            let imm: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 20, None, &mut (*context).fork_sink, None);
+            let imm32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm.clone(), 12, 32, None, &mut (*context).fork_sink, None);
+            let base_address: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs1.clone(), context);
+            let address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&base_address.clone(), &imm32.clone(), 32, None, &mut (*context).fork_sink, None);
+            let value16: ActiveValue<RV32iScfiaComposition> = (*(*context).memory).read(&address.clone(), 16, (*context).scfia.clone(), &mut (*context).hints, &mut (*context).fork_sink);
+            let value: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&(*context).scfia.new_bv_concrete(0b0, 16, None, &mut (*context).fork_sink, None), &value16.clone(), 32, None, &mut (*context).fork_sink, None);
+            _register_write_BV32(state, rd.clone(), value.clone(), context);
+            _progress_pc_4(state, context);
+        }
+        else {
             unimplemented!();
         }
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            opcode.clone(),
-            BitVectorConcrete::new(0b1111, 7, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
-        let rd_zeroes: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 11, 7, _stdlib.as_mut().unwrap(), _fork_sink);
-        if _stdlib.as_mut().unwrap().do_condition(
-            BoolEqExpression::new(
-                rd_zeroes.clone(),
-                BitVectorConcrete::new(0b0, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            ),
-            _fork_sink,
-        ) {
-            let funct3: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 14, 12, _stdlib.as_mut().unwrap(), _fork_sink);
-            let rs1_zeroes: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 19, 15, _stdlib.as_mut().unwrap(), _fork_sink);
-            if _stdlib.as_mut().unwrap().do_condition(
-                BoolEqExpression::new(
-                    rs1_zeroes.clone(),
-                    BitVectorConcrete::new(0b0, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-                    _stdlib.as_mut().unwrap(),
-                    _fork_sink,
-                ),
-                _fork_sink,
-            ) {
-                if _stdlib.as_mut().unwrap().do_condition(
-                    BoolEqExpression::new(
-                        funct3.clone(),
-                        BitVectorConcrete::new(0b0, 3, _stdlib.as_mut().unwrap(), _fork_sink),
-                        _stdlib.as_mut().unwrap(),
-                        _fork_sink,
-                    ),
-                    _fork_sink,
-                ) {
-                    progress_pc_4(state, _stdlib, _fork_sink, _memory, hints);
-                } else if _stdlib.as_mut().unwrap().do_condition(
-                    BoolEqExpression::new(
-                        funct3.clone(),
-                        BitVectorConcrete::new(0b1, 3, _stdlib.as_mut().unwrap(), _fork_sink),
-                        _stdlib.as_mut().unwrap(),
-                        _fork_sink,
-                    ),
-                    _fork_sink,
-                ) {
-                    progress_pc_4(state, _stdlib, _fork_sink, _memory, hints);
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&opcode.clone(), &(*context).scfia.new_bv_concrete(0b1111, 7, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+        let rd_zeroes: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 11, 7, None, &mut (*context).fork_sink, None);
+        if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&rd_zeroes.clone(), &(*context).scfia.new_bv_concrete(0b0, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+            let funct3: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 14, 12, None, &mut (*context).fork_sink, None);
+            let rs1_zeroes: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 19, 15, None, &mut (*context).fork_sink, None);
+            if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&rs1_zeroes.clone(), &(*context).scfia.new_bv_concrete(0b0, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+                if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b0, 3, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+                    _progress_pc_4(state, context);
                 }
-            } else {
-                unimplemented!();
-            }
-        } else {
-            unimplemented!();
-        }
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            opcode.clone(),
-            BitVectorConcrete::new(0b10011, 7, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
-        let funct3: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 14, 12, _stdlib.as_mut().unwrap(), _fork_sink);
-        if _stdlib.as_mut().unwrap().do_condition(
-            BoolEqExpression::new(
-                funct3.clone(),
-                BitVectorConcrete::new(0b0, 3, _stdlib.as_mut().unwrap(), _fork_sink),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            ),
-            _fork_sink,
-        ) {
-            let rd: Rc<RefCell<ActiveValue>> = extract_rd_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-            let rs1: Rc<RefCell<ActiveValue>> = extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-            let offset: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 20, _stdlib.as_mut().unwrap(), _fork_sink);
-            let offset_32: Rc<RefCell<ActiveValue>> = BVSignExtendExpression::new(offset.clone(), 12, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-            let result: Rc<RefCell<ActiveValue>> = BVAddExpression::new(
-                offset_32.clone(),
-                register_read_BV32(state, rs1.clone(), _stdlib, _fork_sink, _memory, hints),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            );
-            register_write_BV32(state, rd.clone(), result.clone(), _stdlib, _fork_sink, _memory, hints);
-            progress_pc_4(state, _stdlib, _fork_sink, _memory, hints);
-        } else if _stdlib.as_mut().unwrap().do_condition(
-            BoolEqExpression::new(
-                funct3.clone(),
-                BitVectorConcrete::new(0b1, 3, _stdlib.as_mut().unwrap(), _fork_sink),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            ),
-            _fork_sink,
-        ) {
-            let funct7: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 25, _stdlib.as_mut().unwrap(), _fork_sink);
-            if _stdlib.as_mut().unwrap().do_condition(
-                BoolEqExpression::new(
-                    funct7.clone(),
-                    BitVectorConcrete::new(0b0, 7, _stdlib.as_mut().unwrap(), _fork_sink),
-                    _stdlib.as_mut().unwrap(),
-                    _fork_sink,
-                ),
-                _fork_sink,
-            ) {
-                let rd: Rc<RefCell<ActiveValue>> = extract_rd_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-                let rs1: Rc<RefCell<ActiveValue>> = extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-                let shamt: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 24, 20, _stdlib.as_mut().unwrap(), _fork_sink);
-                let result: Rc<RefCell<ActiveValue>> = BVShiftLeftLogicalExpression::new(
-                    register_read_BV32(state, rs1.clone(), _stdlib, _fork_sink, _memory, hints),
-                    shamt.clone(),
-                    32,
-                    5,
-                    _stdlib.as_mut().unwrap(),
-                    _fork_sink,
-                );
-                register_write_BV32(state, rd.clone(), result.clone(), _stdlib, _fork_sink, _memory, hints);
-                progress_pc_4(state, _stdlib, _fork_sink, _memory, hints);
-            } else {
-                unimplemented!();
-            }
-        } else if _stdlib.as_mut().unwrap().do_condition(
-            BoolEqExpression::new(
-                funct3.clone(),
-                BitVectorConcrete::new(0b100, 3, _stdlib.as_mut().unwrap(), _fork_sink),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            ),
-            _fork_sink,
-        ) {
-            let rd: Rc<RefCell<ActiveValue>> = extract_rd_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-            let rs1: Rc<RefCell<ActiveValue>> = extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-            let imm: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 20, _stdlib.as_mut().unwrap(), _fork_sink);
-            let imm_32: Rc<RefCell<ActiveValue>> = BVSignExtendExpression::new(imm.clone(), 12, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-            let result: Rc<RefCell<ActiveValue>> = BVXorExpression::new(
-                register_read_BV32(state, rs1.clone(), _stdlib, _fork_sink, _memory, hints),
-                imm_32.clone(),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            );
-            register_write_BV32(state, rd.clone(), result.clone(), _stdlib, _fork_sink, _memory, hints);
-            progress_pc_4(state, _stdlib, _fork_sink, _memory, hints);
-        } else if _stdlib.as_mut().unwrap().do_condition(
-            BoolEqExpression::new(
-                funct3.clone(),
-                BitVectorConcrete::new(0b101, 3, _stdlib.as_mut().unwrap(), _fork_sink),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            ),
-            _fork_sink,
-        ) {
-            let funct7: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 25, _stdlib.as_mut().unwrap(), _fork_sink);
-            if _stdlib.as_mut().unwrap().do_condition(
-                BoolEqExpression::new(
-                    funct7.clone(),
-                    BitVectorConcrete::new(0b0, 7, _stdlib.as_mut().unwrap(), _fork_sink),
-                    _stdlib.as_mut().unwrap(),
-                    _fork_sink,
-                ),
-                _fork_sink,
-            ) {
-                let rd: Rc<RefCell<ActiveValue>> = extract_rd_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-                let rs1: Rc<RefCell<ActiveValue>> = extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-                let shamt: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 24, 20, _stdlib.as_mut().unwrap(), _fork_sink);
-                let result: Rc<RefCell<ActiveValue>> = BVShiftRightLogicalExpression::new(
-                    register_read_BV32(state, rs1.clone(), _stdlib, _fork_sink, _memory, hints),
-                    shamt.clone(),
-                    32,
-                    5,
-                    _stdlib.as_mut().unwrap(),
-                    _fork_sink,
-                );
-                register_write_BV32(state, rd.clone(), result.clone(), _stdlib, _fork_sink, _memory, hints);
-                progress_pc_4(state, _stdlib, _fork_sink, _memory, hints);
-            } else {
-                unimplemented!();
-            }
-        } else if _stdlib.as_mut().unwrap().do_condition(
-            BoolEqExpression::new(
-                funct3.clone(),
-                BitVectorConcrete::new(0b110, 3, _stdlib.as_mut().unwrap(), _fork_sink),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            ),
-            _fork_sink,
-        ) {
-            let rd: Rc<RefCell<ActiveValue>> = extract_rd_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-            let rs1: Rc<RefCell<ActiveValue>> = extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-            let imm: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 20, _stdlib.as_mut().unwrap(), _fork_sink);
-            let imm_32: Rc<RefCell<ActiveValue>> = BVSignExtendExpression::new(imm.clone(), 12, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-            let result: Rc<RefCell<ActiveValue>> = BVOrExpression::new(
-                register_read_BV32(state, rs1.clone(), _stdlib, _fork_sink, _memory, hints),
-                imm_32.clone(),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            );
-            register_write_BV32(state, rd.clone(), result.clone(), _stdlib, _fork_sink, _memory, hints);
-            progress_pc_4(state, _stdlib, _fork_sink, _memory, hints);
-        } else if _stdlib.as_mut().unwrap().do_condition(
-            BoolEqExpression::new(
-                funct3.clone(),
-                BitVectorConcrete::new(0b111, 3, _stdlib.as_mut().unwrap(), _fork_sink),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            ),
-            _fork_sink,
-        ) {
-            let rd: Rc<RefCell<ActiveValue>> = extract_rd_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-            let rs1: Rc<RefCell<ActiveValue>> = extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-            let imm: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 20, _stdlib.as_mut().unwrap(), _fork_sink);
-            let imm_32: Rc<RefCell<ActiveValue>> = BVSignExtendExpression::new(imm.clone(), 12, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-            let result: Rc<RefCell<ActiveValue>> = BVAndExpression::new(
-                register_read_BV32(state, rs1.clone(), _stdlib, _fork_sink, _memory, hints),
-                imm_32.clone(),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            );
-            register_write_BV32(state, rd.clone(), result.clone(), _stdlib, _fork_sink, _memory, hints);
-            progress_pc_4(state, _stdlib, _fork_sink, _memory, hints);
-        } else {
-            unimplemented!();
-        }
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            opcode.clone(),
-            BitVectorConcrete::new(0b100011, 7, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
-        let funct3: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 14, 12, _stdlib.as_mut().unwrap(), _fork_sink);
-        if _stdlib.as_mut().unwrap().do_condition(
-            BoolEqExpression::new(
-                funct3.clone(),
-                BitVectorConcrete::new(0b0, 3, _stdlib.as_mut().unwrap(), _fork_sink),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            ),
-            _fork_sink,
-        ) {
-            let rs1: Rc<RefCell<ActiveValue>> = extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-            let rs2: Rc<RefCell<ActiveValue>> = extract_rs2_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-            let offset_11_5: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 25, _stdlib.as_mut().unwrap(), _fork_sink);
-            let offset_4_0: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 11, 7, _stdlib.as_mut().unwrap(), _fork_sink);
-            let offset: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(offset_11_5.clone(), offset_4_0.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-            let offset_32: Rc<RefCell<ActiveValue>> = BVSignExtendExpression::new(offset.clone(), 12, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-            let base_address: Rc<RefCell<ActiveValue>> = register_read_BV32(state, rs1.clone(), _stdlib, _fork_sink, _memory, hints);
-            let address: Rc<RefCell<ActiveValue>> = BVAddExpression::new(base_address.clone(), offset_32.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-            let value_32: Rc<RefCell<ActiveValue>> = register_read_BV32(state, rs2.clone(), _stdlib, _fork_sink, _memory, hints);
-            let value: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(value_32.clone(), 7, 0, _stdlib.as_mut().unwrap(), _fork_sink);
-            _memory.write(address.clone(), value.clone(), 8, _stdlib.as_mut().unwrap(), _fork_sink, hints);
-            progress_pc_4(state, _stdlib, _fork_sink, _memory, hints);
-        } else if _stdlib.as_mut().unwrap().do_condition(
-            BoolEqExpression::new(
-                funct3.clone(),
-                BitVectorConcrete::new(0b1, 3, _stdlib.as_mut().unwrap(), _fork_sink),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            ),
-            _fork_sink,
-        ) {
-            let rs1: Rc<RefCell<ActiveValue>> = extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-            let rs2: Rc<RefCell<ActiveValue>> = extract_rs2_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-            let offset_11_5: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 25, _stdlib.as_mut().unwrap(), _fork_sink);
-            let offset_4_0: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 11, 7, _stdlib.as_mut().unwrap(), _fork_sink);
-            let offset: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(offset_11_5.clone(), offset_4_0.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-            let offset_32: Rc<RefCell<ActiveValue>> = BVSignExtendExpression::new(offset.clone(), 12, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-            let base_address: Rc<RefCell<ActiveValue>> = register_read_BV32(state, rs1.clone(), _stdlib, _fork_sink, _memory, hints);
-            let address: Rc<RefCell<ActiveValue>> = BVAddExpression::new(base_address.clone(), offset_32.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-            let value_32: Rc<RefCell<ActiveValue>> = register_read_BV32(state, rs2.clone(), _stdlib, _fork_sink, _memory, hints);
-            let value: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(value_32.clone(), 15, 0, _stdlib.as_mut().unwrap(), _fork_sink);
-            _memory.write(address.clone(), value.clone(), 16, _stdlib.as_mut().unwrap(), _fork_sink, hints);
-            progress_pc_4(state, _stdlib, _fork_sink, _memory, hints);
-        } else if _stdlib.as_mut().unwrap().do_condition(
-            BoolEqExpression::new(
-                funct3.clone(),
-                BitVectorConcrete::new(0b10, 3, _stdlib.as_mut().unwrap(), _fork_sink),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            ),
-            _fork_sink,
-        ) {
-            let rs1: Rc<RefCell<ActiveValue>> = extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-            let rs2: Rc<RefCell<ActiveValue>> = extract_rs2_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-            let offset_11_5: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 25, _stdlib.as_mut().unwrap(), _fork_sink);
-            let offset_4_0: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 11, 7, _stdlib.as_mut().unwrap(), _fork_sink);
-            let offset: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(offset_11_5.clone(), offset_4_0.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-            let offset_32: Rc<RefCell<ActiveValue>> = BVSignExtendExpression::new(offset.clone(), 12, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-            let base_address: Rc<RefCell<ActiveValue>> = register_read_BV32(state, rs1.clone(), _stdlib, _fork_sink, _memory, hints);
-            let address: Rc<RefCell<ActiveValue>> = BVAddExpression::new(base_address.clone(), offset_32.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-            let value: Rc<RefCell<ActiveValue>> = register_read_BV32(state, rs2.clone(), _stdlib, _fork_sink, _memory, hints);
-            _memory.write(address.clone(), value.clone(), 32, _stdlib.as_mut().unwrap(), _fork_sink, hints);
-            progress_pc_4(state, _stdlib, _fork_sink, _memory, hints);
-        } else {
-            unimplemented!();
-        }
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            opcode.clone(),
-            BitVectorConcrete::new(0b110111, 7, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
-        let rd: Rc<RefCell<ActiveValue>> = extract_rd_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-        let rs: Rc<RefCell<ActiveValue>> = extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-        let imm: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 12, _stdlib.as_mut().unwrap(), _fork_sink);
-        let value: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(
-            imm.clone(),
-            BitVectorConcrete::new(0b0, 12, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        );
-        register_write_BV32(state, rd.clone(), value.clone(), _stdlib, _fork_sink, _memory, hints);
-        progress_pc_4(state, _stdlib, _fork_sink, _memory, hints);
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            opcode.clone(),
-            BitVectorConcrete::new(0b10111, 7, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
-        let dst: Rc<RefCell<ActiveValue>> = extract_rd_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-        let imm: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 12, _stdlib.as_mut().unwrap(), _fork_sink);
-        let imm32: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(
-            imm.clone(),
-            BitVectorConcrete::new(0b0, 12, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        );
-        let sum: Rc<RefCell<ActiveValue>> = BVAddExpression::new(imm32.clone(), (*state).pc.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-        register_write_BV32(state, dst.clone(), sum.clone(), _stdlib, _fork_sink, _memory, hints);
-        progress_pc_4(state, _stdlib, _fork_sink, _memory, hints);
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            opcode.clone(),
-            BitVectorConcrete::new(0b110011, 7, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
-        let funct3: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 14, 12, _stdlib.as_mut().unwrap(), _fork_sink);
-        let funct7: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 25, _stdlib.as_mut().unwrap(), _fork_sink);
-        let rd: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 11, 7, _stdlib.as_mut().unwrap(), _fork_sink);
-        let rs1: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 19, 15, _stdlib.as_mut().unwrap(), _fork_sink);
-        let rs2: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 24, 20, _stdlib.as_mut().unwrap(), _fork_sink);
-        if _stdlib.as_mut().unwrap().do_condition(
-            BoolEqExpression::new(
-                funct3.clone(),
-                BitVectorConcrete::new(0b0, 3, _stdlib.as_mut().unwrap(), _fork_sink),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            ),
-            _fork_sink,
-        ) {
-            let s1: Rc<RefCell<ActiveValue>> = register_read_BV32(state, rs1.clone(), _stdlib, _fork_sink, _memory, hints);
-            let s2: Rc<RefCell<ActiveValue>> = register_read_BV32(state, rs2.clone(), _stdlib, _fork_sink, _memory, hints);
-            if _stdlib.as_mut().unwrap().do_condition(
-                BoolEqExpression::new(
-                    funct7.clone(),
-                    BitVectorConcrete::new(0b0, 7, _stdlib.as_mut().unwrap(), _fork_sink),
-                    _stdlib.as_mut().unwrap(),
-                    _fork_sink,
-                ),
-                _fork_sink,
-            ) {
-                execute_add32(state, rd.clone(), rs1.clone(), rs2.clone(), _stdlib, _fork_sink, _memory, hints);
-                progress_pc_4(state, _stdlib, _fork_sink, _memory, hints);
-            } else if _stdlib.as_mut().unwrap().do_condition(
-                BoolEqExpression::new(
-                    funct7.clone(),
-                    BitVectorConcrete::new(0b1, 7, _stdlib.as_mut().unwrap(), _fork_sink),
-                    _stdlib.as_mut().unwrap(),
-                    _fork_sink,
-                ),
-                _fork_sink,
-            ) {
-                let result: Rc<RefCell<ActiveValue>> = BVMultiplyExpression::new(s1.clone(), s2.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-                register_write_BV32(state, rd.clone(), result.clone(), _stdlib, _fork_sink, _memory, hints);
-                progress_pc_4(state, _stdlib, _fork_sink, _memory, hints);
-            } else if _stdlib.as_mut().unwrap().do_condition(
-                BoolEqExpression::new(
-                    funct7.clone(),
-                    BitVectorConcrete::new(0b100000, 7, _stdlib.as_mut().unwrap(), _fork_sink),
-                    _stdlib.as_mut().unwrap(),
-                    _fork_sink,
-                ),
-                _fork_sink,
-            ) {
-                let sum: Rc<RefCell<ActiveValue>> = BVSubExpression::new(s1.clone(), s2.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-                register_write_BV32(state, rd.clone(), sum.clone(), _stdlib, _fork_sink, _memory, hints);
-                progress_pc_4(state, _stdlib, _fork_sink, _memory, hints);
-            } else {
-                unimplemented!();
-            }
-        } else if _stdlib.as_mut().unwrap().do_condition(
-            BoolEqExpression::new(
-                funct3.clone(),
-                BitVectorConcrete::new(0b1, 3, _stdlib.as_mut().unwrap(), _fork_sink),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            ),
-            _fork_sink,
-        ) {
-            if _stdlib.as_mut().unwrap().do_condition(
-                BoolEqExpression::new(
-                    funct7.clone(),
-                    BitVectorConcrete::new(0b0, 7, _stdlib.as_mut().unwrap(), _fork_sink),
-                    _stdlib.as_mut().unwrap(),
-                    _fork_sink,
-                ),
-                _fork_sink,
-            ) {
-                let shamt: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(
-                    register_read_BV32(state, rs2.clone(), _stdlib, _fork_sink, _memory, hints),
-                    4,
-                    0,
-                    _stdlib.as_mut().unwrap(),
-                    _fork_sink,
-                );
-                let result: Rc<RefCell<ActiveValue>> = BVShiftLeftLogicalExpression::new(
-                    register_read_BV32(state, rs1.clone(), _stdlib, _fork_sink, _memory, hints),
-                    shamt.clone(),
-                    32,
-                    5,
-                    _stdlib.as_mut().unwrap(),
-                    _fork_sink,
-                );
-                register_write_BV32(state, rd.clone(), result.clone(), _stdlib, _fork_sink, _memory, hints);
-                progress_pc_4(state, _stdlib, _fork_sink, _memory, hints);
-            } else {
-                unimplemented!();
-            }
-        } else if _stdlib.as_mut().unwrap().do_condition(
-            BoolEqExpression::new(
-                funct3.clone(),
-                BitVectorConcrete::new(0b10, 3, _stdlib.as_mut().unwrap(), _fork_sink),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            ),
-            _fork_sink,
-        ) {
-            if _stdlib.as_mut().unwrap().do_condition(
-                BoolEqExpression::new(
-                    funct7.clone(),
-                    BitVectorConcrete::new(0b0, 7, _stdlib.as_mut().unwrap(), _fork_sink),
-                    _stdlib.as_mut().unwrap(),
-                    _fork_sink,
-                ),
-                _fork_sink,
-            ) {
-                unimplemented!();
-            } else {
-                unimplemented!();
-            }
-        } else if _stdlib.as_mut().unwrap().do_condition(
-            BoolEqExpression::new(
-                funct3.clone(),
-                BitVectorConcrete::new(0b11, 3, _stdlib.as_mut().unwrap(), _fork_sink),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            ),
-            _fork_sink,
-        ) {
-            if _stdlib.as_mut().unwrap().do_condition(
-                BoolEqExpression::new(
-                    funct7.clone(),
-                    BitVectorConcrete::new(0b0, 7, _stdlib.as_mut().unwrap(), _fork_sink),
-                    _stdlib.as_mut().unwrap(),
-                    _fork_sink,
-                ),
-                _fork_sink,
-            ) {
-                if _stdlib.as_mut().unwrap().do_condition(
-                    BoolLessThanUIntExpression::new(
-                        register_read_BV32(state, rs1.clone(), _stdlib, _fork_sink, _memory, hints),
-                        register_read_BV32(state, rs2.clone(), _stdlib, _fork_sink, _memory, hints),
-                        _stdlib.as_mut().unwrap(),
-                        _fork_sink,
-                    ),
-                    _fork_sink,
-                ) {
-                    register_write_BV32(
-                        state,
-                        rd.clone(),
-                        BitVectorConcrete::new(0b1, 32, _stdlib.as_mut().unwrap(), _fork_sink),
-                        _stdlib,
-                        _fork_sink,
-                        _memory,
-                        hints,
-                    );
-                } else {
-                    register_write_BV32(
-                        state,
-                        rd.clone(),
-                        BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink),
-                        _stdlib,
-                        _fork_sink,
-                        _memory,
-                        hints,
-                    );
+                else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b1, 3, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+                    _progress_pc_4(state, context);
                 }
-                progress_pc_4(state, _stdlib, _fork_sink, _memory, hints);
-            } else {
+            }
+            else {
                 unimplemented!();
             }
-        } else if _stdlib.as_mut().unwrap().do_condition(
-            BoolEqExpression::new(
-                funct3.clone(),
-                BitVectorConcrete::new(0b100, 3, _stdlib.as_mut().unwrap(), _fork_sink),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            ),
-            _fork_sink,
-        ) {
-            if _stdlib.as_mut().unwrap().do_condition(
-                BoolEqExpression::new(
-                    funct7.clone(),
-                    BitVectorConcrete::new(0b0, 7, _stdlib.as_mut().unwrap(), _fork_sink),
-                    _stdlib.as_mut().unwrap(),
-                    _fork_sink,
-                ),
-                _fork_sink,
-            ) {
-                unimplemented!();
-            } else {
-                unimplemented!();
-            }
-        } else if _stdlib.as_mut().unwrap().do_condition(
-            BoolEqExpression::new(
-                funct3.clone(),
-                BitVectorConcrete::new(0b101, 3, _stdlib.as_mut().unwrap(), _fork_sink),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            ),
-            _fork_sink,
-        ) {
-            if _stdlib.as_mut().unwrap().do_condition(
-                BoolEqExpression::new(
-                    funct7.clone(),
-                    BitVectorConcrete::new(0b0, 7, _stdlib.as_mut().unwrap(), _fork_sink),
-                    _stdlib.as_mut().unwrap(),
-                    _fork_sink,
-                ),
-                _fork_sink,
-            ) {
-                let shamt: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(
-                    register_read_BV32(state, rs2.clone(), _stdlib, _fork_sink, _memory, hints),
-                    4,
-                    0,
-                    _stdlib.as_mut().unwrap(),
-                    _fork_sink,
-                );
-                let result: Rc<RefCell<ActiveValue>> = BVShiftRightLogicalExpression::new(
-                    register_read_BV32(state, rs1.clone(), _stdlib, _fork_sink, _memory, hints),
-                    shamt.clone(),
-                    32,
-                    5,
-                    _stdlib.as_mut().unwrap(),
-                    _fork_sink,
-                );
-                register_write_BV32(state, rd.clone(), result.clone(), _stdlib, _fork_sink, _memory, hints);
-                progress_pc_4(state, _stdlib, _fork_sink, _memory, hints);
-            } else if _stdlib.as_mut().unwrap().do_condition(
-                BoolEqExpression::new(
-                    funct7.clone(),
-                    BitVectorConcrete::new(0b100000, 7, _stdlib.as_mut().unwrap(), _fork_sink),
-                    _stdlib.as_mut().unwrap(),
-                    _fork_sink,
-                ),
-                _fork_sink,
-            ) {
-                unimplemented!();
-            } else {
-                unimplemented!();
-            }
-        } else if _stdlib.as_mut().unwrap().do_condition(
-            BoolEqExpression::new(
-                funct3.clone(),
-                BitVectorConcrete::new(0b110, 3, _stdlib.as_mut().unwrap(), _fork_sink),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            ),
-            _fork_sink,
-        ) {
-            if _stdlib.as_mut().unwrap().do_condition(
-                BoolEqExpression::new(
-                    funct7.clone(),
-                    BitVectorConcrete::new(0b0, 7, _stdlib.as_mut().unwrap(), _fork_sink),
-                    _stdlib.as_mut().unwrap(),
-                    _fork_sink,
-                ),
-                _fork_sink,
-            ) {
-                let rd: Rc<RefCell<ActiveValue>> = extract_rd_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-                let rs1: Rc<RefCell<ActiveValue>> = extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-                let rs2: Rc<RefCell<ActiveValue>> = extract_rs2_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-                let result: Rc<RefCell<ActiveValue>> = BVOrExpression::new(
-                    register_read_BV32(state, rs1.clone(), _stdlib, _fork_sink, _memory, hints),
-                    register_read_BV32(state, rs2.clone(), _stdlib, _fork_sink, _memory, hints),
-                    _stdlib.as_mut().unwrap(),
-                    _fork_sink,
-                );
-                register_write_BV32(state, rd.clone(), result.clone(), _stdlib, _fork_sink, _memory, hints);
-                progress_pc_4(state, _stdlib, _fork_sink, _memory, hints);
-            } else {
-                unimplemented!();
-            }
-        } else if _stdlib.as_mut().unwrap().do_condition(
-            BoolEqExpression::new(
-                funct3.clone(),
-                BitVectorConcrete::new(0b111, 3, _stdlib.as_mut().unwrap(), _fork_sink),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            ),
-            _fork_sink,
-        ) {
-            let rd: Rc<RefCell<ActiveValue>> = extract_rd_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-            let rs1: Rc<RefCell<ActiveValue>> = extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-            let rs2: Rc<RefCell<ActiveValue>> = extract_rs2_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-            if _stdlib.as_mut().unwrap().do_condition(
-                BoolEqExpression::new(
-                    funct7.clone(),
-                    BitVectorConcrete::new(0b0, 7, _stdlib.as_mut().unwrap(), _fork_sink),
-                    _stdlib.as_mut().unwrap(),
-                    _fork_sink,
-                ),
-                _fork_sink,
-            ) {
-                let result: Rc<RefCell<ActiveValue>> = BVAndExpression::new(
-                    register_read_BV32(state, rs1.clone(), _stdlib, _fork_sink, _memory, hints),
-                    register_read_BV32(state, rs2.clone(), _stdlib, _fork_sink, _memory, hints),
-                    _stdlib.as_mut().unwrap(),
-                    _fork_sink,
-                );
-                register_write_BV32(state, rd.clone(), result.clone(), _stdlib, _fork_sink, _memory, hints);
-                progress_pc_4(state, _stdlib, _fork_sink, _memory, hints);
-            } else if _stdlib.as_mut().unwrap().do_condition(
-                BoolEqExpression::new(
-                    funct7.clone(),
-                    BitVectorConcrete::new(0b1, 7, _stdlib.as_mut().unwrap(), _fork_sink),
-                    _stdlib.as_mut().unwrap(),
-                    _fork_sink,
-                ),
-                _fork_sink,
-            ) {
-                let result: Rc<RefCell<ActiveValue>> = BVUnsignedRemainderExpression::new(
-                    register_read_BV32(state, rs1.clone(), _stdlib, _fork_sink, _memory, hints),
-                    register_read_BV32(state, rs2.clone(), _stdlib, _fork_sink, _memory, hints),
-                    _stdlib.as_mut().unwrap(),
-                    _fork_sink,
-                );
-                register_write_BV32(state, rd.clone(), result.clone(), _stdlib, _fork_sink, _memory, hints);
-                progress_pc_4(state, _stdlib, _fork_sink, _memory, hints);
-            } else {
-                unimplemented!();
-            }
-        } else {
+        }
+        else {
             unimplemented!();
         }
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            opcode.clone(),
-            BitVectorConcrete::new(0b1100011, 7, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
-        let funct3: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 14, 12, _stdlib.as_mut().unwrap(), _fork_sink);
-        if _stdlib.as_mut().unwrap().do_condition(
-            BoolEqExpression::new(
-                funct3.clone(),
-                BitVectorConcrete::new(0b0, 3, _stdlib.as_mut().unwrap(), _fork_sink),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            ),
-            _fork_sink,
-        ) {
-            let lhs: Rc<RefCell<ActiveValue>> = register_read_BV32(
-                state,
-                extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints),
-                _stdlib,
-                _fork_sink,
-                _memory,
-                hints,
-            );
-            let rhs: Rc<RefCell<ActiveValue>> = register_read_BV32(
-                state,
-                extract_rs2_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints),
-                _stdlib,
-                _fork_sink,
-                _memory,
-                hints,
-            );
-            if _stdlib.as_mut().unwrap().do_condition(
-                BoolEqExpression::new(lhs.clone(), rhs.clone(), _stdlib.as_mut().unwrap(), _fork_sink),
-                _fork_sink,
-            ) {
-                let imm_4_1: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 11, 8, _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm_10_5: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 30, 25, _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm11: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 7, 7, _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm12: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 31, _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm_4_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(
-                    imm_4_1.clone(),
-                    BitVectorConcrete::new(0b0, 1, _stdlib.as_mut().unwrap(), _fork_sink),
-                    _stdlib.as_mut().unwrap(),
-                    _fork_sink,
-                );
-                let imm_10_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(imm_10_5.clone(), imm_4_0.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm_11_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(imm11.clone(), imm_10_0.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm_12_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(imm12.clone(), imm_11_0.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-                let offset: Rc<RefCell<ActiveValue>> = BVSignExtendExpression::new(imm_12_0.clone(), 13, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-                let address: Rc<RefCell<ActiveValue>> = BVAddExpression::new((*state).pc.clone(), offset.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-                (*state).pc = address.clone();
-            } else {
-                progress_pc_4(state, _stdlib, _fork_sink, _memory, hints);
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&opcode.clone(), &(*context).scfia.new_bv_concrete(0b10011, 7, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+        let funct3: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 14, 12, None, &mut (*context).fork_sink, None);
+        if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b0, 3, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+            let rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
+            let rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
+            let offset: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 20, None, &mut (*context).fork_sink, None);
+            let offset_32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&offset.clone(), 12, 32, None, &mut (*context).fork_sink, None);
+            let result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&offset_32.clone(), &_register_read_BV32(state, rs1.clone(), context), 32, None, &mut (*context).fork_sink, None);
+            _register_write_BV32(state, rd.clone(), result.clone(), context);
+            _progress_pc_4(state, context);
+        }
+        else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b1, 3, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+            let funct7: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 25, None, &mut (*context).fork_sink, None);
+            if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct7.clone(), &(*context).scfia.new_bv_concrete(0b0, 7, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+                let rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
+                let rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
+                let shamt: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 24, 20, None, &mut (*context).fork_sink, None);
+                let result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sll(&_register_read_BV32(state, rs1.clone(), context), &(*context).scfia.new_bv_concat(&(*context).scfia.new_bv_concrete(0, 27, None, &mut (*context).fork_sink, None), &shamt.clone(), 32, None, &mut (*context).fork_sink, None), 32, None, &mut (*context).fork_sink, None);
+                _register_write_BV32(state, rd.clone(), result.clone(), context);
+                _progress_pc_4(state, context);
             }
-        } else if _stdlib.as_mut().unwrap().do_condition(
-            BoolEqExpression::new(
-                funct3.clone(),
-                BitVectorConcrete::new(0b1, 3, _stdlib.as_mut().unwrap(), _fork_sink),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            ),
-            _fork_sink,
-        ) {
-            let lhs: Rc<RefCell<ActiveValue>> = register_read_BV32(
-                state,
-                extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints),
-                _stdlib,
-                _fork_sink,
-                _memory,
-                hints,
-            );
-            let rhs: Rc<RefCell<ActiveValue>> = register_read_BV32(
-                state,
-                extract_rs2_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints),
-                _stdlib,
-                _fork_sink,
-                _memory,
-                hints,
-            );
-            if _stdlib.as_mut().unwrap().do_condition(
-                BoolNEqExpression::new(lhs.clone(), rhs.clone(), _stdlib.as_mut().unwrap(), _fork_sink),
-                _fork_sink,
-            ) {
-                let imm_4_1: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 11, 8, _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm_10_5: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 30, 25, _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm11: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 7, 7, _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm12: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 31, _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm_4_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(
-                    imm_4_1.clone(),
-                    BitVectorConcrete::new(0b0, 1, _stdlib.as_mut().unwrap(), _fork_sink),
-                    _stdlib.as_mut().unwrap(),
-                    _fork_sink,
-                );
-                let imm_10_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(imm_10_5.clone(), imm_4_0.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm_11_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(imm11.clone(), imm_10_0.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm_12_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(imm12.clone(), imm_11_0.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-                let offset: Rc<RefCell<ActiveValue>> = BVSignExtendExpression::new(imm_12_0.clone(), 13, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-                let address: Rc<RefCell<ActiveValue>> = BVAddExpression::new((*state).pc.clone(), offset.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-                (*state).pc = address.clone();
-            } else {
-                progress_pc_4(state, _stdlib, _fork_sink, _memory, hints);
+            else {
+                unimplemented!();
             }
-        } else if _stdlib.as_mut().unwrap().do_condition(
-            BoolEqExpression::new(
-                funct3.clone(),
-                BitVectorConcrete::new(0b100, 3, _stdlib.as_mut().unwrap(), _fork_sink),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            ),
-            _fork_sink,
-        ) {
-            let lhs: Rc<RefCell<ActiveValue>> = register_read_BV32(
-                state,
-                extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints),
-                _stdlib,
-                _fork_sink,
-                _memory,
-                hints,
-            );
-            let rhs: Rc<RefCell<ActiveValue>> = register_read_BV32(
-                state,
-                extract_rs2_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints),
-                _stdlib,
-                _fork_sink,
-                _memory,
-                hints,
-            );
-            if _stdlib.as_mut().unwrap().do_condition(
-                BoolLessThanSignedExpression::new(lhs.clone(), rhs.clone(), _stdlib.as_mut().unwrap(), _fork_sink),
-                _fork_sink,
-            ) {
-                let imm_4_1: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 11, 8, _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm_10_5: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 30, 25, _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm11: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 7, 7, _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm12: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 31, _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm_4_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(
-                    imm_4_1.clone(),
-                    BitVectorConcrete::new(0b0, 1, _stdlib.as_mut().unwrap(), _fork_sink),
-                    _stdlib.as_mut().unwrap(),
-                    _fork_sink,
-                );
-                let imm_10_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(imm_10_5.clone(), imm_4_0.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm_11_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(imm11.clone(), imm_10_0.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm_12_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(imm12.clone(), imm_11_0.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-                let offset: Rc<RefCell<ActiveValue>> = BVSignExtendExpression::new(imm_12_0.clone(), 13, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-                let address: Rc<RefCell<ActiveValue>> = BVAddExpression::new((*state).pc.clone(), offset.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-                (*state).pc = address.clone();
-            } else {
-                progress_pc_4(state, _stdlib, _fork_sink, _memory, hints);
+        }
+        else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b100, 3, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+            let rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
+            let rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
+            let imm: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 20, None, &mut (*context).fork_sink, None);
+            let imm_32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm.clone(), 12, 32, None, &mut (*context).fork_sink, None);
+            let result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_xor(&_register_read_BV32(state, rs1.clone(), context), &imm_32.clone(), 32, None, &mut (*context).fork_sink, None);
+            _register_write_BV32(state, rd.clone(), result.clone(), context);
+            _progress_pc_4(state, context);
+        }
+        else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b101, 3, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+            let funct7: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 25, None, &mut (*context).fork_sink, None);
+            if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct7.clone(), &(*context).scfia.new_bv_concrete(0b0, 7, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+                let rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
+                let rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
+                let shamt: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 24, 20, None, &mut (*context).fork_sink, None);
+                let result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_srl(&_register_read_BV32(state, rs1.clone(), context), &(*context).scfia.new_bv_concat(&(*context).scfia.new_bv_concrete(0, 27, None, &mut (*context).fork_sink, None), &shamt.clone(), 32, None, &mut (*context).fork_sink, None), 32, None, &mut (*context).fork_sink, None);
+                _register_write_BV32(state, rd.clone(), result.clone(), context);
+                _progress_pc_4(state, context);
             }
-        } else if _stdlib.as_mut().unwrap().do_condition(
-            BoolEqExpression::new(
-                funct3.clone(),
-                BitVectorConcrete::new(0b101, 3, _stdlib.as_mut().unwrap(), _fork_sink),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            ),
-            _fork_sink,
-        ) {
-            let lhs: Rc<RefCell<ActiveValue>> = register_read_BV32(
-                state,
-                extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints),
-                _stdlib,
-                _fork_sink,
-                _memory,
-                hints,
-            );
-            let rhs: Rc<RefCell<ActiveValue>> = register_read_BV32(
-                state,
-                extract_rs2_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints),
-                _stdlib,
-                _fork_sink,
-                _memory,
-                hints,
-            );
-            if _stdlib.as_mut().unwrap().do_condition(
-                BoolLessThanSignedExpression::new(lhs.clone(), rhs.clone(), _stdlib.as_mut().unwrap(), _fork_sink),
-                _fork_sink,
-            ) {
-                progress_pc_4(state, _stdlib, _fork_sink, _memory, hints);
-            } else {
-                let imm_4_1: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 11, 8, _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm_10_5: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 30, 25, _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm11: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 7, 7, _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm12: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 31, _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm_4_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(
-                    imm_4_1.clone(),
-                    BitVectorConcrete::new(0b0, 1, _stdlib.as_mut().unwrap(), _fork_sink),
-                    _stdlib.as_mut().unwrap(),
-                    _fork_sink,
-                );
-                let imm_10_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(imm_10_5.clone(), imm_4_0.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm_11_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(imm11.clone(), imm_10_0.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm_12_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(imm12.clone(), imm_11_0.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-                let offset: Rc<RefCell<ActiveValue>> = BVSignExtendExpression::new(imm_12_0.clone(), 13, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-                let address: Rc<RefCell<ActiveValue>> = BVAddExpression::new((*state).pc.clone(), offset.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-                (*state).pc = address.clone();
+            else {
+                unimplemented!();
             }
-        } else if _stdlib.as_mut().unwrap().do_condition(
-            BoolEqExpression::new(
-                funct3.clone(),
-                BitVectorConcrete::new(0b110, 3, _stdlib.as_mut().unwrap(), _fork_sink),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            ),
-            _fork_sink,
-        ) {
-            let lhs: Rc<RefCell<ActiveValue>> = register_read_BV32(
-                state,
-                extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints),
-                _stdlib,
-                _fork_sink,
-                _memory,
-                hints,
-            );
-            let rhs: Rc<RefCell<ActiveValue>> = register_read_BV32(
-                state,
-                extract_rs2_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints),
-                _stdlib,
-                _fork_sink,
-                _memory,
-                hints,
-            );
-            if _stdlib.as_mut().unwrap().do_condition(
-                BoolLessThanUIntExpression::new(lhs.clone(), rhs.clone(), _stdlib.as_mut().unwrap(), _fork_sink),
-                _fork_sink,
-            ) {
-                let imm_4_1: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 11, 8, _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm_10_5: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 30, 25, _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm11: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 7, 7, _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm12: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 31, _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm_4_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(
-                    imm_4_1.clone(),
-                    BitVectorConcrete::new(0b0, 1, _stdlib.as_mut().unwrap(), _fork_sink),
-                    _stdlib.as_mut().unwrap(),
-                    _fork_sink,
-                );
-                let imm_10_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(imm_10_5.clone(), imm_4_0.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm_11_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(imm11.clone(), imm_10_0.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm_12_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(imm12.clone(), imm_11_0.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-                let offset: Rc<RefCell<ActiveValue>> = BVSignExtendExpression::new(imm_12_0.clone(), 13, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-                let address: Rc<RefCell<ActiveValue>> = BVAddExpression::new((*state).pc.clone(), offset.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-                (*state).pc = address.clone();
-            } else {
-                progress_pc_4(state, _stdlib, _fork_sink, _memory, hints);
-            }
-        } else if _stdlib.as_mut().unwrap().do_condition(
-            BoolEqExpression::new(
-                funct3.clone(),
-                BitVectorConcrete::new(0b111, 3, _stdlib.as_mut().unwrap(), _fork_sink),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            ),
-            _fork_sink,
-        ) {
-            let lhs: Rc<RefCell<ActiveValue>> = register_read_BV32(
-                state,
-                extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints),
-                _stdlib,
-                _fork_sink,
-                _memory,
-                hints,
-            );
-            let rhs: Rc<RefCell<ActiveValue>> = register_read_BV32(
-                state,
-                extract_rs2_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints),
-                _stdlib,
-                _fork_sink,
-                _memory,
-                hints,
-            );
-            if _stdlib.as_mut().unwrap().do_condition(
-                BoolLessThanUIntExpression::new(lhs.clone(), rhs.clone(), _stdlib.as_mut().unwrap(), _fork_sink),
-                _fork_sink,
-            ) {
-                progress_pc_4(state, _stdlib, _fork_sink, _memory, hints);
-            } else {
-                let imm_4_1: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 11, 8, _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm_10_5: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 30, 25, _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm11: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 7, 7, _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm12: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 31, _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm_4_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(
-                    imm_4_1.clone(),
-                    BitVectorConcrete::new(0b0, 1, _stdlib.as_mut().unwrap(), _fork_sink),
-                    _stdlib.as_mut().unwrap(),
-                    _fork_sink,
-                );
-                let imm_10_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(imm_10_5.clone(), imm_4_0.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm_11_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(imm11.clone(), imm_10_0.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-                let imm_12_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(imm12.clone(), imm_11_0.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-                let offset: Rc<RefCell<ActiveValue>> = BVSignExtendExpression::new(imm_12_0.clone(), 13, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-                let address: Rc<RefCell<ActiveValue>> = BVAddExpression::new((*state).pc.clone(), offset.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-                (*state).pc = address.clone();
-            }
-        } else {
+        }
+        else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b110, 3, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+            let rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
+            let rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
+            let imm: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 20, None, &mut (*context).fork_sink, None);
+            let imm_32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm.clone(), 12, 32, None, &mut (*context).fork_sink, None);
+            let result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_or(&_register_read_BV32(state, rs1.clone(), context), &imm_32.clone(), 32, None, &mut (*context).fork_sink, None);
+            _register_write_BV32(state, rd.clone(), result.clone(), context);
+            _progress_pc_4(state, context);
+        }
+        else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b111, 3, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+            let rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
+            let rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
+            let imm: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 20, None, &mut (*context).fork_sink, None);
+            let imm_32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm.clone(), 12, 32, None, &mut (*context).fork_sink, None);
+            let result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_and(&_register_read_BV32(state, rs1.clone(), context), &imm_32.clone(), 32, None, &mut (*context).fork_sink, None);
+            _register_write_BV32(state, rd.clone(), result.clone(), context);
+            _progress_pc_4(state, context);
+        }
+        else {
             unimplemented!();
         }
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            opcode.clone(),
-            BitVectorConcrete::new(0b1100111, 7, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
-        let funct3: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 14, 12, _stdlib.as_mut().unwrap(), _fork_sink);
-        if _stdlib.as_mut().unwrap().do_condition(
-            BoolEqExpression::new(
-                funct3.clone(),
-                BitVectorConcrete::new(0b0, 3, _stdlib.as_mut().unwrap(), _fork_sink),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            ),
-            _fork_sink,
-        ) {
-            let dst: Rc<RefCell<ActiveValue>> = extract_rd_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-            let rs1: Rc<RefCell<ActiveValue>> = extract_rs1_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-            let s1: Rc<RefCell<ActiveValue>> = register_read_BV32(state, rs1.clone(), _stdlib, _fork_sink, _memory, hints);
-            let offset: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 20, _stdlib.as_mut().unwrap(), _fork_sink);
-            let offset_32: Rc<RefCell<ActiveValue>> = BVSignExtendExpression::new(offset.clone(), 12, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-            let address: Rc<RefCell<ActiveValue>> = BVAddExpression::new(s1.clone(), offset_32.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-            let return_address: Rc<RefCell<ActiveValue>> = BVAddExpression::new(
-                (*state).pc.clone(),
-                BitVectorConcrete::new(0b100, 32, _stdlib.as_mut().unwrap(), _fork_sink),
-                _stdlib.as_mut().unwrap(),
-                _fork_sink,
-            );
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&opcode.clone(), &(*context).scfia.new_bv_concrete(0b100011, 7, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+        let funct3: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 14, 12, None, &mut (*context).fork_sink, None);
+        if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b0, 3, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+            let rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
+            let rs2: ActiveValue<RV32iScfiaComposition> = _extract_rs2_32(instruction_32.clone(), context);
+            let offset_11_5: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 25, None, &mut (*context).fork_sink, None);
+            let offset_4_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 11, 7, None, &mut (*context).fork_sink, None);
+            let offset: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&offset_11_5.clone(), &offset_4_0.clone(), 12, None, &mut (*context).fork_sink, None);
+            let offset_32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&offset.clone(), 12, 32, None, &mut (*context).fork_sink, None);
+            let base_address: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs1.clone(), context);
+            let address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&base_address.clone(), &offset_32.clone(), 32, None, &mut (*context).fork_sink, None);
+            let value_32: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs2.clone(), context);
+            let value: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&value_32.clone(), 7, 0, None, &mut (*context).fork_sink, None);
+            (*(*context).memory).write(&address.clone(), &value.clone(), 8, (*context).scfia.clone(), &mut (*context).hints, &mut (*context).fork_sink);
+            _progress_pc_4(state, context);
+        }
+        else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b1, 3, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+            let rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
+            let rs2: ActiveValue<RV32iScfiaComposition> = _extract_rs2_32(instruction_32.clone(), context);
+            let offset_11_5: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 25, None, &mut (*context).fork_sink, None);
+            let offset_4_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 11, 7, None, &mut (*context).fork_sink, None);
+            let offset: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&offset_11_5.clone(), &offset_4_0.clone(), 12, None, &mut (*context).fork_sink, None);
+            let offset_32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&offset.clone(), 12, 32, None, &mut (*context).fork_sink, None);
+            let base_address: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs1.clone(), context);
+            let address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&base_address.clone(), &offset_32.clone(), 32, None, &mut (*context).fork_sink, None);
+            let value_32: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs2.clone(), context);
+            let value: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&value_32.clone(), 15, 0, None, &mut (*context).fork_sink, None);
+            (*(*context).memory).write(&address.clone(), &value.clone(), 16, (*context).scfia.clone(), &mut (*context).hints, &mut (*context).fork_sink);
+            _progress_pc_4(state, context);
+        }
+        else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b10, 3, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+            let rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
+            let rs2: ActiveValue<RV32iScfiaComposition> = _extract_rs2_32(instruction_32.clone(), context);
+            let offset_11_5: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 25, None, &mut (*context).fork_sink, None);
+            let offset_4_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 11, 7, None, &mut (*context).fork_sink, None);
+            let offset: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&offset_11_5.clone(), &offset_4_0.clone(), 12, None, &mut (*context).fork_sink, None);
+            let offset_32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&offset.clone(), 12, 32, None, &mut (*context).fork_sink, None);
+            let base_address: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs1.clone(), context);
+            let address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&base_address.clone(), &offset_32.clone(), 32, None, &mut (*context).fork_sink, None);
+            let value: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs2.clone(), context);
+            (*(*context).memory).write(&address.clone(), &value.clone(), 32, (*context).scfia.clone(), &mut (*context).hints, &mut (*context).fork_sink);
+            _progress_pc_4(state, context);
+        }
+        else {
+            unimplemented!();
+        }
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&opcode.clone(), &(*context).scfia.new_bv_concrete(0b110111, 7, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+        let rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
+        let rs: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
+        let imm: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 12, None, &mut (*context).fork_sink, None);
+        let value: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm.clone(), &(*context).scfia.new_bv_concrete(0b0, 12, None, &mut (*context).fork_sink, None), 32, None, &mut (*context).fork_sink, None);
+        _register_write_BV32(state, rd.clone(), value.clone(), context);
+        _progress_pc_4(state, context);
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&opcode.clone(), &(*context).scfia.new_bv_concrete(0b10111, 7, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+        let dst: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
+        let imm: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 12, None, &mut (*context).fork_sink, None);
+        let imm32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm.clone(), &(*context).scfia.new_bv_concrete(0b0, 12, None, &mut (*context).fork_sink, None), 32, None, &mut (*context).fork_sink, None);
+        let sum: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&imm32.clone(), &(*state).pc.clone(), 32, None, &mut (*context).fork_sink, None);
+        _register_write_BV32(state, dst.clone(), sum.clone(), context);
+        _progress_pc_4(state, context);
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&opcode.clone(), &(*context).scfia.new_bv_concrete(0b110011, 7, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+        let funct3: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 14, 12, None, &mut (*context).fork_sink, None);
+        let funct7: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 25, None, &mut (*context).fork_sink, None);
+        let rd: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 11, 7, None, &mut (*context).fork_sink, None);
+        let rs1: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 19, 15, None, &mut (*context).fork_sink, None);
+        let rs2: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 24, 20, None, &mut (*context).fork_sink, None);
+        if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b0, 3, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+            let s1: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs1.clone(), context);
+            let s2: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs2.clone(), context);
+            if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct7.clone(), &(*context).scfia.new_bv_concrete(0b0, 7, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+                _execute_add32(state, rd.clone(), rs1.clone(), rs2.clone(), context);
+                _progress_pc_4(state, context);
+            }
+            else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct7.clone(), &(*context).scfia.new_bv_concrete(0b1, 7, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+                let result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_multiply(&s1.clone(), &s2.clone(), 32, None, &mut (*context).fork_sink, None);
+                _register_write_BV32(state, rd.clone(), result.clone(), context);
+                _progress_pc_4(state, context);
+            }
+            else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct7.clone(), &(*context).scfia.new_bv_concrete(0b100000, 7, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+                let sum: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sub(&s1.clone(), &s2.clone(), 32, None, &mut (*context).fork_sink, None);
+                _register_write_BV32(state, rd.clone(), sum.clone(), context);
+                _progress_pc_4(state, context);
+            }
+            else {
+                unimplemented!();
+            }
+        }
+        else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b1, 3, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+            if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct7.clone(), &(*context).scfia.new_bv_concrete(0b0, 7, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+                let shamt: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&_register_read_BV32(state, rs2.clone(), context), 4, 0, None, &mut (*context).fork_sink, None);
+                let result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sll(&_register_read_BV32(state, rs1.clone(), context), &(*context).scfia.new_bv_concat(&(*context).scfia.new_bv_concrete(0, 27, None, &mut (*context).fork_sink, None), &shamt.clone(), 32, None, &mut (*context).fork_sink, None), 32, None, &mut (*context).fork_sink, None);
+                _register_write_BV32(state, rd.clone(), result.clone(), context);
+                _progress_pc_4(state, context);
+            }
+            else {
+                unimplemented!();
+            }
+        }
+        else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b10, 3, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+            if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct7.clone(), &(*context).scfia.new_bv_concrete(0b0, 7, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+                unimplemented!();
+            }
+            else {
+                unimplemented!();
+            }
+        }
+        else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b11, 3, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+            if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct7.clone(), &(*context).scfia.new_bv_concrete(0b0, 7, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+                if (*context).scfia.check_condition(&(*context).scfia.new_bool_unsigned_less_than(&_register_read_BV32(state, rs1.clone(), context), &_register_read_BV32(state, rs2.clone(), context), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+                    _register_write_BV32(state, rd.clone(), (*context).scfia.new_bv_concrete(0b1, 32, None, &mut (*context).fork_sink, None), context);
+                }
+                else {
+                    _register_write_BV32(state, rd.clone(), (*context).scfia.new_bv_concrete(0b0, 32, None, &mut (*context).fork_sink, None), context);
+                }
+                _progress_pc_4(state, context);
+            }
+            else {
+                unimplemented!();
+            }
+        }
+        else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b100, 3, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+            if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct7.clone(), &(*context).scfia.new_bv_concrete(0b0, 7, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+                unimplemented!();
+            }
+            else {
+                unimplemented!();
+            }
+        }
+        else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b101, 3, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+            if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct7.clone(), &(*context).scfia.new_bv_concrete(0b0, 7, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+                let shamt: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&_register_read_BV32(state, rs2.clone(), context), 4, 0, None, &mut (*context).fork_sink, None);
+                let result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_srl(&_register_read_BV32(state, rs1.clone(), context), &(*context).scfia.new_bv_concat(&(*context).scfia.new_bv_concrete(0, 27, None, &mut (*context).fork_sink, None), &shamt.clone(), 32, None, &mut (*context).fork_sink, None), 32, None, &mut (*context).fork_sink, None);
+                _register_write_BV32(state, rd.clone(), result.clone(), context);
+                _progress_pc_4(state, context);
+            }
+            else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct7.clone(), &(*context).scfia.new_bv_concrete(0b100000, 7, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+                unimplemented!();
+            }
+            else {
+                unimplemented!();
+            }
+        }
+        else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b110, 3, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+            if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct7.clone(), &(*context).scfia.new_bv_concrete(0b0, 7, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+                let rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
+                let rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
+                let rs2: ActiveValue<RV32iScfiaComposition> = _extract_rs2_32(instruction_32.clone(), context);
+                let result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_or(&_register_read_BV32(state, rs1.clone(), context), &_register_read_BV32(state, rs2.clone(), context), 32, None, &mut (*context).fork_sink, None);
+                _register_write_BV32(state, rd.clone(), result.clone(), context);
+                _progress_pc_4(state, context);
+            }
+            else {
+                unimplemented!();
+            }
+        }
+        else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b111, 3, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+            let rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
+            let rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
+            let rs2: ActiveValue<RV32iScfiaComposition> = _extract_rs2_32(instruction_32.clone(), context);
+            if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct7.clone(), &(*context).scfia.new_bv_concrete(0b0, 7, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+                let result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_and(&_register_read_BV32(state, rs1.clone(), context), &_register_read_BV32(state, rs2.clone(), context), 32, None, &mut (*context).fork_sink, None);
+                _register_write_BV32(state, rd.clone(), result.clone(), context);
+                _progress_pc_4(state, context);
+            }
+            else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct7.clone(), &(*context).scfia.new_bv_concrete(0b1, 7, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+                let result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_unsigned_remainder(&_register_read_BV32(state, rs1.clone(), context), &_register_read_BV32(state, rs2.clone(), context), 32, None, &mut (*context).fork_sink, None);
+                _register_write_BV32(state, rd.clone(), result.clone(), context);
+                _progress_pc_4(state, context);
+            }
+            else {
+                unimplemented!();
+            }
+        }
+        else {
+            unimplemented!();
+        }
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&opcode.clone(), &(*context).scfia.new_bv_concrete(0b1100011, 7, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+        let funct3: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 14, 12, None, &mut (*context).fork_sink, None);
+        if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b0, 3, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+            let lhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs1_32(instruction_32.clone(), context), context);
+            let rhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs2_32(instruction_32.clone(), context), context);
+            if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&lhs.clone(), &rhs.clone(), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+                let imm_4_1: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 11, 8, None, &mut (*context).fork_sink, None);
+                let imm_10_5: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 30, 25, None, &mut (*context).fork_sink, None);
+                let imm11: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 7, 7, None, &mut (*context).fork_sink, None);
+                let imm12: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 31, None, &mut (*context).fork_sink, None);
+                let imm_4_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_4_1.clone(), &(*context).scfia.new_bv_concrete(0b0, 1, None, &mut (*context).fork_sink, None), 5, None, &mut (*context).fork_sink, None);
+                let imm_10_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_10_5.clone(), &imm_4_0.clone(), 11, None, &mut (*context).fork_sink, None);
+                let imm_11_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm11.clone(), &imm_10_0.clone(), 12, None, &mut (*context).fork_sink, None);
+                let imm_12_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm12.clone(), &imm_11_0.clone(), 13, None, &mut (*context).fork_sink, None);
+                let offset: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm_12_0.clone(), 13, 32, None, &mut (*context).fork_sink, None);
+                let address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&(*state).pc.clone(), &offset.clone(), 32, None, &mut (*context).fork_sink, None);
+                (*state).pc = address.clone();
+            }
+            else {
+                _progress_pc_4(state, context);
+            }
+        }
+        else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b1, 3, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+            let lhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs1_32(instruction_32.clone(), context), context);
+            let rhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs2_32(instruction_32.clone(), context), context);
+            if (*context).scfia.check_condition(&(*context).scfia.new_bool_not(&(*context).scfia.new_bool_eq(&lhs.clone(), &rhs.clone(), None, false, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+                let imm_4_1: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 11, 8, None, &mut (*context).fork_sink, None);
+                let imm_10_5: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 30, 25, None, &mut (*context).fork_sink, None);
+                let imm11: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 7, 7, None, &mut (*context).fork_sink, None);
+                let imm12: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 31, None, &mut (*context).fork_sink, None);
+                let imm_4_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_4_1.clone(), &(*context).scfia.new_bv_concrete(0b0, 1, None, &mut (*context).fork_sink, None), 5, None, &mut (*context).fork_sink, None);
+                let imm_10_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_10_5.clone(), &imm_4_0.clone(), 11, None, &mut (*context).fork_sink, None);
+                let imm_11_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm11.clone(), &imm_10_0.clone(), 12, None, &mut (*context).fork_sink, None);
+                let imm_12_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm12.clone(), &imm_11_0.clone(), 13, None, &mut (*context).fork_sink, None);
+                let offset: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm_12_0.clone(), 13, 32, None, &mut (*context).fork_sink, None);
+                let address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&(*state).pc.clone(), &offset.clone(), 32, None, &mut (*context).fork_sink, None);
+                (*state).pc = address.clone();
+            }
+            else {
+                _progress_pc_4(state, context);
+            }
+        }
+        else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b100, 3, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+            let lhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs1_32(instruction_32.clone(), context), context);
+            let rhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs2_32(instruction_32.clone(), context), context);
+            if (*context).scfia.check_condition(&(*context).scfia.new_bool_signed_less_than(&lhs.clone(), &rhs.clone(), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+                let imm_4_1: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 11, 8, None, &mut (*context).fork_sink, None);
+                let imm_10_5: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 30, 25, None, &mut (*context).fork_sink, None);
+                let imm11: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 7, 7, None, &mut (*context).fork_sink, None);
+                let imm12: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 31, None, &mut (*context).fork_sink, None);
+                let imm_4_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_4_1.clone(), &(*context).scfia.new_bv_concrete(0b0, 1, None, &mut (*context).fork_sink, None), 5, None, &mut (*context).fork_sink, None);
+                let imm_10_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_10_5.clone(), &imm_4_0.clone(), 11, None, &mut (*context).fork_sink, None);
+                let imm_11_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm11.clone(), &imm_10_0.clone(), 12, None, &mut (*context).fork_sink, None);
+                let imm_12_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm12.clone(), &imm_11_0.clone(), 13, None, &mut (*context).fork_sink, None);
+                let offset: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm_12_0.clone(), 13, 32, None, &mut (*context).fork_sink, None);
+                let address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&(*state).pc.clone(), &offset.clone(), 32, None, &mut (*context).fork_sink, None);
+                (*state).pc = address.clone();
+            }
+            else {
+                _progress_pc_4(state, context);
+            }
+        }
+        else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b101, 3, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+            let lhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs1_32(instruction_32.clone(), context), context);
+            let rhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs2_32(instruction_32.clone(), context), context);
+            if (*context).scfia.check_condition(&(*context).scfia.new_bool_signed_less_than(&lhs.clone(), &rhs.clone(), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+                _progress_pc_4(state, context);
+            }
+            else {
+                let imm_4_1: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 11, 8, None, &mut (*context).fork_sink, None);
+                let imm_10_5: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 30, 25, None, &mut (*context).fork_sink, None);
+                let imm11: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 7, 7, None, &mut (*context).fork_sink, None);
+                let imm12: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 31, None, &mut (*context).fork_sink, None);
+                let imm_4_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_4_1.clone(), &(*context).scfia.new_bv_concrete(0b0, 1, None, &mut (*context).fork_sink, None), 5, None, &mut (*context).fork_sink, None);
+                let imm_10_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_10_5.clone(), &imm_4_0.clone(), 11, None, &mut (*context).fork_sink, None);
+                let imm_11_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm11.clone(), &imm_10_0.clone(), 12, None, &mut (*context).fork_sink, None);
+                let imm_12_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm12.clone(), &imm_11_0.clone(), 13, None, &mut (*context).fork_sink, None);
+                let offset: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm_12_0.clone(), 13, 32, None, &mut (*context).fork_sink, None);
+                let address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&(*state).pc.clone(), &offset.clone(), 32, None, &mut (*context).fork_sink, None);
+                (*state).pc = address.clone();
+            }
+        }
+        else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b110, 3, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+            let lhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs1_32(instruction_32.clone(), context), context);
+            let rhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs2_32(instruction_32.clone(), context), context);
+            if (*context).scfia.check_condition(&(*context).scfia.new_bool_unsigned_less_than(&lhs.clone(), &rhs.clone(), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+                let imm_4_1: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 11, 8, None, &mut (*context).fork_sink, None);
+                let imm_10_5: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 30, 25, None, &mut (*context).fork_sink, None);
+                let imm11: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 7, 7, None, &mut (*context).fork_sink, None);
+                let imm12: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 31, None, &mut (*context).fork_sink, None);
+                let imm_4_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_4_1.clone(), &(*context).scfia.new_bv_concrete(0b0, 1, None, &mut (*context).fork_sink, None), 5, None, &mut (*context).fork_sink, None);
+                let imm_10_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_10_5.clone(), &imm_4_0.clone(), 11, None, &mut (*context).fork_sink, None);
+                let imm_11_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm11.clone(), &imm_10_0.clone(), 12, None, &mut (*context).fork_sink, None);
+                let imm_12_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm12.clone(), &imm_11_0.clone(), 13, None, &mut (*context).fork_sink, None);
+                let offset: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm_12_0.clone(), 13, 32, None, &mut (*context).fork_sink, None);
+                let address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&(*state).pc.clone(), &offset.clone(), 32, None, &mut (*context).fork_sink, None);
+                (*state).pc = address.clone();
+            }
+            else {
+                _progress_pc_4(state, context);
+            }
+        }
+        else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b111, 3, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+            let lhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs1_32(instruction_32.clone(), context), context);
+            let rhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs2_32(instruction_32.clone(), context), context);
+            if (*context).scfia.check_condition(&(*context).scfia.new_bool_unsigned_less_than(&lhs.clone(), &rhs.clone(), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+                _progress_pc_4(state, context);
+            }
+            else {
+                let imm_4_1: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 11, 8, None, &mut (*context).fork_sink, None);
+                let imm_10_5: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 30, 25, None, &mut (*context).fork_sink, None);
+                let imm11: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 7, 7, None, &mut (*context).fork_sink, None);
+                let imm12: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 31, None, &mut (*context).fork_sink, None);
+                let imm_4_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_4_1.clone(), &(*context).scfia.new_bv_concrete(0b0, 1, None, &mut (*context).fork_sink, None), 5, None, &mut (*context).fork_sink, None);
+                let imm_10_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_10_5.clone(), &imm_4_0.clone(), 11, None, &mut (*context).fork_sink, None);
+                let imm_11_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm11.clone(), &imm_10_0.clone(), 12, None, &mut (*context).fork_sink, None);
+                let imm_12_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm12.clone(), &imm_11_0.clone(), 13, None, &mut (*context).fork_sink, None);
+                let offset: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm_12_0.clone(), 13, 32, None, &mut (*context).fork_sink, None);
+                let address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&(*state).pc.clone(), &offset.clone(), 32, None, &mut (*context).fork_sink, None);
+                (*state).pc = address.clone();
+            }
+        }
+        else {
+            unimplemented!();
+        }
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&opcode.clone(), &(*context).scfia.new_bv_concrete(0b1100111, 7, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+        let funct3: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 14, 12, None, &mut (*context).fork_sink, None);
+        if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b0, 3, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+            let dst: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
+            let rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
+            let s1: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs1.clone(), context);
+            let offset: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 20, None, &mut (*context).fork_sink, None);
+            let offset_32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&offset.clone(), 12, 32, None, &mut (*context).fork_sink, None);
+            let address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&s1.clone(), &offset_32.clone(), 32, None, &mut (*context).fork_sink, None);
+            let return_address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&(*state).pc.clone(), &(*context).scfia.new_bv_concrete(0b100, 32, None, &mut (*context).fork_sink, None), 32, None, &mut (*context).fork_sink, None);
             (*state).pc = address.clone();
-            register_write_BV32(state, dst.clone(), return_address.clone(), _stdlib, _fork_sink, _memory, hints);
-        } else {
+            _register_write_BV32(state, dst.clone(), return_address.clone(), context);
+        }
+        else {
             unimplemented!();
         }
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            opcode.clone(),
-            BitVectorConcrete::new(0b1101111, 7, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
-        let imm_20: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 31, 31, _stdlib.as_mut().unwrap(), _fork_sink);
-        let imm_10_1: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 30, 21, _stdlib.as_mut().unwrap(), _fork_sink);
-        let imm_11: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 20, 20, _stdlib.as_mut().unwrap(), _fork_sink);
-        let imm_19_12: Rc<RefCell<ActiveValue>> = BVSliceExpression::new(instruction_32.clone(), 19, 12, _stdlib.as_mut().unwrap(), _fork_sink);
-        let offset_10_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(
-            imm_10_1.clone(),
-            BitVectorConcrete::new(0b0, 1, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        );
-        let offset_11_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(imm_11.clone(), offset_10_0.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-        let offset_19_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(imm_19_12.clone(), offset_11_0.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-        let offset_20_0: Rc<RefCell<ActiveValue>> = BVConcatExpression::new(imm_20.clone(), offset_19_0.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-        let offset_32: Rc<RefCell<ActiveValue>> = BVSignExtendExpression::new(offset_20_0.clone(), 21, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-        let address: Rc<RefCell<ActiveValue>> = BVAddExpression::new((*state).pc.clone(), offset_32.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-        let return_address: Rc<RefCell<ActiveValue>> = BVAddExpression::new(
-            (*state).pc.clone(),
-            BitVectorConcrete::new(0b100, 32, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        );
-        let dst: Rc<RefCell<ActiveValue>> = extract_rd_32(instruction_32.clone(), _stdlib, _fork_sink, _memory, hints);
-        register_write_BV32(state, dst.clone(), return_address.clone(), _stdlib, _fork_sink, _memory, hints);
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&opcode.clone(), &(*context).scfia.new_bv_concrete(0b1101111, 7, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+        let imm_20: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 31, None, &mut (*context).fork_sink, None);
+        let imm_10_1: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 30, 21, None, &mut (*context).fork_sink, None);
+        let imm_11: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 20, 20, None, &mut (*context).fork_sink, None);
+        let imm_19_12: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 19, 12, None, &mut (*context).fork_sink, None);
+        let offset_10_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_10_1.clone(), &(*context).scfia.new_bv_concrete(0b0, 1, None, &mut (*context).fork_sink, None), 11, None, &mut (*context).fork_sink, None);
+        let offset_11_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_11.clone(), &offset_10_0.clone(), 12, None, &mut (*context).fork_sink, None);
+        let offset_19_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_19_12.clone(), &offset_11_0.clone(), 20, None, &mut (*context).fork_sink, None);
+        let offset_20_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_20.clone(), &offset_19_0.clone(), 21, None, &mut (*context).fork_sink, None);
+        let offset_32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&offset_20_0.clone(), 21, 32, None, &mut (*context).fork_sink, None);
+        let address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&(*state).pc.clone(), &offset_32.clone(), 32, None, &mut (*context).fork_sink, None);
+        let return_address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&(*state).pc.clone(), &(*context).scfia.new_bv_concrete(0b100, 32, None, &mut (*context).fork_sink, None), 32, None, &mut (*context).fork_sink, None);
+        let dst: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
+        _register_write_BV32(state, dst.clone(), return_address.clone(), context);
         (*state).pc = address.clone();
-    } else {
+    }
+    else {
         unimplemented!();
     }
 }
 
-pub unsafe fn extract_rd_32(
-    op: Rc<RefCell<ActiveValue>>,
-    _stdlib: *mut ScfiaStdlib,
-    _fork_sink: &mut Option<&mut ForkSink>,
-    _memory: &mut Memory32,
-    hints: &mut Option<SymbolicHints>,
-) -> Rc<RefCell<ActiveValue>> {
-    return BVSliceExpression::new(op.clone(), 11, 7, _stdlib.as_mut().unwrap(), _fork_sink);
+unsafe fn _extract_rd_32(op: ActiveValue<RV32iScfiaComposition>, context: *mut StepContext<RV32iScfiaComposition>) -> ActiveValue<RV32iScfiaComposition> {
+    return (*context).scfia.new_bv_slice(&op.clone(), 11, 7, None, &mut (*context).fork_sink, None);
 }
 
-pub unsafe fn extract_rs1_32(
-    op: Rc<RefCell<ActiveValue>>,
-    _stdlib: *mut ScfiaStdlib,
-    _fork_sink: &mut Option<&mut ForkSink>,
-    _memory: &mut Memory32,
-    hints: &mut Option<SymbolicHints>,
-) -> Rc<RefCell<ActiveValue>> {
-    return BVSliceExpression::new(op.clone(), 19, 15, _stdlib.as_mut().unwrap(), _fork_sink);
+unsafe fn _extract_rs1_32(op: ActiveValue<RV32iScfiaComposition>, context: *mut StepContext<RV32iScfiaComposition>) -> ActiveValue<RV32iScfiaComposition> {
+    return (*context).scfia.new_bv_slice(&op.clone(), 19, 15, None, &mut (*context).fork_sink, None);
 }
 
-pub unsafe fn extract_rs2_32(
-    op: Rc<RefCell<ActiveValue>>,
-    _stdlib: *mut ScfiaStdlib,
-    _fork_sink: &mut Option<&mut ForkSink>,
-    _memory: &mut Memory32,
-    hints: &mut Option<SymbolicHints>,
-) -> Rc<RefCell<ActiveValue>> {
-    return BVSliceExpression::new(op.clone(), 24, 20, _stdlib.as_mut().unwrap(), _fork_sink);
+unsafe fn _extract_rs2_32(op: ActiveValue<RV32iScfiaComposition>, context: *mut StepContext<RV32iScfiaComposition>) -> ActiveValue<RV32iScfiaComposition> {
+    return (*context).scfia.new_bv_slice(&op.clone(), 24, 20, None, &mut (*context).fork_sink, None);
 }
 
-pub unsafe fn progress_pc_4(
-    state: *mut SystemState,
-    _stdlib: *mut ScfiaStdlib,
-    _fork_sink: &mut Option<&mut ForkSink>,
-    _memory: &mut Memory32,
-    hints: &mut Option<SymbolicHints>,
-) {
-    let old_pc: Rc<RefCell<ActiveValue>> = (*state).pc.clone();
-    let new_pc: Rc<RefCell<ActiveValue>> = BVAddExpression::new(
-        old_pc.clone(),
-        BitVectorConcrete::new(0b100, 32, _stdlib.as_mut().unwrap(), _fork_sink),
-        _stdlib.as_mut().unwrap(),
-        _fork_sink,
-    );
+unsafe fn _progress_pc_4(state: *mut SystemState, context: *mut StepContext<RV32iScfiaComposition>) {
+    let old_pc: ActiveValue<RV32iScfiaComposition> = (*state).pc.clone();
+    let new_pc: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&old_pc.clone(), &(*context).scfia.new_bv_concrete(0b100, 32, None, &mut (*context).fork_sink, None), 32, None, &mut (*context).fork_sink, None);
     (*state).pc = new_pc.clone();
 }
 
-pub unsafe fn register_write_BV32(
-    state: *mut SystemState,
-    register_id: Rc<RefCell<ActiveValue>>,
-    value: Rc<RefCell<ActiveValue>>,
-    _stdlib: *mut ScfiaStdlib,
-    _fork_sink: &mut Option<&mut ForkSink>,
-    _memory: &mut Memory32,
-    hints: &mut Option<SymbolicHints>,
-) {
-    if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b0, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b1, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+unsafe fn _register_write_BV32(state: *mut SystemState, register_id: ActiveValue<RV32iScfiaComposition>, value: ActiveValue<RV32iScfiaComposition>, context: *mut StepContext<RV32iScfiaComposition>) {
+    if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b0, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b1, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         (*state).x1 = value.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b10, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b10, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         (*state).x2 = value.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b11, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b11, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         (*state).x3 = value.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b100, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b100, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         (*state).x4 = value.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b101, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b101, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         (*state).x5 = value.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b110, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b110, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         (*state).x6 = value.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b111, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b111, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         (*state).x7 = value.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b1000, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b1000, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         (*state).x8 = value.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b1001, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b1001, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         (*state).x9 = value.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b1010, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b1010, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         (*state).x10 = value.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b1011, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b1011, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         (*state).x11 = value.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b1100, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b1100, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         (*state).x12 = value.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b1101, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b1101, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         (*state).x13 = value.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b1110, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b1110, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         (*state).x14 = value.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b1111, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b1111, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         (*state).x15 = value.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b10000, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b10000, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         (*state).x16 = value.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b10001, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b10001, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         (*state).x17 = value.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b10010, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b10010, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         (*state).x18 = value.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b10011, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b10011, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         (*state).x19 = value.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b10100, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b10100, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         (*state).x20 = value.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b10101, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b10101, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         (*state).x21 = value.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b10110, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b10110, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         (*state).x22 = value.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b10111, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b10111, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         (*state).x23 = value.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b11000, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b11000, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         (*state).x24 = value.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b11001, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b11001, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         (*state).x25 = value.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b11010, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b11010, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         (*state).x26 = value.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b11011, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b11011, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         (*state).x27 = value.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b11100, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b11100, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         (*state).x28 = value.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b11101, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b11101, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         (*state).x29 = value.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b11110, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b11110, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         (*state).x30 = value.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b11111, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b11111, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         (*state).x31 = value.clone();
-    } else {
+    }
+    else {
         unimplemented!();
     }
 }
 
-pub unsafe fn register_read_BV32(
-    state: *mut SystemState,
-    register_id: Rc<RefCell<ActiveValue>>,
-    _stdlib: *mut ScfiaStdlib,
-    _fork_sink: &mut Option<&mut ForkSink>,
-    _memory: &mut Memory32,
-    hints: &mut Option<SymbolicHints>,
-) -> Rc<RefCell<ActiveValue>> {
-    if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b0, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
-        return BitVectorConcrete::new(0b0, 32, _stdlib.as_mut().unwrap(), _fork_sink);
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b1, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+unsafe fn _register_read_BV32(state: *mut SystemState, register_id: ActiveValue<RV32iScfiaComposition>, context: *mut StepContext<RV32iScfiaComposition>) -> ActiveValue<RV32iScfiaComposition> {
+    if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b0, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+        return (*context).scfia.new_bv_concrete(0b0, 32, None, &mut (*context).fork_sink, None);
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b1, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         return (*state).x1.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b10, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b10, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         return (*state).x2.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b11, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b11, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         return (*state).x3.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b100, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b100, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         return (*state).x4.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b101, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b101, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         return (*state).x5.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b110, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b110, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         return (*state).x6.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b111, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b111, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         return (*state).x7.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b1000, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b1000, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         return (*state).x8.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b1001, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b1001, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         return (*state).x9.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b1010, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b1010, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         return (*state).x10.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b1011, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b1011, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         return (*state).x11.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b1100, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b1100, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         return (*state).x12.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b1101, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b1101, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         return (*state).x13.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b1110, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b1110, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         return (*state).x14.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b1111, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b1111, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         return (*state).x15.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b10000, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b10000, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         return (*state).x16.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b10001, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b10001, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         return (*state).x17.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b10010, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b10010, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         return (*state).x18.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b10011, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b10011, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         return (*state).x19.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b10100, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b10100, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         return (*state).x20.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b10101, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b10101, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         return (*state).x21.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b10110, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b10110, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         return (*state).x22.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b10111, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b10111, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         return (*state).x23.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b11000, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b11000, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         return (*state).x24.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b11001, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b11001, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         return (*state).x25.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b11010, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b11010, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         return (*state).x26.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b11011, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b11011, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         return (*state).x27.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b11100, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b11100, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         return (*state).x28.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b11101, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b11101, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         return (*state).x29.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b11110, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b11110, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         return (*state).x30.clone();
-    } else if _stdlib.as_mut().unwrap().do_condition(
-        BoolEqExpression::new(
-            register_id.clone(),
-            BitVectorConcrete::new(0b11111, 5, _stdlib.as_mut().unwrap(), _fork_sink),
-            _stdlib.as_mut().unwrap(),
-            _fork_sink,
-        ),
-        _fork_sink,
-    ) {
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&register_id.clone(), &(*context).scfia.new_bv_concrete(0b11111, 5, None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         return (*state).x31.clone();
-    } else {
+    }
+    else {
         unimplemented!();
     }
 }
 
-pub unsafe fn execute_add32(
-    state: *mut SystemState,
-    destination_id: Rc<RefCell<ActiveValue>>,
-    source1_id: Rc<RefCell<ActiveValue>>,
-    source2_id: Rc<RefCell<ActiveValue>>,
-    _stdlib: *mut ScfiaStdlib,
-    _fork_sink: &mut Option<&mut ForkSink>,
-    _memory: &mut Memory32,
-    hints: &mut Option<SymbolicHints>,
-) {
-    let s1: Rc<RefCell<ActiveValue>> = register_read_BV32(state, source1_id.clone(), _stdlib, _fork_sink, _memory, hints);
-    let s2: Rc<RefCell<ActiveValue>> = register_read_BV32(state, source2_id.clone(), _stdlib, _fork_sink, _memory, hints);
-    let sum: Rc<RefCell<ActiveValue>> = BVAddExpression::new(s1.clone(), s2.clone(), _stdlib.as_mut().unwrap(), _fork_sink);
-    register_write_BV32(state, destination_id.clone(), sum.clone(), _stdlib, _fork_sink, _memory, hints);
-}
-
-impl RV32iSystemState {
-    pub fn step(&mut self, mut hints: Option<SymbolicHints>) {
-        unsafe {
-            println!("RV32iSystemState::step {:?}", self.system_state.pc);
-            step(&mut self.system_state, &mut self.stdlib, &mut None, &mut self.memory, &mut hints);
-        }
-    }
-
-    pub fn clone(&self) -> RV32iSystemState {
-        let cloned_stdlib = ScfiaStdlib::new_with_next_id(self.stdlib.id.clone(), self.stdlib.next_symbol_id);
-        let mut cloned_active_values = BTreeMap::new();
-        let mut cloned_retired_values = BTreeMap::new();
-        self.clone_to_stdlib(cloned_stdlib, &mut cloned_active_values, &mut cloned_retired_values)
-    }
-
-    pub fn step_forking(self) -> Vec<RV32iSystemState> {
-        unsafe {
-            // println!("{} stepping {:?} (forking)", self.stdlib.id, self.system_state.pc);
-            let mut successors: Vec<RV32iSystemState> = vec![];
-            let mut candidates: Vec<RV32iSystemState> = vec![];
-
-            // Move self into candidate list
-            candidates.push(self);
-
-            while let Some(mut current) = candidates.pop() {
-                // Clone candidate as base
-                let cloned_stdlib_id = format!("{}_{}", current.stdlib.id.clone(), current.stdlib.get_clone_id());
-                // println!("{} cloning {} as base", current.stdlib.id, cloned_stdlib_id);
-                let cloned_stdlib = ScfiaStdlib::new_with_next_id(cloned_stdlib_id, current.stdlib.next_symbol_id);
-                let mut cloned_active_values = BTreeMap::new();
-                let mut cloned_retired_values = BTreeMap::new();
-                let cloned_current = current.clone_to_stdlib(cloned_stdlib, &mut cloned_active_values, &mut cloned_retired_values);
-
-                // println!("{} forkstepping with a0={:?} ", current.stdlib.id, current.system_state.x10);
-                let mut fork_sink = ForkSink::new(cloned_current);
-                step(
-                    &mut current.system_state,
-                    &mut current.stdlib,
-                    &mut Some(&mut fork_sink),
-                    &mut current.memory,
-                    &mut None,
-                );
-
-                // Convert forks to candidates
-                while let Some(fork) = fork_sink.forks.pop() {
-                    candidates.push(fork);
-                }
-
-                successors.push(current)
-            }
-
-            successors
-        }
-    }
-
-    fn clone_to_stdlib(
-        &self,
-        mut cloned_stdlib: ScfiaStdlib,
-        cloned_active_values: &mut BTreeMap<u64, Rc<RefCell<ActiveValue>>>,
-        cloned_retired_values: &mut BTreeMap<u64, Rc<RefCell<RetiredValue>>>,
-    ) -> RV32iSystemState {
-        let cloned_memory = self.memory.clone_to_stdlib(cloned_active_values, cloned_retired_values, &mut cloned_stdlib);
-
-        RV32iSystemState {
-            system_state: SystemState {
-                x0: self
-                    .system_state
-                    .x0
-                    .try_borrow()
-                    .unwrap()
-                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, &mut cloned_stdlib),
-                x1: self
-                    .system_state
-                    .x1
-                    .try_borrow()
-                    .unwrap()
-                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, &mut cloned_stdlib),
-                x2: self
-                    .system_state
-                    .x2
-                    .try_borrow()
-                    .unwrap()
-                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, &mut cloned_stdlib),
-                x3: self
-                    .system_state
-                    .x3
-                    .try_borrow()
-                    .unwrap()
-                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, &mut cloned_stdlib),
-                x4: self
-                    .system_state
-                    .x4
-                    .try_borrow()
-                    .unwrap()
-                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, &mut cloned_stdlib),
-                x5: self
-                    .system_state
-                    .x5
-                    .try_borrow()
-                    .unwrap()
-                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, &mut cloned_stdlib),
-                x6: self
-                    .system_state
-                    .x6
-                    .try_borrow()
-                    .unwrap()
-                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, &mut cloned_stdlib),
-                x7: self
-                    .system_state
-                    .x7
-                    .try_borrow()
-                    .unwrap()
-                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, &mut cloned_stdlib),
-                x8: self
-                    .system_state
-                    .x8
-                    .try_borrow()
-                    .unwrap()
-                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, &mut cloned_stdlib),
-                x9: self
-                    .system_state
-                    .x9
-                    .try_borrow()
-                    .unwrap()
-                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, &mut cloned_stdlib),
-                x10: self
-                    .system_state
-                    .x10
-                    .try_borrow()
-                    .unwrap()
-                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, &mut cloned_stdlib),
-                x11: self
-                    .system_state
-                    .x11
-                    .try_borrow()
-                    .unwrap()
-                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, &mut cloned_stdlib),
-                x12: self
-                    .system_state
-                    .x12
-                    .try_borrow()
-                    .unwrap()
-                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, &mut cloned_stdlib),
-                x13: self
-                    .system_state
-                    .x13
-                    .try_borrow()
-                    .unwrap()
-                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, &mut cloned_stdlib),
-                x14: self
-                    .system_state
-                    .x14
-                    .try_borrow()
-                    .unwrap()
-                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, &mut cloned_stdlib),
-                x15: self
-                    .system_state
-                    .x15
-                    .try_borrow()
-                    .unwrap()
-                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, &mut cloned_stdlib),
-                x16: self
-                    .system_state
-                    .x16
-                    .try_borrow()
-                    .unwrap()
-                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, &mut cloned_stdlib),
-                x17: self
-                    .system_state
-                    .x17
-                    .try_borrow()
-                    .unwrap()
-                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, &mut cloned_stdlib),
-                x18: self
-                    .system_state
-                    .x18
-                    .try_borrow()
-                    .unwrap()
-                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, &mut cloned_stdlib),
-                x19: self
-                    .system_state
-                    .x19
-                    .try_borrow()
-                    .unwrap()
-                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, &mut cloned_stdlib),
-                x20: self
-                    .system_state
-                    .x20
-                    .try_borrow()
-                    .unwrap()
-                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, &mut cloned_stdlib),
-                x21: self
-                    .system_state
-                    .x21
-                    .try_borrow()
-                    .unwrap()
-                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, &mut cloned_stdlib),
-                x22: self
-                    .system_state
-                    .x22
-                    .try_borrow()
-                    .unwrap()
-                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, &mut cloned_stdlib),
-                x23: self
-                    .system_state
-                    .x23
-                    .try_borrow()
-                    .unwrap()
-                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, &mut cloned_stdlib),
-                x24: self
-                    .system_state
-                    .x24
-                    .try_borrow()
-                    .unwrap()
-                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, &mut cloned_stdlib),
-                x25: self
-                    .system_state
-                    .x25
-                    .try_borrow()
-                    .unwrap()
-                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, &mut cloned_stdlib),
-                x26: self
-                    .system_state
-                    .x26
-                    .try_borrow()
-                    .unwrap()
-                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, &mut cloned_stdlib),
-                x27: self
-                    .system_state
-                    .x27
-                    .try_borrow()
-                    .unwrap()
-                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, &mut cloned_stdlib),
-                x28: self
-                    .system_state
-                    .x28
-                    .try_borrow()
-                    .unwrap()
-                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, &mut cloned_stdlib),
-                x29: self
-                    .system_state
-                    .x29
-                    .try_borrow()
-                    .unwrap()
-                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, &mut cloned_stdlib),
-                x30: self
-                    .system_state
-                    .x30
-                    .try_borrow()
-                    .unwrap()
-                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, &mut cloned_stdlib),
-                x31: self
-                    .system_state
-                    .x31
-                    .try_borrow()
-                    .unwrap()
-                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, &mut cloned_stdlib),
-                pc: self
-                    .system_state
-                    .pc
-                    .try_borrow()
-                    .unwrap()
-                    .clone_to_stdlib(cloned_active_values, cloned_retired_values, &mut cloned_stdlib),
-            },
-            memory: cloned_memory,
-            stdlib: cloned_stdlib,
-        }
-    }
+unsafe fn _execute_add32(state: *mut SystemState, destination_id: ActiveValue<RV32iScfiaComposition>, source1_id: ActiveValue<RV32iScfiaComposition>, source2_id: ActiveValue<RV32iScfiaComposition>, context: *mut StepContext<RV32iScfiaComposition>) {
+    let s1: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, source1_id.clone(), context);
+    let s2: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, source2_id.clone(), context);
+    let sum: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&s1.clone(), &s2.clone(), 32, None, &mut (*context).fork_sink, None);
+    _register_write_BV32(state, destination_id.clone(), sum.clone(), context);
 }
