@@ -1,5 +1,5 @@
 use std::{
-    cell::{OnceCell, Cell},
+    cell::{Cell, OnceCell},
     ptr,
     rc::{Rc, Weak},
     time::Instant,
@@ -8,10 +8,10 @@ use std::{
 use log::{debug, error, info, warn};
 use z3_sys::{
     Z3_ast, Z3_context, Z3_dec_ref, Z3_del_config, Z3_del_context, Z3_get_numeral_uint64, Z3_inc_ref, Z3_lbool, Z3_mk_bv_sort, Z3_mk_bvadd, Z3_mk_bvand,
-    Z3_mk_bvlshr, Z3_mk_bvmul, Z3_mk_bvor, Z3_mk_bvshl, Z3_mk_bvslt, Z3_mk_bvsub, Z3_mk_bvult, Z3_mk_bvurem, Z3_mk_bvxor, Z3_mk_concat, Z3_mk_config,
-    Z3_mk_context_rc, Z3_mk_eq, Z3_mk_extract, Z3_mk_false, Z3_mk_fresh_const, Z3_mk_not, Z3_mk_or, Z3_mk_sign_ext, Z3_mk_solver, Z3_mk_true,
+    Z3_mk_bvlshr, Z3_mk_bvmul, Z3_mk_bvor, Z3_mk_bvshl, Z3_mk_bvslt, Z3_mk_bvsub, Z3_mk_bvuge, Z3_mk_bvult, Z3_mk_bvurem, Z3_mk_bvxor, Z3_mk_concat,
+    Z3_mk_config, Z3_mk_context_rc, Z3_mk_eq, Z3_mk_extract, Z3_mk_false, Z3_mk_fresh_const, Z3_mk_not, Z3_mk_or, Z3_mk_sign_ext, Z3_mk_solver, Z3_mk_true,
     Z3_mk_unsigned_int64, Z3_model_eval, Z3_solver, Z3_solver_assert, Z3_solver_check, Z3_solver_check_assumptions, Z3_solver_get_model, Z3_solver_inc_ref,
-    Z3_L_FALSE, Z3_L_TRUE, Z3_mk_bvuge, Z3_string,
+    Z3_string, Z3_L_FALSE, Z3_L_TRUE,
 };
 
 use crate::{
@@ -481,7 +481,8 @@ mod tests {
             let b1 = z3.new_bool_concrete(true);
             assert_eq!(z3.ast_refs.get(), 1);
             {
-                let _b2 = b1.clone();
+                let b2 = b1.clone();
+                assert!(Rc::ptr_eq(&b2.z3.upgrade().unwrap(), &b1.z3.upgrade().unwrap()));
                 assert_eq!(z3.ast_refs.get(), 2);
             }
             assert_eq!(z3.ast_refs.get(), 1);

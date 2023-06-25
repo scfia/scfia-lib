@@ -1,4 +1,1 @@
 max_width = 160
-ignore = [
-    "src/models/",
-]

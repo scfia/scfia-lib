@@ -29,7 +29,12 @@ pub struct StepContext<'a> {
 fn step_until(rv32i_system_state: &mut RV32i, address: u64, begin: &Instant) {
     while rv32i_system_state.state.pc.to_u64() != address {
         assert!(rv32i_system_state.state.pc.to_u64() != 0x508);
-        debug!("({}ms) Executing {:#x} ({} asts)", begin.elapsed().as_millis(), rv32i_system_state.state.pc.to_u64(), rv32i_system_state.scfia.z3.ast_refs.get());
+        debug!(
+            "({}ms) Executing {:#x} ({} asts)",
+            begin.elapsed().as_millis(),
+            rv32i_system_state.state.pc.to_u64(),
+            rv32i_system_state.scfia.z3.ast_refs.get()
+        );
         rv32i_system_state.step(None);
     }
 }
@@ -37,10 +42,18 @@ fn step_until(rv32i_system_state: &mut RV32i, address: u64, begin: &Instant) {
 fn step_until_hinted(rv32i_system_state: &mut RV32i, address: u64, begin: &Instant, context: &StepContext) {
     let mut pc = rv32i_system_state.state.pc.to_u64();
     while pc != address {
-        debug!("({}ms) Executing {:#x} ({} asts)", begin.elapsed().as_millis(), pc, rv32i_system_state.scfia.z3.ast_refs.get());
+        debug!(
+            "({}ms) Executing {:#x} ({} asts)",
+            begin.elapsed().as_millis(),
+            pc,
+            rv32i_system_state.scfia.z3.ast_refs.get()
+        );
         if pc == 0x72c {
             unsafe {
-                let ptr = Z3_ast_to_string(rv32i_system_state.scfia.z3.context, rv32i_system_state.state.x10.try_borrow().unwrap().z3_ast.ast);
+                let ptr = Z3_ast_to_string(
+                    rv32i_system_state.scfia.z3.context,
+                    rv32i_system_state.state.x10.try_borrow().unwrap().z3_ast.ast,
+                );
                 let str = CStr::from_ptr(ptr);
                 info!("Z3_ast_to_string={}", str.to_str().unwrap());
                 rv32i_system_state.debug();

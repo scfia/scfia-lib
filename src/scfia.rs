@@ -14,24 +14,22 @@ use crate::values::active_value::ActiveValue;
 use crate::values::active_value::ActiveValueInner;
 use crate::values::active_value::ValueComment;
 use crate::values::bool_concrete::BoolConcrete;
-use crate::values::bool_eq_expression::BoolEqExpression;
-use crate::values::bool_not_expresssion::BoolNotExpression;
-use crate::values::bool_signed_less_than_expression::BoolSignedLessThanExpression;
-use crate::values::bool_unsigned_less_than_expression::BoolUnsignedLessThanExpression;
-use crate::values::bv_add_expression::BVAddExpression;
-use crate::values::bv_and_expression::BVAndExpression;
-use crate::values::bv_concat_expression::BVConcatExpression;
-use crate::values::bv_concrete::BVConcrete;
-use crate::GenericForkSink;
-use crate::ScfiaComposition;
 use crate::values::bool_concrete::RetiredBoolConcrete;
+use crate::values::bool_eq_expression::BoolEqExpression;
 use crate::values::bool_eq_expression::RetiredBoolEqExpression;
+use crate::values::bool_not_expresssion::BoolNotExpression;
 use crate::values::bool_not_expresssion::RetiredBoolNotExpression;
+use crate::values::bool_signed_less_than_expression::BoolSignedLessThanExpression;
 use crate::values::bool_signed_less_than_expression::RetiredBoolSignedLessThanExpression;
+use crate::values::bool_unsigned_less_than_expression::BoolUnsignedLessThanExpression;
 use crate::values::bool_unsigned_less_than_expression::RetiredBoolUnsignedLessThanExpression;
+use crate::values::bv_add_expression::BVAddExpression;
 use crate::values::bv_add_expression::RetiredBVAddExpression;
+use crate::values::bv_and_expression::BVAndExpression;
 use crate::values::bv_and_expression::RetiredBVAndExpression;
+use crate::values::bv_concat_expression::BVConcatExpression;
 use crate::values::bv_concat_expression::RetiredBVConcatExpression;
+use crate::values::bv_concrete::BVConcrete;
 use crate::values::bv_concrete::RetiredBVConcrete;
 use crate::values::bv_multiply_expression::BVMultiplyExpression;
 use crate::values::bv_multiply_expression::RetiredBVMultiplyExpression;
@@ -57,6 +55,8 @@ use crate::values::retired_value::RetiredValue;
 use crate::values::retired_value::RetiredValueInner;
 use crate::z3_handle::Z3Ast;
 use crate::z3_handle::Z3Handle;
+use crate::GenericForkSink;
+use crate::ScfiaComposition;
 
 pub struct Scfia<SC: ScfiaComposition> {
     pub z3: Rc<Z3Handle<SC>>,
@@ -942,7 +942,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
 
 #[cfg(test)]
 mod tests {
-    use std::{rc::Rc, collections::BTreeMap};
+    use std::{collections::BTreeMap, rc::Rc};
 
     use crate::{models::riscv::rv32i::RV32iScfiaComposition, scfia::Scfia};
 
@@ -966,8 +966,14 @@ mod tests {
         let cloned_scfia: Rc<Scfia<RV32iScfiaComposition>> = Scfia::new(Some(scfia.next_symbol_id.get()));
         let mut cloned_actives = BTreeMap::new();
         let mut cloned_inactives = BTreeMap::new();
-        let _cloned_add = and.try_borrow().unwrap().clone_to_stdlib(&cloned_scfia, &mut cloned_actives, &mut cloned_inactives);
-        let _cloned_s5 = s5.try_borrow().unwrap().clone_to_stdlib(&cloned_scfia, &mut cloned_actives, &mut cloned_inactives);
+        let _cloned_add = and
+            .try_borrow()
+            .unwrap()
+            .clone_to_stdlib(&cloned_scfia, &mut cloned_actives, &mut cloned_inactives);
+        let _cloned_s5 = s5
+            .try_borrow()
+            .unwrap()
+            .clone_to_stdlib(&cloned_scfia, &mut cloned_actives, &mut cloned_inactives);
         assert_eq!(cloned_scfia.z3.ast_refs.get(), 6);
     }
 }
