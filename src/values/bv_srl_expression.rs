@@ -2,7 +2,7 @@ use std::{cell::RefCell, fmt::Debug, marker::PhantomData, rc::Weak};
 
 use crate::ScfiaComposition;
 
-use super::active_value::{ActiveValue, ActiveValueInner};
+use super::{active_value::{ActiveValue, ActiveValueExpression}, retired_value::ParentWeakReference};
 
 #[derive(Debug)]
 pub struct BVSrlExpression<SC: ScfiaComposition> {
@@ -14,10 +14,8 @@ pub struct BVSrlExpression<SC: ScfiaComposition> {
 
 #[derive(Debug)]
 pub struct RetiredBVSrlExpression<SC: ScfiaComposition> {
-    pub s1: Weak<RefCell<ActiveValueInner<SC>>>,
-    pub s1_id: u64,
-    pub s2: Weak<RefCell<ActiveValueInner<SC>>>,
-    pub s2_id: u64,
+    pub s1: ParentWeakReference<SC>,
+    pub s2: ParentWeakReference<SC>,
     pub width: u32,
     pub shamt: u32,
     pub phantom: PhantomData<SC>,

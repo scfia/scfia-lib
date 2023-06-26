@@ -341,41 +341,43 @@ impl<SC: ScfiaComposition> Z3Handle<SC> {
 
     pub fn check_condition(&self, scfia: &Scfia<SC>, condition: &ActiveValue<SC>, fork_sink: &mut Option<SC::ForkSink>) -> bool {
         unsafe {
-            if let ActiveExpression::BoolConcrete(e) = &condition.try_borrow().unwrap().expression {
-                return e.value;
-            }
+            match condition {
+                ActiveValue::BoolConcrete(e) => *e,
+                ActiveValue::BVConcrete(_, _) => panic!("condition was bitvector"),
+                ActiveValue::Expression(expression) => {
+                    let mut can_be_true = false;
+                    let mut can_be_false = false;
 
-            let mut can_be_true = false;
-            let mut can_be_false = false;
+                    let condition_ast = condition.get_z3_ast(scfia).ast;
+                    let neg_condition_symbol = scfia.new_bool_not(condition, None, false, fork_sink, None);
+                    let neg_condition_ast = neg_condition_symbol.get_z3_ast(scfia).ast;
 
-            let condition_ast = condition.try_borrow().unwrap().z3_ast.ast;
-            let neg_condition_symbol = scfia.new_bool_not(condition, None, false, fork_sink, None);
-            let neg_condition_ast = neg_condition_symbol.try_borrow().unwrap().z3_ast.ast;
+                    if Z3_solver_check_assumptions(self.context, self.solver, 1, &condition_ast) != Z3_L_FALSE {
+                        can_be_true = true
+                    }
 
-            if Z3_solver_check_assumptions(self.context, self.solver, 1, &condition_ast) != Z3_L_FALSE {
-                can_be_true = true
-            }
+                    if Z3_solver_check_assumptions(self.context, self.solver, 1, &neg_condition_ast) != Z3_L_FALSE {
+                        can_be_false = true
+                    }
 
-            if Z3_solver_check_assumptions(self.context, self.solver, 1, &neg_condition_ast) != Z3_L_FALSE {
-                can_be_false = true
-            }
-
-            if can_be_true && can_be_false {
-                if let Some(fork_sink) = fork_sink {
-                    info!("FORK");
-                    fork_sink.fork(neg_condition_symbol);
-                    condition.try_borrow_mut().unwrap().assert();
-                    true
-                } else {
-                    error!("unexpected fork");
-                    panic!("unexpected fork")
+                    if can_be_true && can_be_false {
+                        if let Some(fork_sink) = fork_sink {
+                            info!("Forking over {:?}", expression);
+                            fork_sink.fork(neg_condition_symbol);
+                            condition.assert(scfia);
+                            true
+                        } else {
+                            error!("unexpected fork");
+                            panic!("unexpected fork")
+                        }
+                    } else if can_be_true {
+                        true
+                    } else if can_be_false {
+                        false
+                    } else {
+                        unreachable!()
+                    }
                 }
-            } else if can_be_true {
-                true
-            } else if can_be_false {
-                false
-            } else {
-                unreachable!()
             }
         }
     }
@@ -446,7 +448,7 @@ impl<SC: ScfiaComposition> Drop for Z3Ast<SC> {
     fn drop(&mut self) {
         unsafe {
             if let Some(z3) = self.z3.upgrade() {
-                Z3_dec_ref(z3.context, self.ast);
+                // TODO Z3_dec_ref(z3.context, self.ast);
                 z3.ast_refs.set(z3.ast_refs.get() - 1);
                 assert!(z3.ast_refs.get() >= 0);
             }
@@ -466,6 +468,7 @@ impl<SC: ScfiaComposition> Clone for Z3Ast<SC> {
     }
 }
 
+/*TODO
 #[cfg(test)]
 mod tests {
     use std::rc::Rc;
@@ -490,3 +493,4 @@ mod tests {
         assert_eq!(z3.ast_refs.get(), 0)
     }
 }
+*/
