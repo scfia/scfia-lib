@@ -6,6 +6,7 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 use std::rc::Weak;
 
+use log::debug;
 use log::error;
 use log::trace;
 
@@ -27,6 +28,7 @@ use crate::values::bv_and_expression::BVAndExpression;
 use crate::values::bv_and_expression::RetiredBVAndExpression;
 use crate::values::bv_concat_expression::BVConcatExpression;
 use crate::values::bv_concat_expression::RetiredBVConcatExpression;
+use crate::values::bv_concrete_expression::BVConcreteExpression;
 use crate::values::bv_concrete_expression::RetiredBVConcreteExpression;
 use crate::values::bv_multiply_expression::BVMultiplyExpression;
 use crate::values::bv_multiply_expression::RetiredBVMultiplyExpression;
@@ -75,9 +77,9 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         scfia
     }
 
-    pub fn new_bool_concrete(&self, value: bool, id: Option<u64>, fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
-        let id = if let Some(id) = id { id } else { self.next_symbol_id() };
-        let z3_ast = self.z3.new_bool_concrete(value);
+    pub fn new_bool_concrete(&self, value: bool, id: Option<u64>, _fork_sink: &mut Option<SC::ForkSink>) -> ActiveValue<SC> {
+        let _id = if let Some(id) = id { id } else { self.next_symbol_id() };
+        let _z3_ast = self.z3.new_bool_concrete(value);
         ActiveValue::BoolConcrete(value)
     }
 
@@ -90,18 +92,20 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         fork_sink: &mut Option<SC::ForkSink>,
         comment: Option<ValueComment>,
     ) -> ActiveValue<SC> {
-        if let ActiveValue::BVConcrete(s1_value, s1_width) = s1 {
-            if let ActiveValue::BVConcrete(s2_value, s2_width) = s2 {
+        if let ActiveValue::BVConcrete(s1_value, _) = s1 {
+            if let ActiveValue::BVConcrete(s2_value, _) = s2 {
                 return self.new_bool_concrete(s1_value == s2_value, None, fork_sink)
             }
         };
 
+        let s1 = s1.into_z3_value(self, fork_sink);
+        let s2 = s2.into_z3_value(self, fork_sink);
         let id = if let Some(id) = id { id } else { self.next_symbol_id() };
-        let z3_ast = self.z3.new_eq(&s1.get_z3_ast(self), &s2.get_z3_ast(self), is_assert);
+        let z3_ast = self.z3.new_eq(&s1.get_z3_ast(), &s2.get_z3_ast(), is_assert);
         self.new_active(
             ActiveExpression::BoolEqExpression(BoolEqExpression {
-                s1: s1.clone(),
-                s2: s2.clone(),
+                s1: s1.get_z3_value(),
+                s2: s2.get_z3_value(),
                 is_assert,
             }),
             z3_ast,
@@ -123,10 +127,12 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             return self.new_bool_concrete(!value_s1, None, fork_sink)
         };
 
+        let s1 = s1.into_z3_value(self, fork_sink);
+        debug!("new_bool_not over {:?}", s1);
         let id = if let Some(id) = id { id } else { self.next_symbol_id() };
-        let z3_ast = self.z3.new_not(&s1.get_z3_ast(self), is_assert);
+        let z3_ast = self.z3.new_not(&s1.get_z3_ast(), is_assert);
         self.new_active(
-            ActiveExpression::BoolNotExpression(BoolNotExpression { s1: s1.clone(), is_assert }),
+            ActiveExpression::BoolNotExpression(BoolNotExpression { s1: s1.get_z3_value(), is_assert }),
             z3_ast,
             id,
             fork_sink,
@@ -143,19 +149,21 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         fork_sink: &mut Option<SC::ForkSink>,
         comment: Option<ValueComment>,
     ) -> ActiveValue<SC> {
-        if let ActiveValue::BVConcrete(s1_value, s1_width) = s1 {
-            if let ActiveValue::BVConcrete(s2_value, s2_width) = s2 {
+        if let ActiveValue::BVConcrete(s1_value, _s1_width) = s1 {
+            if let ActiveValue::BVConcrete(s2_value, _s2_width) = s2 {
                 let slt = (*s1_value as i64) < (*s2_value as i64); // TODO this probably breaks for 64bit BVs
                 return self.new_bool_concrete(slt, None, fork_sink)
             }
         };
 
+        let s1 = s1.into_z3_value(self, fork_sink);
+        let s2 = s2.into_z3_value(self, fork_sink);
         let id = if let Some(id) = id { id } else { self.next_symbol_id() };
-        let z3_ast = self.z3.new_bvslt(&s1.get_z3_ast(self), &s2.get_z3_ast(self), is_assert);
+        let z3_ast = self.z3.new_bvslt(&s1.get_z3_ast(), &s2.get_z3_ast(), is_assert);
         self.new_active(
             ActiveExpression::BoolSignedLessThanExpression(BoolSignedLessThanExpression {
-                s1: s1.clone(),
-                s2: s2.clone(),
+                s1: s1.get_z3_value(),
+                s2: s2.get_z3_value(),
                 is_assert,
             }),
             z3_ast,
@@ -174,19 +182,21 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         fork_sink: &mut Option<SC::ForkSink>,
         comment: Option<ValueComment>,
     ) -> ActiveValue<SC> {
-        if let ActiveValue::BVConcrete(s1_value, s1_width) = s1 {
-            if let ActiveValue::BVConcrete(s2_value, s2_width) = s2 {
+        if let ActiveValue::BVConcrete(s1_value, _s1_width) = s1 {
+            if let ActiveValue::BVConcrete(s2_value, _s2_width) = s2 {
                 let ult = s1_value < s2_value;
                 return self.new_bool_concrete(ult, None, fork_sink)
             }
         };
 
+        let s1 = s1.into_z3_value(self, fork_sink);
+        let s2 = s2.into_z3_value(self, fork_sink);
         let id = if let Some(id) = id { id } else { self.next_symbol_id() };
-        let z3_ast = self.z3.new_bvult(&s1.get_z3_ast(self), &s2.get_z3_ast(self), is_assert);
+        let z3_ast = self.z3.new_bvult(&s1.get_z3_ast(), &s2.get_z3_ast(), is_assert);
         self.new_active(
             ActiveExpression::BoolUnsignedLessThanExpression(BoolUnsignedLessThanExpression {
-                s1: s1.clone(),
-                s2: s2.clone(),
+                s1: s1.get_z3_value(),
+                s2: s2.get_z3_value(),
                 is_assert,
             }),
             z3_ast,
@@ -205,7 +215,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         fork_sink: &mut Option<SC::ForkSink>,
         comment: Option<ValueComment>,
     ) -> ActiveValue<SC> {
-        if let ActiveValue::BVConcrete(s1_value, s1_width) = s1 {
+        if let ActiveValue::BVConcrete(s1_value, _s1_width) = s1 {
             if let ActiveValue::BVConcrete(s2_value, s2_width) = s2 {
                 let one: u64 = 1;
                 let mask = one.rotate_left(*s2_width).overflowing_sub(1).0; // TODO is rotate_left the right choice here?
@@ -215,12 +225,14 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             }
         };
 
+        let s1 = s1.into_z3_value(self, fork_sink);
+        let s2 = s2.into_z3_value(self, fork_sink);
         let id = if let Some(id) = id { id } else { self.next_symbol_id() };
-        let z3_ast = self.z3.new_bvadd(&s1.get_z3_ast(self), &s2.get_z3_ast(self));
+        let z3_ast = self.z3.new_bvadd(&s1.get_z3_ast(), &s2.get_z3_ast());
         self.new_active(
             ActiveExpression::BVAddExpression(BVAddExpression {
-                s1: s1.clone(),
-                s2: s2.clone(),
+                s1: s1.get_z3_value(),
+                s2: s2.get_z3_value(),
                 width,
             }),
             z3_ast,
@@ -239,19 +251,21 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         fork_sink: &mut Option<SC::ForkSink>,
         comment: Option<ValueComment>,
     ) -> ActiveValue<SC> {
-        if let ActiveValue::BVConcrete(s1_value, s1_width) = s1 {
-            if let ActiveValue::BVConcrete(s2_value, s2_width) = s2 {
+        if let ActiveValue::BVConcrete(s1_value, _s1_width) = s1 {
+            if let ActiveValue::BVConcrete(s2_value, _s2_width) = s2 {
                 let value = s1_value & s2_value;
                 return ActiveValue::BVConcrete(value, width)
             }
         };
 
+        let s1 = s1.into_z3_value(self, fork_sink);
+        let s2 = s2.into_z3_value(self, fork_sink);
         let id = if let Some(id) = id { id } else { self.next_symbol_id() };
-        let z3_ast = self.z3.new_bvand(&s1.get_z3_ast(self), &s2.get_z3_ast(self));
+        let z3_ast = self.z3.new_bvand(&s1.get_z3_ast(), &s2.get_z3_ast());
         self.new_active(
             ActiveExpression::BVAndExpression(BVAndExpression {
-                s1: s1.clone(),
-                s2: s2.clone(),
+                s1: s1.get_z3_value(),
+                s2: s2.get_z3_value(),
                 width,
             }),
             z3_ast,
@@ -270,21 +284,50 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         fork_sink: &mut Option<SC::ForkSink>,
         comment: Option<ValueComment>,
     ) -> ActiveValue<SC> {
-        if let ActiveValue::BVConcrete(s1_value, s1_width) = s1 {
+        if let ActiveValue::BVConcrete(s1_value, _s1_width) = s1 {
             if let ActiveValue::BVConcrete(s2_value, s2_width) = s2 {
                 let e1_shifted = s1_value << s2_width;
                 let value = e1_shifted | s2_value;
                 return ActiveValue::BVConcrete(value, width)
             }
         };
-    
+
+        let s1 = s1.into_z3_value(self, fork_sink);
+        let s2 = s2.into_z3_value(self, fork_sink);
         let id = if let Some(id) = id { id } else { self.next_symbol_id() };
-        let z3_ast = self.z3.new_bvconcat(&s1.get_z3_ast(self), &s2.get_z3_ast(self));
+        let z3_ast = self.z3.new_bvconcat(&s1.get_z3_ast(), &s2.get_z3_ast());
         self.new_active(
             ActiveExpression::BVConcatExpression(BVConcatExpression {
-                s1: s1.clone(),
-                s2: s2.clone(),
+                s1: s1.get_z3_value(),
+                s2: s2.get_z3_value(),
                 width,
+            }),
+            z3_ast,
+            id,
+            fork_sink,
+            comment,
+        )
+    }
+
+    pub fn new_bv_concrete(&self, value: u64, width: u32) -> ActiveValue<SC> {
+        ActiveValue::BVConcrete(value, width)
+    }
+
+    pub fn new_bv_concrete_z3(
+        &self,
+        value: u64,
+        width: u32,
+        id: Option<u64>,
+        fork_sink: &mut Option<SC::ForkSink>,
+        comment: Option<ValueComment>,
+    ) -> ActiveValue<SC> {
+        let id = if let Some(id) = id { id } else { self.next_symbol_id() };
+        let z3_ast = self.z3.new_bv_concrete(value, width);
+        self.new_active(
+            ActiveExpression::BVConcreteExpression(BVConcreteExpression {
+                value,
+                width,
+                phantom: PhantomData,
             }),
             z3_ast,
             id,
@@ -302,7 +345,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         fork_sink: &mut Option<SC::ForkSink>,
         comment: Option<ValueComment>,
     ) -> ActiveValue<SC> {
-        if let ActiveValue::BVConcrete(s1_value, s1_width) = s1 {
+        if let ActiveValue::BVConcrete(s1_value, _s1_width) = s1 {
             if let ActiveValue::BVConcrete(s2_value, s2_width) = s2 {
                 let one: u64 = 1;
                 let mask = one.rotate_left(*s2_width).overflowing_sub(1).0;
@@ -312,12 +355,14 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             }
         };
 
+        let s1 = s1.into_z3_value(self, fork_sink);
+        let s2 = s2.into_z3_value(self, fork_sink);
         let id = if let Some(id) = id { id } else { self.next_symbol_id() };
-        let z3_ast = self.z3.new_bvmul(&s1.get_z3_ast(self), &s2.get_z3_ast(self));
+        let z3_ast = self.z3.new_bvmul(&s1.get_z3_ast(), &s2.get_z3_ast());
         self.new_active(
             ActiveExpression::BVMultiplyExpression(BVMultiplyExpression {
                 s1: s1.get_z3_value(),
-                s2: s2.clone(),
+                s2: s2.get_z3_value(),
                 width,
             }),
             z3_ast,
@@ -336,19 +381,21 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         fork_sink: &mut Option<SC::ForkSink>,
         comment: Option<ValueComment>,
     ) -> ActiveValue<SC> {
-        if let ActiveValue::BVConcrete(s1_value, s1_width) = s1 {
-            if let ActiveValue::BVConcrete(s2_value, s2_width) = s2 {
+        if let ActiveValue::BVConcrete(s1_value, _s1_width) = s1 {
+            if let ActiveValue::BVConcrete(s2_value, _s2_width) = s2 {
                 let value = s1_value | s2_value;
                 return ActiveValue::BVConcrete(value, width)
             }
         };
 
+        let s1 = s1.into_z3_value(self, fork_sink);
+        let s2 = s2.into_z3_value(self, fork_sink);
         let id = if let Some(id) = id { id } else { self.next_symbol_id() };
-        let z3_ast = self.z3.new_bvor(&s1.get_z3_ast(self), &s2.get_z3_ast(self));
+        let z3_ast = self.z3.new_bvor(&s1.get_z3_ast(), &s2.get_z3_ast());
         self.new_active(
             ActiveExpression::BVOrExpression(BVOrExpression {
-                s1: s1.clone(),
-                s2: s2.clone(),
+                s1: s1.get_z3_value(),
+                s2: s2.get_z3_value(),
                 width,
             }),
             z3_ast,
@@ -375,11 +422,12 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             return ActiveValue::BVConcrete(value, output_width)
         };
 
+        let s1 = s1.into_z3_value(self, fork_sink);
         let id = if let Some(id) = id { id } else { self.next_symbol_id() };
-        let z3_ast = self.z3.new_sign_ext(output_width - input_width, &s1.get_z3_ast(self));
+        let z3_ast = self.z3.new_sign_ext(output_width - input_width, &s1.get_z3_ast());
         self.new_active(
             ActiveExpression::BVSignExtendExpression(BVSignExtendExpression {
-                s1: s1.clone(),
+                s1: s1.get_z3_value(),
                 width: output_width,
                 input_width,
             }),
@@ -400,7 +448,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         comment: Option<ValueComment>,
     ) -> ActiveValue<SC> {
         let width = high - low + 1;
-        if let ActiveValue::BVConcrete(s1_value, s1_width) = s1 {
+        if let ActiveValue::BVConcrete(s1_value, _s1_width) = s1 {
             // https://graphics.stanford.edu/~seander/bithacks.html#VariableSignExtend
             let shifted = s1_value >> low;
             let mask = (1 << width) - 1;
@@ -408,12 +456,13 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             return ActiveValue::BVConcrete(value, width)
         };
 
+        let s1 = s1.into_z3_value(self, fork_sink);
         let id = if let Some(id) = id { id } else { self.next_symbol_id() };
         let width = high - low + 1;
-        let z3_ast = self.z3.new_extract(high, low, &s1.get_z3_ast(self));
+        let z3_ast = self.z3.new_extract(high, low, &s1.get_z3_ast());
         self.new_active(
             ActiveExpression::BVSliceExpression(BVSliceExpression {
-                s1: s1.clone(),
+                s1: s1.get_z3_value(),
                 width,
                 high,
                 low,
@@ -435,7 +484,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         comment: Option<ValueComment>,
     ) -> ActiveValue<SC> {
         if let ActiveValue::BVConcrete(s1_value, s1_width) = s1 {
-            if let ActiveValue::BVConcrete(s2_value, s2_width) = s2 {
+            if let ActiveValue::BVConcrete(s2_value, _s2_width) = s2 {
                 let one: u64 = 1;
                 let mask = one.rotate_left(*s1_width).overflowing_sub(1).0;
                 let value = (s1_value << s2_value) & mask;
@@ -443,12 +492,14 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             }
         };
 
+        let s1 = s1.into_z3_value(self, fork_sink);
+        let s2 = s2.into_z3_value(self, fork_sink);
         let id = if let Some(id) = id { id } else { self.next_symbol_id() };
-        let z3_ast = self.z3.new_bvshl(&s1.get_z3_ast(self), &s2.get_z3_ast(self));
+        let z3_ast = self.z3.new_bvshl(&s1.get_z3_ast(), &s2.get_z3_ast());
         self.new_active(
             ActiveExpression::BVSllExpression(BVSllExpression {
-                s1: s1.clone(),
-                s2: s2.clone(),
+                s1: s1.get_z3_value(),
+                s2: s2.get_z3_value(),
                 width,
             }),
             z3_ast,
@@ -468,7 +519,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         comment: Option<ValueComment>,
     ) -> ActiveValue<SC> {
         if let ActiveValue::BVConcrete(s1_value, s1_width) = s1 {
-            if let ActiveValue::BVConcrete(s2_value, s2_width) = s2 {
+            if let ActiveValue::BVConcrete(s2_value, _s2_width) = s2 {
                 let one: u64 = 1;
                 let mask = one.rotate_left(*s1_width).overflowing_sub(1).0;
                 let value = (s1_value >> s2_value) & mask;
@@ -476,12 +527,14 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             }
         };
 
+        let s1 = s1.into_z3_value(self, fork_sink);
+        let s2 = s2.into_z3_value(self, fork_sink);
         let id = if let Some(id) = id { id } else { self.next_symbol_id() };
-        let z3_ast = self.z3.new_bvlshr(&s1.get_z3_ast(self), &s2.get_z3_ast(self));
+        let z3_ast = self.z3.new_bvlshr(&s1.get_z3_ast(), &s2.get_z3_ast());
         self.new_active(
             ActiveExpression::BVSllExpression(BVSllExpression {
-                s1: s1.clone(),
-                s2: s2.clone(),
+                s1: s1.get_z3_value(),
+                s2: s2.get_z3_value(),
                 width,
             }),
             z3_ast,
@@ -500,7 +553,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         fork_sink: &mut Option<SC::ForkSink>,
         comment: Option<ValueComment>,
     ) -> ActiveValue<SC> {
-        if let ActiveValue::BVConcrete(s1_value, s1_width) = s1 {
+        if let ActiveValue::BVConcrete(s1_value, _s1_width) = s1 {
             if let ActiveValue::BVConcrete(s2_value, s2_width) = s2 {
                 let one: u64 = 1;
                 let mask = one.rotate_left(*s2_width).overflowing_sub(1).0;
@@ -510,12 +563,14 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             }
         };
 
+        let s1 = s1.into_z3_value(self, fork_sink);
+        let s2 = s2.into_z3_value(self, fork_sink);
         let id = if let Some(id) = id { id } else { self.next_symbol_id() };
-        let z3_ast = self.z3.new_bvsub(&s1.get_z3_ast(self), &s2.get_z3_ast(self));
+        let z3_ast = self.z3.new_bvsub(&s1.get_z3_ast(), &s2.get_z3_ast());
         self.new_active(
             ActiveExpression::BVSubExpression(BVSubExpression {
-                s1: s1.clone(),
-                s2: s2.clone(),
+                s1: s1.get_z3_value(),
+                s2: s2.get_z3_value(),
                 width,
             }),
             z3_ast,
@@ -540,7 +595,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         fork_sink: &mut Option<SC::ForkSink>,
         comment: Option<ValueComment>,
     ) -> ActiveValue<SC> {
-        if let ActiveValue::BVConcrete(s1_value, s1_width) = s1 {
+        if let ActiveValue::BVConcrete(s1_value, _s1_width) = s1 {
             if let ActiveValue::BVConcrete(s2_value, s2_width) = s2 {
                 let one: u64 = 1;
                 let mask = one.rotate_left(*s2_width).overflowing_sub(1).0;
@@ -550,12 +605,14 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             }
         };
 
+        let s1 = s1.into_z3_value(self, fork_sink);
+        let s2 = s2.into_z3_value(self, fork_sink);
         let id = if let Some(id) = id { id } else { self.next_symbol_id() };
-        let z3_ast = self.z3.new_bvurem(&s1.get_z3_ast(self), &s2.get_z3_ast(self));
+        let z3_ast = self.z3.new_bvurem(&s1.get_z3_ast(), &s2.get_z3_ast());
         self.new_active(
             ActiveExpression::BVUnsignedRemainderExpression(BVUnsignedRemainderExpression {
-                s1: s1.clone(),
-                s2: s2.clone(),
+                s1: s1.get_z3_value(),
+                s2: s2.get_z3_value(),
                 width,
             }),
             z3_ast,
@@ -574,19 +631,21 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         fork_sink: &mut Option<SC::ForkSink>,
         comment: Option<ValueComment>,
     ) -> ActiveValue<SC> {
-        if let ActiveValue::BVConcrete(s1_value, s1_width) = s1 {
-            if let ActiveValue::BVConcrete(s2_value, s2_width) = s2 {
+        if let ActiveValue::BVConcrete(s1_value, _s1_width) = s1 {
+            if let ActiveValue::BVConcrete(s2_value, _s2_width) = s2 {
                 let value = s1_value ^ s2_value;
                 return ActiveValue::BVConcrete(value, width)
             }
         };
 
+        let s1 = s1.into_z3_value(self, fork_sink);
+        let s2 = s2.into_z3_value(self, fork_sink);
         let id = if let Some(id) = id { id } else { self.next_symbol_id() };
-        let z3_ast = self.z3.new_bvxor(&s1.get_z3_ast(self), &s2.get_z3_ast(self));
+        let z3_ast = self.z3.new_bvxor(&s1.get_z3_ast(), &s2.get_z3_ast());
         self.new_active(
             ActiveExpression::BVXorExpression(BVXorExpression {
-                s1: s1.clone(),
-                s2: s2.clone(),
+                s1: s1.get_z3_value(),
+                s2: s2.get_z3_value(),
                 width,
             }),
             z3_ast,
@@ -800,7 +859,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
     }
 
     pub fn monomorphize_active(&self, value: &ActiveValue<SC>, candidates: &mut Vec<u64>) {
-        self.z3.monomorphize(&value.get_z3_ast(self), candidates);
+        self.z3.monomorphize(&value.get_z3_ast(), candidates);
     }
 
     pub fn new_bv_constrained(&self, width: u32, align: u64, limit: u64) -> ActiveValue<SC> {
@@ -848,7 +907,7 @@ mod tests {
         let s4 = scfia.new_bv_multiply(&s3, &s3, 32, None, &mut None, None);
         let s5 = scfia.new_bool_eq(&s4, &s3, None, true, &mut None, None);
         {
-            let _s5 = s5.try_borrow().unwrap().get_z3_ast(self).clone();
+            let _s5 = s5.try_borrow().unwrap().get_z3_ast().clone();
         }
         assert_eq!(scfia.z3.ast_refs.get(), 5);
         let and = scfia.new_bv_and(&s1, &s2, 32, None, &mut None, None);

@@ -52,7 +52,7 @@ fn step_until_hinted(rv32i_system_state: &mut RV32i, address: u64, begin: &Insta
             unsafe {
                 let ptr = Z3_ast_to_string(
                     rv32i_system_state.scfia.z3.context,
-                    rv32i_system_state.state.x10.try_borrow().unwrap().z3_ast.ast,
+                    rv32i_system_state.state.x10.get_z3_ast().ast,
                 );
                 let str = CStr::from_ptr(ptr);
                 info!("Z3_ast_to_string={}", str.to_str().unwrap());
@@ -135,8 +135,8 @@ fn test_system_state_inner() {
 
                     for (i, b) in ph32.raw_data(&elf).iter().enumerate() {
                         memory.write(
-                            &scfia.new_bv_concrete(ph32.virtual_addr as u64 + i as u64, 8, None, &mut None, None),
-                            &scfia.new_bv_concrete(*b as u64, 8, None, &mut None, None),
+                            &scfia.new_bv_concrete(ph32.virtual_addr as u64 + i as u64, 8),
+                            &scfia.new_bv_concrete(*b as u64, 8),
                             8,
                             &scfia,
                             &mut None,
@@ -235,39 +235,39 @@ fn test_system_state_inner() {
 
     let mut rv32i_system_state = RV32i {
         state: rv32i::SystemState {
-            x0: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
-            x1: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
-            x2: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
-            x3: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
-            x4: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
-            x5: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
-            x6: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
-            x7: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
-            x8: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
-            x9: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
-            x10: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
-            x11: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
-            x12: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
-            x13: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
-            x14: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
-            x15: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
-            x16: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
-            x17: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
-            x18: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
-            x19: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
-            x20: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
-            x21: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
-            x22: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
-            x23: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
-            x24: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
-            x25: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
-            x26: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
-            x27: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
-            x28: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
-            x29: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
-            x30: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
-            x31: scfia.new_bv_concrete(0b0, 32, None, &mut None, None),
-            pc: scfia.new_bv_concrete(0x4f4, 32, None, &mut None, None),
+            x0: scfia.new_bv_concrete(0b0, 32),
+            x1: scfia.new_bv_concrete(0b0, 32),
+            x2: scfia.new_bv_concrete(0b0, 32),
+            x3: scfia.new_bv_concrete(0b0, 32),
+            x4: scfia.new_bv_concrete(0b0, 32),
+            x5: scfia.new_bv_concrete(0b0, 32),
+            x6: scfia.new_bv_concrete(0b0, 32),
+            x7: scfia.new_bv_concrete(0b0, 32),
+            x8: scfia.new_bv_concrete(0b0, 32),
+            x9: scfia.new_bv_concrete(0b0, 32),
+            x10: scfia.new_bv_concrete(0b0, 32),
+            x11: scfia.new_bv_concrete(0b0, 32),
+            x12: scfia.new_bv_concrete(0b0, 32),
+            x13: scfia.new_bv_concrete(0b0, 32),
+            x14: scfia.new_bv_concrete(0b0, 32),
+            x15: scfia.new_bv_concrete(0b0, 32),
+            x16: scfia.new_bv_concrete(0b0, 32),
+            x17: scfia.new_bv_concrete(0b0, 32),
+            x18: scfia.new_bv_concrete(0b0, 32),
+            x19: scfia.new_bv_concrete(0b0, 32),
+            x20: scfia.new_bv_concrete(0b0, 32),
+            x21: scfia.new_bv_concrete(0b0, 32),
+            x22: scfia.new_bv_concrete(0b0, 32),
+            x23: scfia.new_bv_concrete(0b0, 32),
+            x24: scfia.new_bv_concrete(0b0, 32),
+            x25: scfia.new_bv_concrete(0b0, 32),
+            x26: scfia.new_bv_concrete(0b0, 32),
+            x27: scfia.new_bv_concrete(0b0, 32),
+            x28: scfia.new_bv_concrete(0b0, 32),
+            x29: scfia.new_bv_concrete(0b0, 32),
+            x30: scfia.new_bv_concrete(0b0, 32),
+            x31: scfia.new_bv_concrete(0b0, 32),
+            pc: scfia.new_bv_concrete(0x4f4, 32),
         },
         memory,
         scfia,
@@ -454,7 +454,7 @@ fn test_system_state_inner() {
     let mut monomorphizing_candidates = vec![0x46005004];
     continuing.scfia.monomorphize_active(&continuing.state.x14, &mut monomorphizing_candidates);
     assert_eq!(monomorphizing_candidates.len(), 1);
-    continuing.state.x14 = continuing.scfia.new_bv_concrete(monomorphizing_candidates[0], 32, None, &mut None, None);
+    continuing.state.x14 = continuing.scfia.new_bv_concrete(monomorphizing_candidates[0], 32);
 
     info!("({}ms) Creating symbolic volatile memory regions", begin.elapsed().as_millis());
     let base_symbol = continuing.scfia.new_bv_constrained(32, 0xff, 0xffff0000);

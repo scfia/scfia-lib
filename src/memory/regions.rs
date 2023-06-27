@@ -39,8 +39,6 @@ impl<SC: ScfiaComposition> SymbolicVolatileMemoryRegion<SC> {
         SymbolicVolatileMemoryRegion {
             base_symbol: self
                 .base_symbol
-                .try_borrow()
-                .unwrap()
                 .clone_to_stdlib(cloned_scfia, cloned_actives, cloned_retired),
             length: self.length,
         }
@@ -133,7 +131,7 @@ impl<SC: ScfiaComposition> StableMemoryRegion<SC> {
             trace!("memcloning {:?}", value);
             clone.memory.insert(
                 *offset,
-                value.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_retired),
+                value.clone_to_stdlib(cloned_scfia, cloned_actives, cloned_retired),
             );
         }
 

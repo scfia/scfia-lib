@@ -16,7 +16,7 @@ use z3_sys::{
 
 use crate::{
     scfia::Scfia,
-    values::active_value::{ActiveExpression, ActiveValue},
+    values::active_value::{ActiveValue},
     GenericForkSink, ScfiaComposition,
 };
 
@@ -348,9 +348,10 @@ impl<SC: ScfiaComposition> Z3Handle<SC> {
                     let mut can_be_true = false;
                     let mut can_be_false = false;
 
-                    let condition_ast = condition.get_z3_ast(scfia).ast;
+                    let condition_ast = condition.get_z3_ast().ast;
+                    debug!("building neg_condition_symbol");
                     let neg_condition_symbol = scfia.new_bool_not(condition, None, false, fork_sink, None);
-                    let neg_condition_ast = neg_condition_symbol.get_z3_ast(scfia).ast;
+                    let neg_condition_ast = neg_condition_symbol.get_z3_ast().ast;
 
                     if Z3_solver_check_assumptions(self.context, self.solver, 1, &condition_ast) != Z3_L_FALSE {
                         can_be_true = true
@@ -364,6 +365,7 @@ impl<SC: ScfiaComposition> Z3Handle<SC> {
                         if let Some(fork_sink) = fork_sink {
                             info!("Forking over {:?}", expression);
                             fork_sink.fork(neg_condition_symbol);
+                            debug!("asserting condition in current branch");
                             condition.assert(scfia);
                             true
                         } else {
@@ -448,7 +450,7 @@ impl<SC: ScfiaComposition> Drop for Z3Ast<SC> {
     fn drop(&mut self) {
         unsafe {
             if let Some(z3) = self.z3.upgrade() {
-                // TODO Z3_dec_ref(z3.context, self.ast);
+                Z3_dec_ref(z3.context, self.ast);
                 z3.ast_refs.set(z3.ast_refs.get() - 1);
                 assert!(z3.ast_refs.get() >= 0);
             }

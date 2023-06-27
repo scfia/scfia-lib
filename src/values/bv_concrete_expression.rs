@@ -6,7 +6,7 @@ use crate::ScfiaComposition;
 pub struct BVConcreteExpression<SC: ScfiaComposition> {
     pub value: u64,
     pub width: u32,
-    phantom: PhantomData<SC>,
+    pub phantom: PhantomData<SC>,
 }
 
 #[derive(Debug)]

@@ -8,7 +8,7 @@ use z3_sys::Z3_L_FALSE;
 use crate::{
     scfia::Scfia,
     values::{
-        active_value::{ActiveExpression, ActiveValue, ActiveValueZ3},
+        active_value::{ActiveValue, ActiveValueZ3},
         retired_value::RetiredValue,
     },
     ScfiaComposition, SymbolicHints,
@@ -32,11 +32,13 @@ impl<SC: ScfiaComposition> Memory<SC> {
     }
 
     pub fn get_highest_depth(&self) -> Option<(u64, usize)> {
+        todo!()
+        /* 
         let mut highest = None;
         for stable in &self.stables {
             for (address, value) in &stable.memory {
                 if let Some((_, highest_depth)) = highest {
-                    if value.try_borrow().unwrap().get_depth() > highest_depth {
+                    if value.get_depth() > highest_depth {
                         highest = Some((*address, value.try_borrow().unwrap().get_depth()))
                     }
                 } else {
@@ -45,6 +47,7 @@ impl<SC: ScfiaComposition> Memory<SC> {
             }
         }
         highest
+        */
     }
 
     pub fn read(
@@ -55,11 +58,10 @@ impl<SC: ScfiaComposition> Memory<SC> {
         hints: &mut Option<SymbolicHints>,
         fork_sink: &mut Option<SC::ForkSink>,
     ) -> ActiveValue<SC> {
-        let address_inner = address.try_borrow().unwrap();
-        if let ActiveExpression::BVConcrete(e) = &address_inner.expression {
-            self.read_concrete(e.value, width, scfia, fork_sink)
-        } else {
-            self.read_symbolic(&address_inner, width, scfia, hints, fork_sink)
+        match address {
+            ActiveValue::BoolConcrete(_) => panic!(),
+            ActiveValue::BVConcrete(address, _) => self.read_concrete(*address, width, scfia, fork_sink),
+            ActiveValue::Expression(e) => self.read_symbolic(&e.try_borrow().unwrap(), width, scfia, hints, fork_sink)
         }
     }
 
@@ -72,11 +74,10 @@ impl<SC: ScfiaComposition> Memory<SC> {
         hints: &mut Option<SymbolicHints>,
         fork_sink: &mut Option<SC::ForkSink>,
     ) {
-        let address_inner = address.try_borrow().unwrap();
-        if let ActiveExpression::BVConcrete(e) = &address_inner.expression {
-            self.write_concrete(e.value, value, width, scfia, fork_sink)
-        } else {
-            self.write_symbolic(&address_inner, value, width, scfia, hints)
+        match address {
+            ActiveValue::BoolConcrete(_) => panic!(),
+            ActiveValue::BVConcrete(address, width) => self.write_concrete(*address, value, *width, scfia, fork_sink),
+            ActiveValue::Expression(e) => self.write_symbolic(&e.try_borrow().unwrap(), value, width, scfia, hints)
         }
     }
 
@@ -92,7 +93,7 @@ impl<SC: ScfiaComposition> Memory<SC> {
         // Check for symbolic volatile region read:
         for region in &self.symbolic_volatiles {
             let begin = Instant::now();
-            let base_ast = region.base_symbol.try_borrow().unwrap().z3_ast.clone();
+            let base_ast = region.base_symbol.get_z3_ast().clone();
             // address < base_address
             let lt = scfia.z3.new_bvult(&address.z3_ast, &base_ast, false);
 
@@ -124,7 +125,7 @@ impl<SC: ScfiaComposition> Memory<SC> {
                 let other_value = self.read_concrete(*address, width, scfia, fork_sink);
                 let eq = scfia
                     .z3
-                    .new_eq(&value.try_borrow().unwrap().z3_ast, &other_value.try_borrow().unwrap().z3_ast, false);
+                    .new_eq(&value.get_z3_ast(), &other_value.get_z3_ast(), false);
                 let not = scfia.z3.new_not(&eq, false);
                 if scfia.z3.check_assumptions(&[&not]) != Z3_L_FALSE {
                     error!("Unequal values behind unimous read: *0x{:x} != *0x{:x}", candidates[0], address);
@@ -144,7 +145,7 @@ impl<SC: ScfiaComposition> Memory<SC> {
 
         // Check for symbolic volatile region write
         for region in &self.symbolic_volatiles {
-            let region_base = region.base_symbol.try_borrow().unwrap().z3_ast.clone();
+            let region_base = region.base_symbol.get_z3_ast();
             // address < base_address
             let lt = scfia.z3.new_bvult(&address.z3_ast, &region_base, false);
 

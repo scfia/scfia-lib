@@ -80,14 +80,14 @@ fn get_cloned_parent<SC: ScfiaComposition>(
         (ParentWeakReference {
             id: parent_ref.id,
             weak: cloned_active.get_weak(),
-        }, cloned_active.get_z3_ast(cloned_scfia))
+        }, cloned_active.get_z3_ast())
     } else if let Some(v) = parent_ref.weak.upgrade() {
         // Parent is active and not yet cloned
         let cloned_parent = v.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_retired);
         (ParentWeakReference {
             id: parent_ref.id,
             weak: cloned_parent.get_weak(),
-        }, cloned_parent.get_z3_ast(cloned_scfia))
+        }, cloned_parent.get_z3_ast())
     } else if let Some(cloned_retired) = cloned_retired.get(&parent_ref.id) {
         // Parent is retired and already cloned
         (ParentWeakReference {
