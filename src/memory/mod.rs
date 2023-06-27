@@ -8,7 +8,7 @@ use z3_sys::Z3_L_FALSE;
 use crate::{
     scfia::Scfia,
     values::{
-        active_value::{ActiveExpression, ActiveValue, ActiveValueExpression},
+        active_value::{ActiveExpression, ActiveValue, ActiveValueZ3},
         retired_value::RetiredValue,
     },
     ScfiaComposition, SymbolicHints,
@@ -82,7 +82,7 @@ impl<SC: ScfiaComposition> Memory<SC> {
 
     fn read_symbolic(
         &mut self,
-        address: &ActiveValueExpression<SC>,
+        address: &ActiveValueZ3<SC>,
         width: u32,
         scfia: &Scfia<SC>,
         hints: &mut Option<SymbolicHints>,
@@ -138,7 +138,7 @@ impl<SC: ScfiaComposition> Memory<SC> {
         }
     }
 
-    fn write_symbolic(&mut self, address: &ActiveValueExpression<SC>, _value: &ActiveValue<SC>, width: u32, scfia: &Scfia<SC>, hints: &mut Option<SymbolicHints>) {
+    fn write_symbolic(&mut self, address: &ActiveValueZ3<SC>, _value: &ActiveValue<SC>, width: u32, scfia: &Scfia<SC>, hints: &mut Option<SymbolicHints>) {
         debug!("write_symbolic");
         // Symbolic writes can be symbolic volatile region writes or unanimous writes
 

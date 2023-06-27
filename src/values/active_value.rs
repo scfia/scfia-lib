@@ -19,6 +19,7 @@ use super::bool_unsigned_less_than_expression::BoolUnsignedLessThanExpression;
 use super::bv_add_expression::BVAddExpression;
 use super::bv_and_expression::BVAndExpression;
 use super::bv_concat_expression::BVConcatExpression;
+use super::bv_concrete_expression::BVConcreteExpression;
 use super::bv_multiply_expression::BVMultiplyExpression;
 use super::bv_or_expression::BVOrExpression;
 use super::bv_sign_extend_expression::BVSignExtendExpression;
@@ -30,7 +31,7 @@ use super::bv_symbol::BVSymbol;
 use super::bv_unsigned_remainder_expression::BVUnsignedRemainderExpression;
 use super::bv_xor_expression::BVXorExpression;
 use super::retired_value::ParentWeakReference;
-use super::{retired_value::RetiredValue};
+use super::retired_value::RetiredValue;
 
 #[derive(Clone, Debug)]
 pub struct ValueComment {
@@ -47,15 +48,15 @@ impl ValueComment {
 pub enum ActiveValue<SC: ScfiaComposition> {
     BoolConcrete(bool),
     BVConcrete(u64, u32),
-    Expression(Rc<RefCell<ActiveValueExpression<SC>>>),
+    Expression(Rc<RefCell<ActiveValueZ3<SC>>>),
 }
 
-pub struct ActiveValueExpression<SC: ScfiaComposition> {
+pub struct ActiveValueZ3<SC: ScfiaComposition> {
     pub id: u64,
     pub z3_ast: Z3Ast<SC>,
     pub expression: ActiveExpression<SC>,
     pub inherited_asts: BTreeMap<u64, RetiredValue<SC>>,
-    pub discovered_asts: BTreeMap<u64, Weak<RefCell<ActiveValueExpression<SC>>>>,
+    pub discovered_asts: BTreeMap<u64, Weak<RefCell<ActiveValueZ3<SC>>>>,
     pub scfia: Weak<Scfia<SC>>,
     pub comment: Option<ValueComment>,
     pub can_inherit: bool,
@@ -69,6 +70,7 @@ pub enum ActiveExpression<SC: ScfiaComposition> {
     BVAddExpression(BVAddExpression<SC>),
     BVAndExpression(BVAndExpression<SC>),
     BVConcatExpression(BVConcatExpression<SC>),
+    BVConcreteExpression(BVConcreteExpression<SC>),
     BVMultiplyExpression(BVMultiplyExpression<SC>),
     BVOrExpression(BVOrExpression<SC>),
     BVSignExtendExpression(BVSignExtendExpression<SC>),
@@ -90,7 +92,7 @@ impl<SC: ScfiaComposition> ActiveValue<SC> {
         }
     }
 
-    pub fn get_weak(&self) -> Weak<RefCell<ActiveValueExpression<SC>>> {
+    pub fn get_weak(&self) -> Weak<RefCell<ActiveValueZ3<SC>>> {
         if let ActiveValue::Expression(e) = &self {
             Rc::downgrade(e)
         } else {
@@ -98,16 +100,15 @@ impl<SC: ScfiaComposition> ActiveValue<SC> {
         }
     }
 
-    pub fn get_retired_parent_handle(&self) -> ParentWeakReference<SC> {
-        // GRRRR either concretes need ids, or retired owning storage to concretes
-        match &self {
-            ActiveValue::BoolConcrete(value) => ParentWeakReference::BoolConcrete(*value),
-            ActiveValue::BVConcrete(value, width) => ParentWeakReference::BVConcrete(*value, *width),
-            ActiveValue::Expression(e) => ParentWeakReference::Expression(e.try_borrow().unwrap().id, Rc::downgrade(e)),
+    pub fn get_z3_value(&self) -> Rc<RefCell<ActiveValueZ3<SC>>> {
+        if let ActiveValue::Expression(e) = &self {
+            e.clone()
+        } else {
+            panic!()
         }
     }
 
-    pub fn push_expression(&self, dest: &mut Vec<Rc<RefCell<ActiveValueExpression<SC>>>>) {
+    pub fn push_expression(&self, dest: &mut Vec<Rc<RefCell<ActiveValueZ3<SC>>>>) {
         if let ActiveValue::Expression(e) = self {
             dest.push(e.clone())
         }
@@ -129,7 +130,7 @@ impl<SC: ScfiaComposition> ActiveValue<SC> {
         }
     }
 
-    pub fn discover(&self, active_value_id: u64, active_value: Weak<RefCell<ActiveValueExpression<SC>>>) {
+    pub fn discover(&self, active_value_id: u64, active_value: Weak<RefCell<ActiveValueZ3<SC>>>) {
         if let ActiveValue::Expression(e) = &self {
             e.try_borrow_mut().unwrap().discovered_asts.insert( active_value_id, active_value);
         } else {
@@ -155,8 +156,8 @@ impl<SC: ScfiaComposition> ActiveValue<SC> {
     }
 }
 
-impl<SC: ScfiaComposition> ActiveValueExpression<SC> {
-    pub(crate) fn get_parents(&self, dest: &mut Vec<Rc<RefCell<ActiveValueExpression<SC>>>>) {
+impl<SC: ScfiaComposition> ActiveValueZ3<SC> {
+    pub(crate) fn get_parents(&self, dest: &mut Vec<Rc<RefCell<ActiveValueZ3<SC>>>>) {
         match &self.expression {
             ActiveExpression::BVSymbol(_) => {}
             ActiveExpression::BVAddExpression(e) => {
@@ -370,7 +371,7 @@ impl<SC: ScfiaComposition> ActiveValueExpression<SC> {
     }
 }
 
-impl<SC: ScfiaComposition> Debug for ActiveValueExpression<SC> {
+impl<SC: ScfiaComposition> Debug for ActiveValueZ3<SC> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.expression.fmt(f)?;
         f.write_str(format!("[id={}]", self.id).as_str())?;
@@ -384,7 +385,7 @@ impl<SC: ScfiaComposition> Debug for ActiveValueExpression<SC> {
     }
 }
 
-impl<SC: ScfiaComposition> Drop for ActiveValueExpression<SC> {
+impl<SC: ScfiaComposition> Drop for ActiveValueZ3<SC> {
     fn drop(&mut self) {
         if let Some(scfia) = self.scfia.upgrade() {
             scfia.drop_active_expression(self);

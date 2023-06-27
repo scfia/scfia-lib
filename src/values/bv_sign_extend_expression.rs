@@ -1,12 +1,12 @@
-use std::{cell::RefCell, fmt::Debug, marker::PhantomData, rc::Weak};
+use std::{cell::RefCell, fmt::Debug, marker::PhantomData, rc::{Weak, Rc}};
 
 use crate::ScfiaComposition;
 
-use super::{active_value::{ActiveValue, ActiveValueExpression}, retired_value::ParentWeakReference};
+use super::{active_value::{ActiveValue, ActiveValueZ3}, retired_value::ParentWeakReference};
 
 #[derive(Debug)]
 pub struct BVSignExtendExpression<SC: ScfiaComposition> {
-    pub s1: ActiveValue<SC>,
+    pub s1: Rc<RefCell<ActiveValueZ3<SC>>>,
     pub width: u32,
     pub input_width: u32,
 }

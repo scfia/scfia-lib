@@ -17,3 +17,4 @@ pub mod bv_unsigned_remainder_expression;
 pub mod bv_xor_expression;
 pub mod retired_value;
 pub mod bv_symbol;
+pub mod bv_concrete_expression;
