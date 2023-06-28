@@ -32,22 +32,19 @@ impl<SC: ScfiaComposition> Memory<SC> {
     }
 
     pub fn get_highest_depth(&self) -> Option<(u64, usize)> {
-        todo!()
-        /* 
         let mut highest = None;
         for stable in &self.stables {
             for (address, value) in &stable.memory {
                 if let Some((_, highest_depth)) = highest {
                     if value.get_depth() > highest_depth {
-                        highest = Some((*address, value.try_borrow().unwrap().get_depth()))
+                        highest = Some((*address, value.get_depth()))
                     }
                 } else {
-                    highest = Some((*address, value.try_borrow().unwrap().get_depth()))
+                    highest = Some((*address, value.get_depth()))
                 }
             }
         }
         highest
-        */
     }
 
     pub fn read(
@@ -61,7 +58,7 @@ impl<SC: ScfiaComposition> Memory<SC> {
         match address {
             ActiveValue::BoolConcrete(_) => panic!(),
             ActiveValue::BVConcrete(address, _) => self.read_concrete(*address, width, scfia, fork_sink),
-            ActiveValue::Expression(e) => self.read_symbolic(&e.try_borrow().unwrap(), width, scfia, hints, fork_sink)
+            ActiveValue::Expression(e) => self.read_symbolic(&e.try_borrow().unwrap(), width, scfia, hints, fork_sink),
         }
     }
 
@@ -76,8 +73,8 @@ impl<SC: ScfiaComposition> Memory<SC> {
     ) {
         match address {
             ActiveValue::BoolConcrete(_) => panic!(),
-            ActiveValue::BVConcrete(address, width) => self.write_concrete(*address, value, *width, scfia, fork_sink),
-            ActiveValue::Expression(e) => self.write_symbolic(&e.try_borrow().unwrap(), value, width, scfia, hints)
+            ActiveValue::BVConcrete(address, _) => self.write_concrete(*address, value, width, scfia, fork_sink),
+            ActiveValue::Expression(e) => self.write_symbolic(&e.try_borrow().unwrap(), value, width, scfia, hints),
         }
     }
 
@@ -120,12 +117,10 @@ impl<SC: ScfiaComposition> Memory<SC> {
             self.read_concrete(candidates[0], width, scfia, fork_sink)
         } else {
             // The addresses are not unanimous, but the values might still be
-            let value = self.read_concrete(candidates[0], width, scfia, fork_sink);
+            let value = self.read_concrete(candidates[0], width, scfia, fork_sink).into_z3_value(scfia, fork_sink);
             for address in &candidates {
-                let other_value = self.read_concrete(*address, width, scfia, fork_sink);
-                let eq = scfia
-                    .z3
-                    .new_eq(&value.get_z3_ast(), &other_value.get_z3_ast(), false);
+                let other_value = self.read_concrete(*address, width, scfia, fork_sink).into_z3_value(scfia, fork_sink);
+                let eq = scfia.z3.new_eq(&value.get_z3_ast(), &other_value.get_z3_ast(), false);
                 let not = scfia.z3.new_not(&eq, false);
                 if scfia.z3.check_assumptions(&[&not]) != Z3_L_FALSE {
                     error!("Unequal values behind unimous read: *0x{:x} != *0x{:x}", candidates[0], address);

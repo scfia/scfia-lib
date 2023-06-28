@@ -6,7 +6,6 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 use std::rc::Weak;
 
-use log::debug;
 use log::error;
 use log::trace;
 
@@ -49,8 +48,8 @@ use crate::values::bv_unsigned_remainder_expression::BVUnsignedRemainderExpressi
 use crate::values::bv_unsigned_remainder_expression::RetiredBVUnsignedRemainderExpression;
 use crate::values::bv_xor_expression::BVXorExpression;
 use crate::values::bv_xor_expression::RetiredBVXorExpression;
-use crate::values::retired_value::RetiredExpression;
 use crate::values::retired_value::ParentWeakReference;
+use crate::values::retired_value::RetiredExpression;
 use crate::values::retired_value::RetiredValue;
 use crate::values::retired_value::RetiredValueInner;
 use crate::z3_handle::Z3Ast;
@@ -94,7 +93,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
     ) -> ActiveValue<SC> {
         if let ActiveValue::BVConcrete(s1_value, _) = s1 {
             if let ActiveValue::BVConcrete(s2_value, _) = s2 {
-                return self.new_bool_concrete(s1_value == s2_value, None, fork_sink)
+                return self.new_bool_concrete(s1_value == s2_value, None, fork_sink);
             }
         };
 
@@ -124,15 +123,17 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         comment: Option<ValueComment>,
     ) -> ActiveValue<SC> {
         if let ActiveValue::BoolConcrete(value_s1) = s1 {
-            return self.new_bool_concrete(!value_s1, None, fork_sink)
+            return self.new_bool_concrete(!value_s1, None, fork_sink);
         };
 
         let s1 = s1.into_z3_value(self, fork_sink);
-        debug!("new_bool_not over {:?}", s1);
         let id = if let Some(id) = id { id } else { self.next_symbol_id() };
         let z3_ast = self.z3.new_not(&s1.get_z3_ast(), is_assert);
         self.new_active(
-            ActiveExpression::BoolNotExpression(BoolNotExpression { s1: s1.get_z3_value(), is_assert }),
+            ActiveExpression::BoolNotExpression(BoolNotExpression {
+                s1: s1.get_z3_value(),
+                is_assert,
+            }),
             z3_ast,
             id,
             fork_sink,
@@ -152,7 +153,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         if let ActiveValue::BVConcrete(s1_value, _s1_width) = s1 {
             if let ActiveValue::BVConcrete(s2_value, _s2_width) = s2 {
                 let slt = (*s1_value as i64) < (*s2_value as i64); // TODO this probably breaks for 64bit BVs
-                return self.new_bool_concrete(slt, None, fork_sink)
+                return self.new_bool_concrete(slt, None, fork_sink);
             }
         };
 
@@ -185,7 +186,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         if let ActiveValue::BVConcrete(s1_value, _s1_width) = s1 {
             if let ActiveValue::BVConcrete(s2_value, _s2_width) = s2 {
                 let ult = s1_value < s2_value;
-                return self.new_bool_concrete(ult, None, fork_sink)
+                return self.new_bool_concrete(ult, None, fork_sink);
             }
         };
 
@@ -221,7 +222,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
                 let mask = one.rotate_left(*s2_width).overflowing_sub(1).0; // TODO is rotate_left the right choice here?
                 let sum = s1_value.overflowing_add(*s2_value).0;
                 let value = mask & sum;
-                return ActiveValue::BVConcrete(value, width)
+                return ActiveValue::BVConcrete(value, width);
             }
         };
 
@@ -254,7 +255,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         if let ActiveValue::BVConcrete(s1_value, _s1_width) = s1 {
             if let ActiveValue::BVConcrete(s2_value, _s2_width) = s2 {
                 let value = s1_value & s2_value;
-                return ActiveValue::BVConcrete(value, width)
+                return ActiveValue::BVConcrete(value, width);
             }
         };
 
@@ -288,7 +289,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             if let ActiveValue::BVConcrete(s2_value, s2_width) = s2 {
                 let e1_shifted = s1_value << s2_width;
                 let value = e1_shifted | s2_value;
-                return ActiveValue::BVConcrete(value, width)
+                return ActiveValue::BVConcrete(value, width);
             }
         };
 
@@ -351,7 +352,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
                 let mask = one.rotate_left(*s2_width).overflowing_sub(1).0;
                 let product = s1_value.overflowing_mul(*s2_value).0;
                 let value = mask & product;
-                return ActiveValue::BVConcrete(value, width)
+                return ActiveValue::BVConcrete(value, width);
             }
         };
 
@@ -384,7 +385,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         if let ActiveValue::BVConcrete(s1_value, _s1_width) = s1 {
             if let ActiveValue::BVConcrete(s2_value, _s2_width) = s2 {
                 let value = s1_value | s2_value;
-                return ActiveValue::BVConcrete(value, width)
+                return ActiveValue::BVConcrete(value, width);
             }
         };
 
@@ -419,7 +420,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             let m: u64 = 1 << (s1_width - 1);
             let x = s1_value & ((1 << s1_width) - 1);
             let value = (x ^ m).overflowing_sub(m).0;
-            return ActiveValue::BVConcrete(value, output_width)
+            return ActiveValue::BVConcrete(value, output_width);
         };
 
         let s1 = s1.into_z3_value(self, fork_sink);
@@ -453,7 +454,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             let shifted = s1_value >> low;
             let mask = (1 << width) - 1;
             let value = shifted & mask;
-            return ActiveValue::BVConcrete(value, width)
+            return ActiveValue::BVConcrete(value, width);
         };
 
         let s1 = s1.into_z3_value(self, fork_sink);
@@ -488,7 +489,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
                 let one: u64 = 1;
                 let mask = one.rotate_left(*s1_width).overflowing_sub(1).0;
                 let value = (s1_value << s2_value) & mask;
-                return ActiveValue::BVConcrete(value, width)
+                return ActiveValue::BVConcrete(value, width);
             }
         };
 
@@ -523,7 +524,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
                 let one: u64 = 1;
                 let mask = one.rotate_left(*s1_width).overflowing_sub(1).0;
                 let value = (s1_value >> s2_value) & mask;
-                return ActiveValue::BVConcrete(value, width)
+                return ActiveValue::BVConcrete(value, width);
             }
         };
 
@@ -559,7 +560,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
                 let mask = one.rotate_left(*s2_width).overflowing_sub(1).0;
                 let sum = s1_value.overflowing_sub(*s2_value).0;
                 let value = mask & sum;
-                return ActiveValue::BVConcrete(value, width)
+                return ActiveValue::BVConcrete(value, width);
             }
         };
 
@@ -601,7 +602,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
                 let mask = one.rotate_left(*s2_width).overflowing_sub(1).0;
                 let remainder = s1_value % s2_value;
                 let value = mask & remainder;
-                return ActiveValue::BVConcrete(value, width)
+                return ActiveValue::BVConcrete(value, width);
             }
         };
 
@@ -634,7 +635,7 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         if let ActiveValue::BVConcrete(s1_value, _s1_width) = s1 {
             if let ActiveValue::BVConcrete(s2_value, _s2_width) = s2 {
                 let value = s1_value ^ s2_value;
-                return ActiveValue::BVConcrete(value, width)
+                return ActiveValue::BVConcrete(value, width);
             }
         };
 
@@ -680,7 +681,6 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             can_inherit: true,
         })));
 
-
         if let Some(fork_sink) = fork_sink {
             fork_sink.push_value(value.clone())
         }
@@ -699,103 +699,190 @@ impl<SC: ScfiaComposition> Scfia<SC> {
     }
 
     pub fn drop_active_expression(&self, value: &ActiveValueZ3<SC>) -> RetiredValue<SC> {
-        // TODO drop and inherit concrete parents as well
+        trace!("Dropping {} ({:?})", value.id, value);
         let expression = match &value.expression {
             ActiveExpression::BoolEqExpression(e) => RetiredExpression::BoolEqExpression(RetiredBoolEqExpression {
-                s1: ParentWeakReference { id: e.s1.try_borrow().unwrap().id, weak: Rc::downgrade(&e.s1) },
-                s2: ParentWeakReference { id: e.s2.try_borrow().unwrap().id, weak: Rc::downgrade(&e.s2) },
+                s1: ParentWeakReference {
+                    id: e.s1.try_borrow().unwrap().id,
+                    weak: Rc::downgrade(&e.s1),
+                },
+                s2: ParentWeakReference {
+                    id: e.s2.try_borrow().unwrap().id,
+                    weak: Rc::downgrade(&e.s2),
+                },
                 is_assert: e.is_assert,
                 phantom: PhantomData,
             }),
             ActiveExpression::BoolNotExpression(e) => RetiredExpression::BoolNotExpression(RetiredBoolNotExpression {
-                s1: ParentWeakReference { id: e.s1.try_borrow().unwrap().id, weak: Rc::downgrade(&e.s1) },
+                s1: ParentWeakReference {
+                    id: e.s1.try_borrow().unwrap().id,
+                    weak: Rc::downgrade(&e.s1),
+                },
                 is_assert: e.is_assert,
                 phantom: PhantomData,
             }),
             ActiveExpression::BoolSignedLessThanExpression(e) => RetiredExpression::BoolSignedLessThanExpression(RetiredBoolSignedLessThanExpression {
-                s1: ParentWeakReference { id: e.s1.try_borrow().unwrap().id, weak: Rc::downgrade(&e.s1) },
-                s2: ParentWeakReference { id: e.s2.try_borrow().unwrap().id, weak: Rc::downgrade(&e.s2) },
+                s1: ParentWeakReference {
+                    id: e.s1.try_borrow().unwrap().id,
+                    weak: Rc::downgrade(&e.s1),
+                },
+                s2: ParentWeakReference {
+                    id: e.s2.try_borrow().unwrap().id,
+                    weak: Rc::downgrade(&e.s2),
+                },
                 is_assert: e.is_assert,
                 phantom: PhantomData,
             }),
             ActiveExpression::BoolUnsignedLessThanExpression(e) => RetiredExpression::BoolUnsignedLessThanExpression(RetiredBoolUnsignedLessThanExpression {
-                s1: ParentWeakReference { id: e.s1.try_borrow().unwrap().id, weak: Rc::downgrade(&e.s1) },
-                s2: ParentWeakReference { id: e.s2.try_borrow().unwrap().id, weak: Rc::downgrade(&e.s2) },
+                s1: ParentWeakReference {
+                    id: e.s1.try_borrow().unwrap().id,
+                    weak: Rc::downgrade(&e.s1),
+                },
+                s2: ParentWeakReference {
+                    id: e.s2.try_borrow().unwrap().id,
+                    weak: Rc::downgrade(&e.s2),
+                },
                 is_assert: e.is_assert,
                 phantom: PhantomData,
             }),
             ActiveExpression::BVAddExpression(e) => RetiredExpression::BVAddExpression(RetiredBVAddExpression {
-                s1: ParentWeakReference { id: e.s1.try_borrow().unwrap().id, weak: Rc::downgrade(&e.s1) },
-                s2: ParentWeakReference { id: e.s2.try_borrow().unwrap().id, weak: Rc::downgrade(&e.s2) },
+                s1: ParentWeakReference {
+                    id: e.s1.try_borrow().unwrap().id,
+                    weak: Rc::downgrade(&e.s1),
+                },
+                s2: ParentWeakReference {
+                    id: e.s2.try_borrow().unwrap().id,
+                    weak: Rc::downgrade(&e.s2),
+                },
                 width: e.width,
                 phantom: PhantomData,
             }),
             ActiveExpression::BVAndExpression(e) => RetiredExpression::BVAndExpression(RetiredBVAndExpression {
-                s1: ParentWeakReference { id: e.s1.try_borrow().unwrap().id, weak: Rc::downgrade(&e.s1) },
-                s2: ParentWeakReference { id: e.s2.try_borrow().unwrap().id, weak: Rc::downgrade(&e.s2) },
+                s1: ParentWeakReference {
+                    id: e.s1.try_borrow().unwrap().id,
+                    weak: Rc::downgrade(&e.s1),
+                },
+                s2: ParentWeakReference {
+                    id: e.s2.try_borrow().unwrap().id,
+                    weak: Rc::downgrade(&e.s2),
+                },
                 width: e.width,
                 phantom: PhantomData,
             }),
             ActiveExpression::BVConcatExpression(e) => RetiredExpression::BVConcatExpression(RetiredBVConcatExpression {
-                s1: ParentWeakReference { id: e.s1.try_borrow().unwrap().id, weak: Rc::downgrade(&e.s1) },
-                s2: ParentWeakReference { id: e.s2.try_borrow().unwrap().id, weak: Rc::downgrade(&e.s2) },
+                s1: ParentWeakReference {
+                    id: e.s1.try_borrow().unwrap().id,
+                    weak: Rc::downgrade(&e.s1),
+                },
+                s2: ParentWeakReference {
+                    id: e.s2.try_borrow().unwrap().id,
+                    weak: Rc::downgrade(&e.s2),
+                },
                 width: e.width,
                 phantom: PhantomData,
             }),
             ActiveExpression::BVMultiplyExpression(e) => RetiredExpression::BVMultiplyExpression(RetiredBVMultiplyExpression {
-                s1: ParentWeakReference { id: e.s1.try_borrow().unwrap().id, weak: Rc::downgrade(&e.s1) },
-                s2: ParentWeakReference { id: e.s2.try_borrow().unwrap().id, weak: Rc::downgrade(&e.s2) },
+                s1: ParentWeakReference {
+                    id: e.s1.try_borrow().unwrap().id,
+                    weak: Rc::downgrade(&e.s1),
+                },
+                s2: ParentWeakReference {
+                    id: e.s2.try_borrow().unwrap().id,
+                    weak: Rc::downgrade(&e.s2),
+                },
                 width: e.width,
                 phantom: PhantomData,
             }),
             ActiveExpression::BVOrExpression(e) => RetiredExpression::BVOrExpression(RetiredBVOrExpression {
-                s1: ParentWeakReference { id: e.s1.try_borrow().unwrap().id, weak: Rc::downgrade(&e.s1) },
-                s2: ParentWeakReference { id: e.s2.try_borrow().unwrap().id, weak: Rc::downgrade(&e.s2) },
+                s1: ParentWeakReference {
+                    id: e.s1.try_borrow().unwrap().id,
+                    weak: Rc::downgrade(&e.s1),
+                },
+                s2: ParentWeakReference {
+                    id: e.s2.try_borrow().unwrap().id,
+                    weak: Rc::downgrade(&e.s2),
+                },
                 width: e.width,
                 phantom: PhantomData,
             }),
             ActiveExpression::BVSignExtendExpression(e) => RetiredExpression::BVSignExtendExpression(RetiredBVSignExtendExpression {
-                s1: ParentWeakReference { id: e.s1.try_borrow().unwrap().id, weak: Rc::downgrade(&e.s1) },
+                s1: ParentWeakReference {
+                    id: e.s1.try_borrow().unwrap().id,
+                    weak: Rc::downgrade(&e.s1),
+                },
                 input_width: e.width,
                 width: e.width,
                 phantom: PhantomData,
             }),
             ActiveExpression::BVSliceExpression(e) => RetiredExpression::BVSliceExpression(RetiredBVSliceExpression {
-                s1: ParentWeakReference { id: e.s1.try_borrow().unwrap().id, weak: Rc::downgrade(&e.s1) },
+                s1: ParentWeakReference {
+                    id: e.s1.try_borrow().unwrap().id,
+                    weak: Rc::downgrade(&e.s1),
+                },
                 high: e.high,
                 low: e.low,
                 width: e.width,
                 phantom: PhantomData,
             }),
             ActiveExpression::BVSllExpression(e) => RetiredExpression::BVSllExpression(RetiredBVSllExpression {
-                s1: ParentWeakReference { id: e.s1.try_borrow().unwrap().id, weak: Rc::downgrade(&e.s1) },
-                s2: ParentWeakReference { id: e.s2.try_borrow().unwrap().id, weak: Rc::downgrade(&e.s2) },
+                s1: ParentWeakReference {
+                    id: e.s1.try_borrow().unwrap().id,
+                    weak: Rc::downgrade(&e.s1),
+                },
+                s2: ParentWeakReference {
+                    id: e.s2.try_borrow().unwrap().id,
+                    weak: Rc::downgrade(&e.s2),
+                },
                 width: e.width,
                 phantom: PhantomData,
             }),
             ActiveExpression::BVSrlExpression(e) => RetiredExpression::BVSrlExpression(RetiredBVSrlExpression {
-                s1: ParentWeakReference { id: e.s1.try_borrow().unwrap().id, weak: Rc::downgrade(&e.s1) },
-                s2: ParentWeakReference { id: e.s2.try_borrow().unwrap().id, weak: Rc::downgrade(&e.s2) },
+                s1: ParentWeakReference {
+                    id: e.s1.try_borrow().unwrap().id,
+                    weak: Rc::downgrade(&e.s1),
+                },
+                s2: ParentWeakReference {
+                    id: e.s2.try_borrow().unwrap().id,
+                    weak: Rc::downgrade(&e.s2),
+                },
                 shamt: e.shamt,
                 width: e.width,
                 phantom: PhantomData,
             }),
             ActiveExpression::BVSubExpression(e) => RetiredExpression::BVSubExpression(RetiredBVSubExpression {
-                s1: ParentWeakReference { id: e.s1.try_borrow().unwrap().id, weak: Rc::downgrade(&e.s1) },
-                s2: ParentWeakReference { id: e.s2.try_borrow().unwrap().id, weak: Rc::downgrade(&e.s2) },
+                s1: ParentWeakReference {
+                    id: e.s1.try_borrow().unwrap().id,
+                    weak: Rc::downgrade(&e.s1),
+                },
+                s2: ParentWeakReference {
+                    id: e.s2.try_borrow().unwrap().id,
+                    weak: Rc::downgrade(&e.s2),
+                },
                 width: e.width,
                 phantom: PhantomData,
             }),
             ActiveExpression::BVSymbol(e) => RetiredExpression::BVSymbol(RetiredBVSymbol { width: e.width }),
             ActiveExpression::BVUnsignedRemainderExpression(e) => RetiredExpression::BVUnsignedRemainderExpression(RetiredBVUnsignedRemainderExpression {
-                s1: ParentWeakReference { id: e.s1.try_borrow().unwrap().id, weak: Rc::downgrade(&e.s1) },
-                s2: ParentWeakReference { id: e.s2.try_borrow().unwrap().id, weak: Rc::downgrade(&e.s2) },
+                s1: ParentWeakReference {
+                    id: e.s1.try_borrow().unwrap().id,
+                    weak: Rc::downgrade(&e.s1),
+                },
+                s2: ParentWeakReference {
+                    id: e.s2.try_borrow().unwrap().id,
+                    weak: Rc::downgrade(&e.s2),
+                },
                 width: e.width,
                 phantom: PhantomData,
             }),
             ActiveExpression::BVXorExpression(e) => RetiredExpression::BVXorExpression(RetiredBVXorExpression {
-                s1: ParentWeakReference { id: e.s1.try_borrow().unwrap().id, weak: Rc::downgrade(&e.s1) },
-                s2: ParentWeakReference { id: e.s2.try_borrow().unwrap().id, weak: Rc::downgrade(&e.s2) },
+                s1: ParentWeakReference {
+                    id: e.s1.try_borrow().unwrap().id,
+                    weak: Rc::downgrade(&e.s1),
+                },
+                s2: ParentWeakReference {
+                    id: e.s2.try_borrow().unwrap().id,
+                    weak: Rc::downgrade(&e.s2),
+                },
                 width: e.width,
                 phantom: PhantomData,
             }),
@@ -820,10 +907,10 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         // For each heir...
         for heir in &heirs {
             let mut heir_mut = heir.try_borrow_mut().unwrap();
-            trace!("{:?} attempting to inherit {:?}", heir_mut, inactive);
+            trace!("{:?} attempting to inherit {:?}", heir_mut.id, value.id);
 
             // Inherit
-            if heir_mut.can_inherit {
+            if !heir_mut.is_concrete() && heir_mut.can_inherit {
                 heir_mut.inherited_asts.insert(value.id, inactive.clone());
 
                 // Pass on inherited symbols

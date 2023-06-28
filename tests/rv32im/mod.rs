@@ -50,10 +50,7 @@ fn step_until_hinted(rv32i_system_state: &mut RV32i, address: u64, begin: &Insta
         );
         if pc == 0x72c {
             unsafe {
-                let ptr = Z3_ast_to_string(
-                    rv32i_system_state.scfia.z3.context,
-                    rv32i_system_state.state.x10.get_z3_ast().ast,
-                );
+                let ptr = Z3_ast_to_string(rv32i_system_state.scfia.z3.context, rv32i_system_state.state.x10.get_z3_ast().ast);
                 let str = CStr::from_ptr(ptr);
                 info!("Z3_ast_to_string={}", str.to_str().unwrap());
                 rv32i_system_state.debug();

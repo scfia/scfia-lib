@@ -14,11 +14,7 @@ use z3_sys::{
     Z3_string, Z3_L_FALSE, Z3_L_TRUE,
 };
 
-use crate::{
-    scfia::Scfia,
-    values::active_value::{ActiveValue},
-    GenericForkSink, ScfiaComposition,
-};
+use crate::{scfia::Scfia, values::active_value::ActiveValue, GenericForkSink, ScfiaComposition};
 
 pub const PREFIX: [i8; 4] = ['p' as i8, 'r' as i8, 'e' as i8, 0];
 

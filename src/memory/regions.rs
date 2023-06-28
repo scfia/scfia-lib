@@ -37,9 +37,7 @@ impl<SC: ScfiaComposition> SymbolicVolatileMemoryRegion<SC> {
         cloned_retired: &mut BTreeMap<u64, RetiredValue<SC>>,
     ) -> SymbolicVolatileMemoryRegion<SC> {
         SymbolicVolatileMemoryRegion {
-            base_symbol: self
-                .base_symbol
-                .clone_to_stdlib(cloned_scfia, cloned_actives, cloned_retired),
+            base_symbol: self.base_symbol.clone_to_stdlib(cloned_scfia, cloned_actives, cloned_retired),
             length: self.length,
         }
     }
@@ -106,7 +104,7 @@ impl<SC: ScfiaComposition> StableMemoryRegion<SC> {
 
     pub(crate) fn write(&mut self, address: u64, value: &ActiveValue<SC>, width: u32, scfia: &Scfia<SC>, fork_sink: &mut Option<SC::ForkSink>) {
         assert_eq!(width % 8, 0);
-        trace!("*{:x} = {:?}", address, value);
+        trace!("*{:x} (width={}) = {:?}", address, width, value);
         let bytes = width / 8;
         for byte in 0..bytes {
             let v = scfia.new_bv_slice(value, (byte * 8) + 7, byte * 8, None, fork_sink, None);
@@ -128,11 +126,10 @@ impl<SC: ScfiaComposition> StableMemoryRegion<SC> {
         };
 
         for (offset, value) in &self.memory {
-            trace!("memcloning {:?}", value);
-            clone.memory.insert(
-                *offset,
-                value.clone_to_stdlib(cloned_scfia, cloned_actives, cloned_retired),
-            );
+            // trace!("memcloning {:?}", value);
+            clone
+                .memory
+                .insert(*offset, value.clone_to_stdlib(cloned_scfia, cloned_actives, cloned_retired));
         }
 
         clone

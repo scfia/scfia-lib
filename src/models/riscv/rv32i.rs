@@ -76,6 +76,7 @@ impl RV32i {
             let mut results = vec![];
 
             while let Some(mut state) = states.pop() {
+                debug!("forking step building step context");
                 let mut context = StepContext {
                     memory: &mut state.memory,
                     scfia: &state.scfia,

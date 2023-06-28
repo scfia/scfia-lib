@@ -19,6 +19,7 @@ use super::{
     bv_add_expression::RetiredBVAddExpression,
     bv_and_expression::RetiredBVAndExpression,
     bv_concat_expression::RetiredBVConcatExpression,
+    bv_concrete_expression::RetiredBVConcreteExpression,
     bv_multiply_expression::RetiredBVMultiplyExpression,
     bv_or_expression::RetiredBVOrExpression,
     bv_sign_extend_expression::RetiredBVSignExtendExpression,
@@ -28,7 +29,7 @@ use super::{
     bv_sub_expression::RetiredBVSubExpression,
     bv_symbol::RetiredBVSymbol,
     bv_unsigned_remainder_expression::RetiredBVUnsignedRemainderExpression,
-    bv_xor_expression::RetiredBVXorExpression, bv_concrete_expression::RetiredBVConcreteExpression,
+    bv_xor_expression::RetiredBVXorExpression,
 };
 
 pub type RetiredValue<Model> = Rc<RefCell<RetiredValueInner<Model>>>;
@@ -77,23 +78,32 @@ fn get_cloned_parent<SC: ScfiaComposition>(
 ) -> (ParentWeakReference<SC>, Z3Ast<SC>) {
     if let Some(cloned_active) = cloned_actives.get(&parent_ref.id) {
         // Parent is active and cloned
-        (ParentWeakReference {
-            id: parent_ref.id,
-            weak: cloned_active.get_weak(),
-        }, cloned_active.get_z3_ast())
+        (
+            ParentWeakReference {
+                id: parent_ref.id,
+                weak: cloned_active.get_weak(),
+            },
+            cloned_active.get_z3_ast(),
+        )
     } else if let Some(v) = parent_ref.weak.upgrade() {
         // Parent is active and not yet cloned
         let cloned_parent = v.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_retired);
-        (ParentWeakReference {
-            id: parent_ref.id,
-            weak: cloned_parent.get_weak(),
-        }, cloned_parent.get_z3_ast())
+        (
+            ParentWeakReference {
+                id: parent_ref.id,
+                weak: cloned_parent.get_weak(),
+            },
+            cloned_parent.get_z3_ast(),
+        )
     } else if let Some(cloned_retired) = cloned_retired.get(&parent_ref.id) {
         // Parent is retired and already cloned
-        (ParentWeakReference {
-            id: parent_ref.id,
-            weak: Weak::new(),
-        }, cloned_retired.try_borrow().unwrap().z3_ast.clone())
+        (
+            ParentWeakReference {
+                id: parent_ref.id,
+                weak: Weak::new(),
+            },
+            cloned_retired.try_borrow().unwrap().z3_ast.clone(),
+        )
     } else {
         error!("cannot find {}", parent_ref.id);
         panic!();
@@ -405,7 +415,14 @@ impl<SC: ScfiaComposition> RetiredValueInner<SC> {
             }
             RetiredExpression::BVConcreteExpression(e) => {
                 let z3_ast = cloned_scfia.z3.new_bv_concrete(e.value, e.width);
-                cloned_scfia.new_inactive(RetiredExpression::BVConcreteExpression(RetiredBVConcreteExpression { value: e.value, width: e.width }), z3_ast, self.id)
+                cloned_scfia.new_inactive(
+                    RetiredExpression::BVConcreteExpression(RetiredBVConcreteExpression {
+                        value: e.value,
+                        width: e.width,
+                    }),
+                    z3_ast,
+                    self.id,
+                )
             }
         };
 
