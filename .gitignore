@@ -1,3 +1,4 @@
 /target
 /Cargo.lock
 *.txt
+/tests/armv7/data/p2im_drone.elf.objdump

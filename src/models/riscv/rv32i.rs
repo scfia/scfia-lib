@@ -43,7 +43,6 @@ impl GenericForkSink<RV32iScfiaComposition> for RV32iForkSink {
         clone.scfia.next_symbol_id.set(fork_symbol_id + 1);
         let cloned_fork_symbol = cloned_actives.get(&fork_symbol_id).unwrap();
         cloned_fork_symbol.assert(&clone.scfia);
-        debug!("fork pushing cloned state");
         self.forks.push(clone);
     }
 
@@ -76,7 +75,6 @@ impl RV32i {
             let mut results = vec![];
 
             while let Some(mut state) = states.pop() {
-                debug!("forking step building step context");
                 let mut context = StepContext {
                     memory: &mut state.memory,
                     scfia: &state.scfia,

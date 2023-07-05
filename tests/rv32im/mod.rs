@@ -116,7 +116,7 @@ fn _dump_regs(state: &RV32i) {
 
 fn test_system_state_inner() {
     simple_logger::SimpleLogger::new().with_level(LevelFilter::Debug).env().init().unwrap();
-    let binary_blob = fs::read("./tests/rv32im/data/simple_router_risc_v").unwrap();
+    let binary_blob = fs::read("./tests/rv32im/data/simple_router_risc_v.elf").unwrap();
     let elf = ElfFile::new(&binary_blob).unwrap();
 
     let scfia: Rc<Scfia<RV32iScfiaComposition>> = Scfia::new(None);
