@@ -11,8 +11,7 @@ use log::{error, trace};
 use crate::{scfia::Scfia, z3_handle::Z3Ast, ScfiaComposition};
 
 use super::{
-    active_value::{ActiveValue, ActiveValueInner, ValueComment},
-    bool_concrete::RetiredBoolConcrete,
+    active_value::{ActiveValue, ActiveValueZ3, ValueComment},
     bool_eq_expression::RetiredBoolEqExpression,
     bool_not_expresssion::RetiredBoolNotExpression,
     bool_signed_less_than_expression::RetiredBoolSignedLessThanExpression,
@@ -20,7 +19,7 @@ use super::{
     bv_add_expression::RetiredBVAddExpression,
     bv_and_expression::RetiredBVAndExpression,
     bv_concat_expression::RetiredBVConcatExpression,
-    bv_concrete::RetiredBVConcrete,
+    bv_concrete_expression::RetiredBVConcreteExpression,
     bv_multiply_expression::RetiredBVMultiplyExpression,
     bv_or_expression::RetiredBVOrExpression,
     bv_sign_extend_expression::RetiredBVSignExtendExpression,
@@ -44,8 +43,13 @@ pub struct RetiredValueInner<SC: ScfiaComposition> {
     pub comment: Option<ValueComment>,
 }
 
+#[derive(Debug)]
+pub struct ParentWeakReference<SC: ScfiaComposition> {
+    pub id: u64,
+    pub weak: Weak<RefCell<ActiveValueZ3<SC>>>,
+}
+
 pub enum RetiredExpression<SC: ScfiaComposition> {
-    BoolConcrete(RetiredBoolConcrete),
     BoolEqExpression(RetiredBoolEqExpression<SC>),
     BoolNotExpression(RetiredBoolNotExpression<SC>),
     BoolSignedLessThanExpression(RetiredBoolSignedLessThanExpression<SC>),
@@ -53,7 +57,7 @@ pub enum RetiredExpression<SC: ScfiaComposition> {
     BVAddExpression(RetiredBVAddExpression<SC>),
     BVAndExpression(RetiredBVAndExpression<SC>),
     BVConcatExpression(RetiredBVConcatExpression<SC>),
-    BVConcrete(RetiredBVConcrete),
+    BVConcreteExpression(RetiredBVConcreteExpression),
     BVMultiplyExpression(RetiredBVMultiplyExpression<SC>),
     BVOrExpression(RetiredBVOrExpression<SC>),
     BVSignExtendExpression(RetiredBVSignExtendExpression<SC>),
@@ -67,25 +71,41 @@ pub enum RetiredExpression<SC: ScfiaComposition> {
 }
 
 fn get_cloned_parent<SC: ScfiaComposition>(
-    weak: &Weak<RefCell<ActiveValueInner<SC>>>,
-    id: u64,
+    parent_ref: &ParentWeakReference<SC>,
     cloned_scfia: &Scfia<SC>,
     cloned_actives: &mut BTreeMap<u64, ActiveValue<SC>>,
     cloned_retired: &mut BTreeMap<u64, RetiredValue<SC>>,
-) -> (Weak<RefCell<ActiveValueInner<SC>>>, Z3Ast<SC>) {
-    if let Some(cloned_active) = cloned_actives.get(&id) {
-        // Parent might be active and cloned...
-        (Rc::downgrade(cloned_active), cloned_active.try_borrow().unwrap().z3_ast.clone())
-    } else if let Some(v) = weak.upgrade() {
-        // ...or active and not yet cloned...
+) -> (ParentWeakReference<SC>, Z3Ast<SC>) {
+    if let Some(cloned_active) = cloned_actives.get(&parent_ref.id) {
+        // Parent is active and cloned
+        (
+            ParentWeakReference {
+                id: parent_ref.id,
+                weak: cloned_active.get_weak(),
+            },
+            cloned_active.get_z3_ast(),
+        )
+    } else if let Some(v) = parent_ref.weak.upgrade() {
+        // Parent is active and not yet cloned
         let cloned_parent = v.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_retired);
-        let cloned_parent_ref = cloned_parent.try_borrow().unwrap();
-        (Rc::downgrade(&cloned_parent), cloned_parent_ref.z3_ast.clone())
-    } else if let Some(cloned_retired) = cloned_retired.get(&id) {
-        // ...or retired and already cloned
-        (Weak::new(), cloned_retired.try_borrow().unwrap().z3_ast.clone())
+        (
+            ParentWeakReference {
+                id: parent_ref.id,
+                weak: cloned_parent.get_weak(),
+            },
+            cloned_parent.get_z3_ast(),
+        )
+    } else if let Some(cloned_retired) = cloned_retired.get(&parent_ref.id) {
+        // Parent is retired and already cloned
+        (
+            ParentWeakReference {
+                id: parent_ref.id,
+                weak: Weak::new(),
+            },
+            cloned_retired.try_borrow().unwrap().z3_ast.clone(),
+        )
     } else {
-        error!("cannot find {}", id);
+        error!("cannot find {}", parent_ref.id);
         panic!();
     }
 }
@@ -103,152 +123,124 @@ impl<SC: ScfiaComposition> RetiredValueInner<SC> {
 
         trace!("Cloning {:?}", self);
         let cloned_inactive: RetiredValue<SC> = match &self.expression {
-            RetiredExpression::BoolConcrete(e) => {
-                let z3_ast = cloned_scfia.z3.new_bool_concrete(e.value);
-                cloned_scfia.new_inactive(RetiredExpression::BoolConcrete(RetiredBoolConcrete { value: e.value }), z3_ast, self.id)
-            }
             RetiredExpression::BoolEqExpression(e) => {
-                let (s1, s1_ast) = get_cloned_parent(&e.s1, e.s1_id, cloned_scfia, cloned_actives, cloned_retired);
-                let (s2, s2_ast) = get_cloned_parent(&e.s2, e.s2_id, cloned_scfia, cloned_actives, cloned_retired);
+                let (s1, s1_ast) = get_cloned_parent(&e.s1, cloned_scfia, cloned_actives, cloned_retired);
+                let (s2, s2_ast) = get_cloned_parent(&e.s2, cloned_scfia, cloned_actives, cloned_retired);
                 if let Some(value) = cloned_retired.get(&self.id) {
                     return value.clone();
                 }
                 let z3_ast = cloned_scfia.z3.new_eq(&s1_ast, &s2_ast, e.is_assert);
                 cloned_scfia.new_inactive(
                     RetiredExpression::BoolEqExpression(RetiredBoolEqExpression {
-                        s1_id: e.s1_id,
-                        s2_id: e.s2_id,
-                        is_assert: e.is_assert,
-                        phantom: PhantomData,
                         s1,
                         s2,
+                        is_assert: e.is_assert,
+                        phantom: PhantomData,
                     }),
                     z3_ast,
                     self.id,
                 )
             }
             RetiredExpression::BoolNotExpression(e) => {
-                let (s1, s1_ast) = get_cloned_parent(&e.s1, e.s1_id, cloned_scfia, cloned_actives, cloned_retired);
+                let (s1, s1_ast) = get_cloned_parent(&e.s1, cloned_scfia, cloned_actives, cloned_retired);
                 if let Some(value) = cloned_retired.get(&self.id) {
                     return value.clone();
                 }
                 let z3_ast = cloned_scfia.z3.new_not(&s1_ast, e.is_assert);
                 cloned_scfia.new_inactive(
                     RetiredExpression::BoolNotExpression(RetiredBoolNotExpression {
-                        s1_id: e.s1_id,
+                        s1,
                         is_assert: e.is_assert,
                         phantom: PhantomData,
-                        s1,
                     }),
                     z3_ast,
                     self.id,
                 )
             }
             RetiredExpression::BoolSignedLessThanExpression(e) => {
-                let (s1, s1_ast) = get_cloned_parent(&e.s1, e.s1_id, cloned_scfia, cloned_actives, cloned_retired);
-                let (s2, s2_ast) = get_cloned_parent(&e.s2, e.s2_id, cloned_scfia, cloned_actives, cloned_retired);
+                let (s1, s1_ast) = get_cloned_parent(&e.s1, cloned_scfia, cloned_actives, cloned_retired);
+                let (s2, s2_ast) = get_cloned_parent(&e.s2, cloned_scfia, cloned_actives, cloned_retired);
                 if let Some(value) = cloned_retired.get(&self.id) {
                     return value.clone();
                 }
                 let z3_ast = cloned_scfia.z3.new_bvslt(&s1_ast, &s2_ast, e.is_assert);
                 cloned_scfia.new_inactive(
                     RetiredExpression::BoolSignedLessThanExpression(RetiredBoolSignedLessThanExpression {
-                        s1_id: e.s1_id,
-                        s2_id: e.s2_id,
-                        is_assert: e.is_assert,
-                        phantom: PhantomData,
                         s1,
                         s2,
+                        is_assert: e.is_assert,
+                        phantom: PhantomData,
                     }),
                     z3_ast,
                     self.id,
                 )
             }
             RetiredExpression::BoolUnsignedLessThanExpression(e) => {
-                let (s1, s1_ast) = get_cloned_parent(&e.s1, e.s1_id, cloned_scfia, cloned_actives, cloned_retired);
-                let (s2, s2_ast) = get_cloned_parent(&e.s2, e.s2_id, cloned_scfia, cloned_actives, cloned_retired);
+                let (s1, s1_ast) = get_cloned_parent(&e.s1, cloned_scfia, cloned_actives, cloned_retired);
+                let (s2, s2_ast) = get_cloned_parent(&e.s2, cloned_scfia, cloned_actives, cloned_retired);
                 if let Some(value) = cloned_retired.get(&self.id) {
                     return value.clone();
                 }
                 let z3_ast = cloned_scfia.z3.new_bvult(&s1_ast, &s2_ast, e.is_assert);
                 cloned_scfia.new_inactive(
                     RetiredExpression::BoolUnsignedLessThanExpression(RetiredBoolUnsignedLessThanExpression {
-                        s1_id: e.s1_id,
-                        s2_id: e.s2_id,
-                        is_assert: e.is_assert,
-                        phantom: PhantomData,
                         s1,
                         s2,
+                        is_assert: e.is_assert,
+                        phantom: PhantomData,
                     }),
                     z3_ast,
                     self.id,
                 )
             }
             RetiredExpression::BVAddExpression(e) => {
-                let (s1, s1_ast) = get_cloned_parent(&e.s1, e.s1_id, cloned_scfia, cloned_actives, cloned_retired);
-                let (s2, s2_ast) = get_cloned_parent(&e.s2, e.s2_id, cloned_scfia, cloned_actives, cloned_retired);
+                let (s1, s1_ast) = get_cloned_parent(&e.s1, cloned_scfia, cloned_actives, cloned_retired);
+                let (s2, s2_ast) = get_cloned_parent(&e.s2, cloned_scfia, cloned_actives, cloned_retired);
                 if let Some(value) = cloned_retired.get(&self.id) {
                     return value.clone();
                 }
                 let z3_ast = cloned_scfia.z3.new_bvadd(&s1_ast, &s2_ast);
                 cloned_scfia.new_inactive(
                     RetiredExpression::BVAddExpression(RetiredBVAddExpression {
-                        s1_id: e.s1_id,
-                        s2_id: e.s2_id,
-                        phantom: PhantomData,
-                        width: e.width,
                         s1,
                         s2,
+                        phantom: PhantomData,
+                        width: e.width,
                     }),
                     z3_ast,
                     self.id,
                 )
             }
             RetiredExpression::BVAndExpression(e) => {
-                let (s1, s1_ast) = get_cloned_parent(&e.s1, e.s1_id, cloned_scfia, cloned_actives, cloned_retired);
-                let (s2, s2_ast) = get_cloned_parent(&e.s2, e.s2_id, cloned_scfia, cloned_actives, cloned_retired);
+                let (s1, s1_ast) = get_cloned_parent(&e.s1, cloned_scfia, cloned_actives, cloned_retired);
+                let (s2, s2_ast) = get_cloned_parent(&e.s2, cloned_scfia, cloned_actives, cloned_retired);
                 if let Some(value) = cloned_retired.get(&self.id) {
                     return value.clone();
                 }
                 let z3_ast = cloned_scfia.z3.new_bvand(&s1_ast, &s2_ast);
                 cloned_scfia.new_inactive(
                     RetiredExpression::BVAndExpression(RetiredBVAndExpression {
-                        s1_id: e.s1_id,
-                        s2_id: e.s2_id,
-                        phantom: PhantomData,
-                        width: e.width,
                         s1,
                         s2,
+                        phantom: PhantomData,
+                        width: e.width,
                     }),
                     z3_ast,
                     self.id,
                 )
             }
             RetiredExpression::BVConcatExpression(e) => {
-                let (s1, s1_ast) = get_cloned_parent(&e.s1, e.s1_id, cloned_scfia, cloned_actives, cloned_retired);
-                let (s2, s2_ast) = get_cloned_parent(&e.s2, e.s2_id, cloned_scfia, cloned_actives, cloned_retired);
+                let (s1, s1_ast) = get_cloned_parent(&e.s1, cloned_scfia, cloned_actives, cloned_retired);
+                let (s2, s2_ast) = get_cloned_parent(&e.s2, cloned_scfia, cloned_actives, cloned_retired);
                 if let Some(value) = cloned_retired.get(&self.id) {
                     return value.clone();
                 }
                 let z3_ast = cloned_scfia.z3.new_bvconcat(&s1_ast, &s2_ast);
                 cloned_scfia.new_inactive(
                     RetiredExpression::BVConcatExpression(RetiredBVConcatExpression {
-                        s1_id: e.s1_id,
-                        s2_id: e.s2_id,
-                        phantom: PhantomData,
-                        width: e.width,
                         s1,
                         s2,
-                    }),
-                    z3_ast,
-                    self.id,
-                )
-            }
-            RetiredExpression::BVConcrete(e) => {
-                let z3_ast = cloned_scfia.z3.new_bv_concrete(e.value, e.width);
-                cloned_scfia.new_inactive(
-                    RetiredExpression::BVConcrete(RetiredBVConcrete {
-                        value: e.value,
+                        phantom: PhantomData,
                         width: e.width,
                     }),
                     z3_ast,
@@ -256,138 +248,126 @@ impl<SC: ScfiaComposition> RetiredValueInner<SC> {
                 )
             }
             RetiredExpression::BVMultiplyExpression(e) => {
-                let (s1, s1_ast) = get_cloned_parent(&e.s1, e.s1_id, cloned_scfia, cloned_actives, cloned_retired);
-                let (s2, s2_ast) = get_cloned_parent(&e.s2, e.s2_id, cloned_scfia, cloned_actives, cloned_retired);
+                let (s1, s1_ast) = get_cloned_parent(&e.s1, cloned_scfia, cloned_actives, cloned_retired);
+                let (s2, s2_ast) = get_cloned_parent(&e.s2, cloned_scfia, cloned_actives, cloned_retired);
                 if let Some(value) = cloned_retired.get(&self.id) {
                     return value.clone();
                 }
                 let z3_ast = cloned_scfia.z3.new_bvmul(&s1_ast, &s2_ast);
                 cloned_scfia.new_inactive(
                     RetiredExpression::BVMultiplyExpression(RetiredBVMultiplyExpression {
-                        s1_id: e.s1_id,
-                        s2_id: e.s2_id,
-                        phantom: PhantomData,
-                        width: e.width,
                         s1,
                         s2,
+                        phantom: PhantomData,
+                        width: e.width,
                     }),
                     z3_ast,
                     self.id,
                 )
             }
             RetiredExpression::BVOrExpression(e) => {
-                let (s1, s1_ast) = get_cloned_parent(&e.s1, e.s1_id, cloned_scfia, cloned_actives, cloned_retired);
-                let (s2, s2_ast) = get_cloned_parent(&e.s2, e.s2_id, cloned_scfia, cloned_actives, cloned_retired);
+                let (s1, s1_ast) = get_cloned_parent(&e.s1, cloned_scfia, cloned_actives, cloned_retired);
+                let (s2, s2_ast) = get_cloned_parent(&e.s2, cloned_scfia, cloned_actives, cloned_retired);
                 if let Some(value) = cloned_retired.get(&self.id) {
                     return value.clone();
                 }
                 let z3_ast = cloned_scfia.z3.new_bvor(&s1_ast, &s2_ast);
                 cloned_scfia.new_inactive(
                     RetiredExpression::BVOrExpression(RetiredBVOrExpression {
-                        s1_id: e.s1_id,
-                        s2_id: e.s2_id,
-                        phantom: PhantomData,
-                        width: e.width,
                         s1,
                         s2,
+                        phantom: PhantomData,
+                        width: e.width,
                     }),
                     z3_ast,
                     self.id,
                 )
             }
             RetiredExpression::BVSignExtendExpression(e) => {
-                let (s1, s1_ast) = get_cloned_parent(&e.s1, e.s1_id, cloned_scfia, cloned_actives, cloned_retired);
+                let (s1, s1_ast) = get_cloned_parent(&e.s1, cloned_scfia, cloned_actives, cloned_retired);
                 if let Some(value) = cloned_retired.get(&self.id) {
                     return value.clone();
                 }
                 let z3_ast = cloned_scfia.z3.new_sign_ext(e.width - e.input_width, &s1_ast);
                 cloned_scfia.new_inactive(
                     RetiredExpression::BVSignExtendExpression(RetiredBVSignExtendExpression {
-                        s1_id: e.s1_id,
+                        s1,
                         width: e.width,
                         input_width: e.input_width,
                         phantom: PhantomData,
-                        s1,
                     }),
                     z3_ast,
                     self.id,
                 )
             }
             RetiredExpression::BVSliceExpression(e) => {
-                let (s1, s1_ast) = get_cloned_parent(&e.s1, e.s1_id, cloned_scfia, cloned_actives, cloned_retired);
+                let (s1, s1_ast) = get_cloned_parent(&e.s1, cloned_scfia, cloned_actives, cloned_retired);
                 if let Some(value) = cloned_retired.get(&self.id) {
                     return value.clone();
                 }
                 let z3_ast = cloned_scfia.z3.new_extract(e.high, e.low, &s1_ast);
                 cloned_scfia.new_inactive(
                     RetiredExpression::BVSliceExpression(RetiredBVSliceExpression {
-                        s1_id: e.s1_id,
+                        s1,
                         width: e.width,
                         high: e.high,
                         low: e.low,
                         phantom: PhantomData,
-                        s1,
                     }),
                     z3_ast,
                     self.id,
                 )
             }
             RetiredExpression::BVSllExpression(e) => {
-                let (s1, s1_ast) = get_cloned_parent(&e.s1, e.s1_id, cloned_scfia, cloned_actives, cloned_retired);
-                let (s2, s2_ast) = get_cloned_parent(&e.s2, e.s2_id, cloned_scfia, cloned_actives, cloned_retired);
+                let (s1, s1_ast) = get_cloned_parent(&e.s1, cloned_scfia, cloned_actives, cloned_retired);
+                let (s2, s2_ast) = get_cloned_parent(&e.s2, cloned_scfia, cloned_actives, cloned_retired);
                 if let Some(value) = cloned_retired.get(&self.id) {
                     return value.clone();
                 }
                 let z3_ast = cloned_scfia.z3.new_bvshl(&s1_ast, &s2_ast);
                 cloned_scfia.new_inactive(
                     RetiredExpression::BVSllExpression(RetiredBVSllExpression {
-                        s1_id: e.s1_id,
-                        s2_id: e.s2_id,
-                        phantom: PhantomData,
-                        width: e.width,
                         s1,
                         s2,
+                        phantom: PhantomData,
+                        width: e.width,
                     }),
                     z3_ast,
                     self.id,
                 )
             }
             RetiredExpression::BVSrlExpression(e) => {
-                let (s1, s1_ast) = get_cloned_parent(&e.s1, e.s1_id, cloned_scfia, cloned_actives, cloned_retired);
-                let (s2, s2_ast) = get_cloned_parent(&e.s2, e.s2_id, cloned_scfia, cloned_actives, cloned_retired);
+                let (s1, s1_ast) = get_cloned_parent(&e.s1, cloned_scfia, cloned_actives, cloned_retired);
+                let (s2, s2_ast) = get_cloned_parent(&e.s2, cloned_scfia, cloned_actives, cloned_retired);
                 if let Some(value) = cloned_retired.get(&self.id) {
                     return value.clone();
                 }
                 let z3_ast = cloned_scfia.z3.new_bvlshr(&s1_ast, &s2_ast);
                 cloned_scfia.new_inactive(
                     RetiredExpression::BVSrlExpression(RetiredBVSrlExpression {
-                        s1_id: e.s1_id,
-                        s2_id: e.s2_id,
+                        s1,
+                        s2,
                         shamt: e.shamt,
                         phantom: PhantomData,
                         width: e.width,
-                        s1,
-                        s2,
                     }),
                     z3_ast,
                     self.id,
                 )
             }
             RetiredExpression::BVSubExpression(e) => {
-                let (s1, s1_ast) = get_cloned_parent(&e.s1, e.s1_id, cloned_scfia, cloned_actives, cloned_retired);
-                let (s2, s2_ast) = get_cloned_parent(&e.s2, e.s2_id, cloned_scfia, cloned_actives, cloned_retired);
+                let (s1, s1_ast) = get_cloned_parent(&e.s1, cloned_scfia, cloned_actives, cloned_retired);
+                let (s2, s2_ast) = get_cloned_parent(&e.s2, cloned_scfia, cloned_actives, cloned_retired);
                 if let Some(value) = cloned_retired.get(&self.id) {
                     return value.clone();
                 }
                 let z3_ast = cloned_scfia.z3.new_bvsub(&s1_ast, &s2_ast);
                 cloned_scfia.new_inactive(
                     RetiredExpression::BVSubExpression(RetiredBVSubExpression {
-                        s1_id: e.s1_id,
-                        s2_id: e.s2_id,
-                        phantom: PhantomData,
-                        width: e.width,
                         s1,
                         s2,
+                        phantom: PhantomData,
+                        width: e.width,
                     }),
                     z3_ast,
                     self.id,
@@ -398,40 +378,47 @@ impl<SC: ScfiaComposition> RetiredValueInner<SC> {
                 cloned_scfia.new_inactive(RetiredExpression::BVSymbol(RetiredBVSymbol { width: e.width }), z3_ast, self.id)
             }
             RetiredExpression::BVUnsignedRemainderExpression(e) => {
-                let (s1, s1_ast) = get_cloned_parent(&e.s1, e.s1_id, cloned_scfia, cloned_actives, cloned_retired);
-                let (s2, s2_ast) = get_cloned_parent(&e.s2, e.s2_id, cloned_scfia, cloned_actives, cloned_retired);
+                let (s1, s1_ast) = get_cloned_parent(&e.s1, cloned_scfia, cloned_actives, cloned_retired);
+                let (s2, s2_ast) = get_cloned_parent(&e.s2, cloned_scfia, cloned_actives, cloned_retired);
                 if let Some(value) = cloned_retired.get(&self.id) {
                     return value.clone();
                 }
                 let z3_ast = cloned_scfia.z3.new_bvurem(&s1_ast, &s2_ast);
                 cloned_scfia.new_inactive(
                     RetiredExpression::BVUnsignedRemainderExpression(RetiredBVUnsignedRemainderExpression {
-                        s1_id: e.s1_id,
-                        s2_id: e.s2_id,
-                        phantom: PhantomData,
-                        width: e.width,
                         s1,
                         s2,
+                        phantom: PhantomData,
+                        width: e.width,
                     }),
                     z3_ast,
                     self.id,
                 )
             }
             RetiredExpression::BVXorExpression(e) => {
-                let (s1, s1_ast) = get_cloned_parent(&e.s1, e.s1_id, cloned_scfia, cloned_actives, cloned_retired);
-                let (s2, s2_ast) = get_cloned_parent(&e.s2, e.s2_id, cloned_scfia, cloned_actives, cloned_retired);
+                let (s1, s1_ast) = get_cloned_parent(&e.s1, cloned_scfia, cloned_actives, cloned_retired);
+                let (s2, s2_ast) = get_cloned_parent(&e.s2, cloned_scfia, cloned_actives, cloned_retired);
                 if let Some(value) = cloned_retired.get(&self.id) {
                     return value.clone();
                 }
                 let z3_ast = cloned_scfia.z3.new_bvxor(&s1_ast, &s2_ast);
                 cloned_scfia.new_inactive(
                     RetiredExpression::BVXorExpression(RetiredBVXorExpression {
-                        s1_id: e.s1_id,
-                        s2_id: e.s2_id,
-                        phantom: PhantomData,
-                        width: e.width,
                         s1,
                         s2,
+                        phantom: PhantomData,
+                        width: e.width,
+                    }),
+                    z3_ast,
+                    self.id,
+                )
+            }
+            RetiredExpression::BVConcreteExpression(e) => {
+                let z3_ast = cloned_scfia.z3.new_bv_concrete(e.value, e.width);
+                cloned_scfia.new_inactive(
+                    RetiredExpression::BVConcreteExpression(RetiredBVConcreteExpression {
+                        value: e.value,
+                        width: e.width,
                     }),
                     z3_ast,
                     self.id,
@@ -458,10 +445,8 @@ impl<SC: ScfiaComposition> Debug for RetiredValueInner<SC> {
 impl<SC: ScfiaComposition> Debug for RetiredExpression<SC> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            RetiredExpression::BVConcrete(e) => e.fmt(f),
             RetiredExpression::BVSymbol(e) => e.fmt(f),
             RetiredExpression::BVAddExpression(e) => e.fmt(f),
-            RetiredExpression::BoolConcrete(e) => e.fmt(f),
             RetiredExpression::BoolEqExpression(e) => e.fmt(f),
             RetiredExpression::BoolNotExpression(e) => e.fmt(f),
             RetiredExpression::BoolSignedLessThanExpression(e) => e.fmt(f),
@@ -477,6 +462,7 @@ impl<SC: ScfiaComposition> Debug for RetiredExpression<SC> {
             RetiredExpression::BVSubExpression(e) => e.fmt(f),
             RetiredExpression::BVUnsignedRemainderExpression(e) => e.fmt(f),
             RetiredExpression::BVXorExpression(e) => e.fmt(f),
+            RetiredExpression::BVConcreteExpression(e) => e.fmt(f),
         }
     }
 }

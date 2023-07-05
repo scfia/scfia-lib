@@ -1,19 +1,18 @@
-use std::{cell::RefCell, fmt::Debug, marker::PhantomData, rc::Weak};
+use std::{cell::RefCell, fmt::Debug, marker::PhantomData, rc::Rc};
 
 use crate::ScfiaComposition;
 
-use super::active_value::{ActiveValue, ActiveValueInner};
+use super::{active_value::ActiveValueZ3, retired_value::ParentWeakReference};
 
 #[derive(Debug)]
 pub struct BoolNotExpression<SC: ScfiaComposition> {
-    pub s1: ActiveValue<SC>,
+    pub s1: Rc<RefCell<ActiveValueZ3<SC>>>,
     pub is_assert: bool,
 }
 
 #[derive(Debug)]
 pub struct RetiredBoolNotExpression<SC: ScfiaComposition> {
-    pub s1: Weak<RefCell<ActiveValueInner<SC>>>,
-    pub s1_id: u64,
+    pub s1: ParentWeakReference<SC>,
     pub is_assert: bool,
     pub phantom: PhantomData<SC>,
 }

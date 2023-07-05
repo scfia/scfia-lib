@@ -8,7 +8,7 @@ use z3_sys::Z3_L_FALSE;
 use crate::{
     scfia::Scfia,
     values::{
-        active_value::{ActiveExpression, ActiveValue, ActiveValueInner},
+        active_value::{ActiveValue, ActiveValueZ3},
         retired_value::RetiredValue,
     },
     ScfiaComposition, SymbolicHints,
@@ -36,11 +36,11 @@ impl<SC: ScfiaComposition> Memory<SC> {
         for stable in &self.stables {
             for (address, value) in &stable.memory {
                 if let Some((_, highest_depth)) = highest {
-                    if value.try_borrow().unwrap().get_depth() > highest_depth {
-                        highest = Some((*address, value.try_borrow().unwrap().get_depth()))
+                    if value.get_depth() > highest_depth {
+                        highest = Some((*address, value.get_depth()))
                     }
                 } else {
-                    highest = Some((*address, value.try_borrow().unwrap().get_depth()))
+                    highest = Some((*address, value.get_depth()))
                 }
             }
         }
@@ -55,11 +55,10 @@ impl<SC: ScfiaComposition> Memory<SC> {
         hints: &mut Option<SymbolicHints>,
         fork_sink: &mut Option<SC::ForkSink>,
     ) -> ActiveValue<SC> {
-        let address_inner = address.try_borrow().unwrap();
-        if let ActiveExpression::BVConcrete(e) = &address_inner.expression {
-            self.read_concrete(e.value, width, scfia, fork_sink)
-        } else {
-            self.read_symbolic(&address_inner, width, scfia, hints, fork_sink)
+        match address {
+            ActiveValue::BoolConcrete(_) => panic!(),
+            ActiveValue::BVConcrete(address, _) => self.read_concrete(*address, width, scfia, fork_sink),
+            ActiveValue::Expression(e) => self.read_symbolic(&e.try_borrow().unwrap(), width, scfia, hints, fork_sink),
         }
     }
 
@@ -72,27 +71,25 @@ impl<SC: ScfiaComposition> Memory<SC> {
         hints: &mut Option<SymbolicHints>,
         fork_sink: &mut Option<SC::ForkSink>,
     ) {
-        let address_inner = address.try_borrow().unwrap();
-        if let ActiveExpression::BVConcrete(e) = &address_inner.expression {
-            self.write_concrete(e.value, value, width, scfia, fork_sink)
-        } else {
-            self.write_symbolic(&address_inner, value, width, scfia, hints)
+        match address {
+            ActiveValue::BoolConcrete(_) => panic!(),
+            ActiveValue::BVConcrete(address, _) => self.write_concrete(*address, value, width, scfia, fork_sink),
+            ActiveValue::Expression(e) => self.write_symbolic(&e.try_borrow().unwrap(), value, width, scfia, hints),
         }
     }
 
     fn read_symbolic(
         &mut self,
-        address: &ActiveValueInner<SC>,
+        address: &ActiveValueZ3<SC>,
         width: u32,
         scfia: &Scfia<SC>,
         hints: &mut Option<SymbolicHints>,
         fork_sink: &mut Option<SC::ForkSink>,
     ) -> ActiveValue<SC> {
-        // Symbolic reads can be symbolic volatile region reads or unanimous reads.
-        // Check for symbolic volatile region read:
+        // First we check whether the address points into a symbolic volatile region.
         for region in &self.symbolic_volatiles {
             let begin = Instant::now();
-            let base_ast = region.base_symbol.try_borrow().unwrap().z3_ast.clone();
+            let base_ast = region.base_symbol.get_z3_ast().clone();
             // address < base_address
             let lt = scfia.z3.new_bvult(&address.z3_ast, &base_ast, false);
 
@@ -102,7 +99,6 @@ impl<SC: ScfiaComposition> Memory<SC> {
             let ge = scfia.z3.new_bvuge(&address.z3_ast, &add_ast, false);
             let assumption = scfia.z3.new_or(&lt, &ge);
 
-            debug!("checking symbolic offset read assumptions");
             let check_result = scfia.z3.check_assumptions(&[&assumption]);
             if check_result == Z3_L_FALSE {
                 // If the address CAN NOT be outside the symbolic volatile region, we can return a new BVS
@@ -110,41 +106,55 @@ impl<SC: ScfiaComposition> Memory<SC> {
                 return scfia.new_bv_symbol(width, None, fork_sink, None);
             }
         }
-        // Check for unamimous read
-        let mut candidates = if let Some(hints) = hints { hints.hints.pop().unwrap() } else { vec![] };
-        scfia.z3.monomorphize(&address.z3_ast, &mut candidates);
-        let unanimous_address = candidates.windows(2).all(|w| w[0] == w[1]);
-        assert!(!candidates.is_empty());
-        if unanimous_address {
-            self.read_concrete(candidates[0], width, scfia, fork_sink)
-        } else {
-            // The addresses are not unanimous, but the values might still be
-            let value = self.read_concrete(candidates[0], width, scfia, fork_sink);
-            for address in &candidates {
-                let other_value = self.read_concrete(*address, width, scfia, fork_sink);
-                let eq = scfia
-                    .z3
-                    .new_eq(&value.try_borrow().unwrap().z3_ast, &other_value.try_borrow().unwrap().z3_ast, false);
-                let not = scfia.z3.new_not(&eq, false);
-                if scfia.z3.check_assumptions(&[&not]) != Z3_L_FALSE {
-                    error!("Unequal values behind unimous read: *0x{:x} != *0x{:x}", candidates[0], address);
-                    panic!("Could not resolve symbolic read: {:?} != {:?}", value, other_value);
-                };
-            }
 
-            println!("Unamimous value read returning {:?}", value);
-            // TODO we must return a fresh symbol/value with the same monomorphization here, not just a random one!
-            value
+        // Then we monomorphize the address value.
+        let mut address_candidates = if let Some(hints) = hints { hints.hints.pop().unwrap() } else { vec![] };
+        scfia.z3.monomorphize(&address.z3_ast, &mut address_candidates);
+        let unanimous_address = address_candidates.windows(2).all(|w| w[0] == w[1]);
+        assert!(!address_candidates.is_empty());
+
+        if unanimous_address {
+            // If the address value has exactly one interpretation, we can read from there.
+            self.read_concrete(address_candidates[0], width, scfia, fork_sink)
+        } else {
+            // If the address value has more than one interpretation, we have to asssert that every address interpretation yields the same value.
+            let value = self.read_concrete(address_candidates[0], width, scfia, fork_sink);
+            if let Some(concrete_value) = value.try_get_concrete() {
+                // If the first interpretation yields a concrete value, we can simply compare it against the yields of the rest.
+                for address in &address_candidates {
+                    if concrete_value != self.read_concrete(*address, width, scfia, &mut None).try_get_concrete().unwrap() {
+                        panic!("Read from {:x} did not yield {:x}", address, concrete_value)
+                    }
+                }
+
+                debug!("Symbolic unanimous value read returning concrete");
+                value
+            } else {
+                // If the first interpretation yields no concrete value, we have to assert that the values are equal.
+                // Therefore we assert that value_1 != value_n is not satisfiable.
+                for address in &address_candidates {
+                    let other_value = self.read_concrete(*address, width, scfia, fork_sink).into_z3_value(scfia, fork_sink);
+                    let eq = scfia.z3.new_eq(&value.get_z3_ast(), &other_value.get_z3_ast(), false);
+                    let not = scfia.z3.new_not(&eq, false);
+                    if scfia.z3.check_assumptions(&[&not]) != Z3_L_FALSE {
+                        error!("Unequal values behind unimous read: *0x{:x} != *0x{:x}", address_candidates[0], address);
+                        panic!("Could not resolve symbolic read: {:?} != {:?}", value, other_value);
+                    };
+                }
+
+                debug!("Symbolic unanimous value read returning expression");
+                value
+            }
         }
     }
 
-    fn write_symbolic(&mut self, address: &ActiveValueInner<SC>, _value: &ActiveValue<SC>, width: u32, scfia: &Scfia<SC>, hints: &mut Option<SymbolicHints>) {
+    fn write_symbolic(&mut self, address: &ActiveValueZ3<SC>, _value: &ActiveValue<SC>, width: u32, scfia: &Scfia<SC>, hints: &mut Option<SymbolicHints>) {
         debug!("write_symbolic");
         // Symbolic writes can be symbolic volatile region writes or unanimous writes
 
         // Check for symbolic volatile region write
         for region in &self.symbolic_volatiles {
-            let region_base = region.base_symbol.try_borrow().unwrap().z3_ast.clone();
+            let region_base = region.base_symbol.get_z3_ast();
             // address < base_address
             let lt = scfia.z3.new_bvult(&address.z3_ast, &region_base, false);
 

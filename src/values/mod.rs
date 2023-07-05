@@ -1,5 +1,4 @@
 pub mod active_value;
-pub mod bool_concrete;
 pub mod bool_eq_expression;
 pub mod bool_not_expresssion;
 pub mod bool_signed_less_than_expression;
@@ -7,7 +6,7 @@ pub mod bool_unsigned_less_than_expression;
 pub mod bv_add_expression;
 pub mod bv_and_expression;
 pub mod bv_concat_expression;
-pub mod bv_concrete;
+pub mod bv_concrete_expression;
 pub mod bv_multiply_expression;
 pub mod bv_or_expression;
 pub mod bv_sign_extend_expression;
