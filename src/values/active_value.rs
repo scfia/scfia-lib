@@ -124,6 +124,19 @@ impl<SC: ScfiaComposition> ActiveValue<SC> {
         }
     }
 
+    pub fn try_get_concrete(&self) -> Option<u64> {
+        match &self {
+            ActiveValue::BVConcrete(value, _) => Some(*value),
+            ActiveValue::Expression(e) => {
+                match &e.try_borrow().unwrap().expression {
+                    ActiveExpression::BVConcreteExpression(bv_concrete) => Some(bv_concrete.value),
+                    _ => None,
+                }
+            },
+            _ => None,
+        }
+    }
+
     pub fn set_can_inherit(&self, value: bool) {
         if let ActiveValue::Expression(e) = self {
             e.try_borrow_mut().unwrap().can_inherit = value
@@ -149,7 +162,7 @@ impl<SC: ScfiaComposition> ActiveValue<SC> {
     }
 
     pub fn assert(&self, _scfia: &Scfia<SC>) {
-        debug!("asserting {:?}", self); // TODO
+        debug!("asserting {:?}", self); // TODO set is_assert
         self.get_z3_ast().assert()
     }
 

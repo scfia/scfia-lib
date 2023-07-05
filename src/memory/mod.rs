@@ -86,8 +86,7 @@ impl<SC: ScfiaComposition> Memory<SC> {
         hints: &mut Option<SymbolicHints>,
         fork_sink: &mut Option<SC::ForkSink>,
     ) -> ActiveValue<SC> {
-        // Symbolic reads can be symbolic volatile region reads or unanimous reads.
-        // Check for symbolic volatile region read:
+        // First we check whether the address points into a symbolic volatile region.
         for region in &self.symbolic_volatiles {
             let begin = Instant::now();
             let base_ast = region.base_symbol.get_z3_ast().clone();
@@ -100,7 +99,6 @@ impl<SC: ScfiaComposition> Memory<SC> {
             let ge = scfia.z3.new_bvuge(&address.z3_ast, &add_ast, false);
             let assumption = scfia.z3.new_or(&lt, &ge);
 
-            debug!("checking symbolic offset read assumptions");
             let check_result = scfia.z3.check_assumptions(&[&assumption]);
             if check_result == Z3_L_FALSE {
                 // If the address CAN NOT be outside the symbolic volatile region, we can return a new BVS
@@ -108,29 +106,45 @@ impl<SC: ScfiaComposition> Memory<SC> {
                 return scfia.new_bv_symbol(width, None, fork_sink, None);
             }
         }
-        // Check for unamimous read
-        let mut candidates = if let Some(hints) = hints { hints.hints.pop().unwrap() } else { vec![] };
-        scfia.z3.monomorphize(&address.z3_ast, &mut candidates);
-        let unanimous_address = candidates.windows(2).all(|w| w[0] == w[1]);
-        assert!(!candidates.is_empty());
-        if unanimous_address {
-            self.read_concrete(candidates[0], width, scfia, fork_sink)
-        } else {
-            // The addresses are not unanimous, but the values might still be
-            let value = self.read_concrete(candidates[0], width, scfia, fork_sink).into_z3_value(scfia, fork_sink);
-            for address in &candidates {
-                let other_value = self.read_concrete(*address, width, scfia, fork_sink).into_z3_value(scfia, fork_sink);
-                let eq = scfia.z3.new_eq(&value.get_z3_ast(), &other_value.get_z3_ast(), false);
-                let not = scfia.z3.new_not(&eq, false);
-                if scfia.z3.check_assumptions(&[&not]) != Z3_L_FALSE {
-                    error!("Unequal values behind unimous read: *0x{:x} != *0x{:x}", candidates[0], address);
-                    panic!("Could not resolve symbolic read: {:?} != {:?}", value, other_value);
-                };
-            }
 
-            println!("Unamimous value read returning {:?}", value);
-            // TODO we must return a fresh symbol/value with the same monomorphization here, not just a random one!
-            value
+        // Then we monomorphize the address value.
+        let mut address_candidates = if let Some(hints) = hints { hints.hints.pop().unwrap() } else { vec![] };
+        scfia.z3.monomorphize(&address.z3_ast, &mut address_candidates);
+        let unanimous_address = address_candidates.windows(2).all(|w| w[0] == w[1]);
+        assert!(!address_candidates.is_empty());
+
+        if unanimous_address {
+            // If the address value has exactly one interpretation, we can read from there.
+            self.read_concrete(address_candidates[0], width, scfia, fork_sink)
+        } else {
+            // If the address value has more than one interpretation, we have to asssert that every address interpretation yields the same value.
+            let value = self.read_concrete(address_candidates[0], width, scfia, fork_sink);
+            if let Some(concrete_value) = value.try_get_concrete() {
+                // If the first interpretation yields a concrete value, we can simply compare it against the yields of the rest.
+                for address in &address_candidates {
+                    if concrete_value != self.read_concrete(*address, width, scfia, &mut None).try_get_concrete().unwrap() {
+                        panic!("Read from {:x} did not yield {:x}", address, concrete_value)
+                    }
+                }
+
+                debug!("Symbolic unanimous value read returning concrete");
+                value
+            } else {
+                // If the first interpretation yields no concrete value, we have to assert that the values are equal.
+                // Therefore we assert that value_1 != value_n is not satisfiable.
+                for address in &address_candidates {
+                    let other_value = self.read_concrete(*address, width, scfia, fork_sink).into_z3_value(scfia, fork_sink);
+                    let eq = scfia.z3.new_eq(&value.get_z3_ast(), &other_value.get_z3_ast(), false);
+                    let not = scfia.z3.new_not(&eq, false);
+                    if scfia.z3.check_assumptions(&[&not]) != Z3_L_FALSE {
+                        error!("Unequal values behind unimous read: *0x{:x} != *0x{:x}", address_candidates[0], address);
+                        panic!("Could not resolve symbolic read: {:?} != {:?}", value, other_value);
+                    };
+                }
+
+                debug!("Symbolic unanimous value read returning expression");
+                value
+            }
         }
     }
 
