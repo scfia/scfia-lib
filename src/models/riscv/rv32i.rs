@@ -291,54 +291,54 @@ unsafe fn _sum(state: *mut SystemState, context: *mut StepContext<RV32iScfiaComp
 }
 
 unsafe fn _step(state: *mut SystemState, context: *mut StepContext<RV32iScfiaComposition>) {
-    let instruction_32: ActiveValue<RV32iScfiaComposition> = (*(*context).memory).read(&(*state).pc.clone(), 32, (*context).scfia.clone(), &mut (*context).hints, &mut (*context).fork_sink);
-    let opcode: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 6, 0, None, &mut (*context).fork_sink, None);
+    let mut instruction_32: ActiveValue<RV32iScfiaComposition> = (*(*context).memory).read(&(*state).pc.clone(), 32, (*context).scfia.clone(), &mut (*context).hints, &mut (*context).fork_sink);
+    let mut opcode: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 6, 0, None, &mut (*context).fork_sink, None);
     if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&opcode.clone(), &(*context).scfia.new_bv_concrete(0b11, 7), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-        let funct3: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 14, 12, None, &mut (*context).fork_sink, None);
+        let mut funct3: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 14, 12, None, &mut (*context).fork_sink, None);
         if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b1, 3), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-            let rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
-            let rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
-            let imm: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 20, None, &mut (*context).fork_sink, None);
-            let imm32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm.clone(), 12, 32, None, &mut (*context).fork_sink, None);
-            let base_address: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs1.clone(), context);
-            let address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&base_address.clone(), &imm32.clone(), 32, None, &mut (*context).fork_sink, None);
-            let value16: ActiveValue<RV32iScfiaComposition> = (*(*context).memory).read(&address.clone(), 16, (*context).scfia.clone(), &mut (*context).hints, &mut (*context).fork_sink);
-            let value: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&value16.clone(), 16, 32, None, &mut (*context).fork_sink, None);
+            let mut rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
+            let mut rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
+            let mut imm: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 20, None, &mut (*context).fork_sink, None);
+            let mut imm32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm.clone(), 12, 32, None, &mut (*context).fork_sink, None);
+            let mut base_address: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs1.clone(), context);
+            let mut address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&base_address.clone(), &imm32.clone(), 32, None, &mut (*context).fork_sink, None);
+            let mut value16: ActiveValue<RV32iScfiaComposition> = (*(*context).memory).read(&address.clone(), 16, (*context).scfia.clone(), &mut (*context).hints, &mut (*context).fork_sink);
+            let mut value: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&value16.clone(), 16, 32, None, &mut (*context).fork_sink, None);
             _register_write_BV32(state, rd.clone(), value.clone(), context);
             _progress_pc_4(state, context);
         }
         else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b10, 3), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-            let rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
-            let rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
-            let imm: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 20, None, &mut (*context).fork_sink, None);
-            let imm32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm.clone(), 12, 32, None, &mut (*context).fork_sink, None);
-            let base_address: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs1.clone(), context);
-            let address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&base_address.clone(), &imm32.clone(), 32, None, &mut (*context).fork_sink, None);
-            let value: ActiveValue<RV32iScfiaComposition> = (*(*context).memory).read(&address.clone(), 32, (*context).scfia.clone(), &mut (*context).hints, &mut (*context).fork_sink);
+            let mut rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
+            let mut rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
+            let mut imm: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 20, None, &mut (*context).fork_sink, None);
+            let mut imm32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm.clone(), 12, 32, None, &mut (*context).fork_sink, None);
+            let mut base_address: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs1.clone(), context);
+            let mut address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&base_address.clone(), &imm32.clone(), 32, None, &mut (*context).fork_sink, None);
+            let mut value: ActiveValue<RV32iScfiaComposition> = (*(*context).memory).read(&address.clone(), 32, (*context).scfia.clone(), &mut (*context).hints, &mut (*context).fork_sink);
             _register_write_BV32(state, rd.clone(), value.clone(), context);
             _progress_pc_4(state, context);
         }
         else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b100, 3), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-            let rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
-            let rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
-            let imm: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 20, None, &mut (*context).fork_sink, None);
-            let imm32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm.clone(), 12, 32, None, &mut (*context).fork_sink, None);
-            let base_address: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs1.clone(), context);
-            let address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&base_address.clone(), &imm32.clone(), 32, None, &mut (*context).fork_sink, None);
-            let value8: ActiveValue<RV32iScfiaComposition> = (*(*context).memory).read(&address.clone(), 8, (*context).scfia.clone(), &mut (*context).hints, &mut (*context).fork_sink);
-            let value: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&(*context).scfia.new_bv_concrete(0b0, 24), &value8.clone(), 32, None, &mut (*context).fork_sink, None);
+            let mut rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
+            let mut rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
+            let mut imm: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 20, None, &mut (*context).fork_sink, None);
+            let mut imm32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm.clone(), 12, 32, None, &mut (*context).fork_sink, None);
+            let mut base_address: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs1.clone(), context);
+            let mut address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&base_address.clone(), &imm32.clone(), 32, None, &mut (*context).fork_sink, None);
+            let mut value8: ActiveValue<RV32iScfiaComposition> = (*(*context).memory).read(&address.clone(), 8, (*context).scfia.clone(), &mut (*context).hints, &mut (*context).fork_sink);
+            let mut value: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&(*context).scfia.new_bv_concrete(0b0, 24), &value8.clone(), 32, None, &mut (*context).fork_sink, None);
             _register_write_BV32(state, rd.clone(), value.clone(), context);
             _progress_pc_4(state, context);
         }
         else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b101, 3), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-            let rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
-            let rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
-            let imm: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 20, None, &mut (*context).fork_sink, None);
-            let imm32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm.clone(), 12, 32, None, &mut (*context).fork_sink, None);
-            let base_address: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs1.clone(), context);
-            let address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&base_address.clone(), &imm32.clone(), 32, None, &mut (*context).fork_sink, None);
-            let value16: ActiveValue<RV32iScfiaComposition> = (*(*context).memory).read(&address.clone(), 16, (*context).scfia.clone(), &mut (*context).hints, &mut (*context).fork_sink);
-            let value: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&(*context).scfia.new_bv_concrete(0b0, 16), &value16.clone(), 32, None, &mut (*context).fork_sink, None);
+            let mut rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
+            let mut rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
+            let mut imm: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 20, None, &mut (*context).fork_sink, None);
+            let mut imm32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm.clone(), 12, 32, None, &mut (*context).fork_sink, None);
+            let mut base_address: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs1.clone(), context);
+            let mut address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&base_address.clone(), &imm32.clone(), 32, None, &mut (*context).fork_sink, None);
+            let mut value16: ActiveValue<RV32iScfiaComposition> = (*(*context).memory).read(&address.clone(), 16, (*context).scfia.clone(), &mut (*context).hints, &mut (*context).fork_sink);
+            let mut value: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&(*context).scfia.new_bv_concrete(0b0, 16), &value16.clone(), 32, None, &mut (*context).fork_sink, None);
             _register_write_BV32(state, rd.clone(), value.clone(), context);
             _progress_pc_4(state, context);
         }
@@ -347,10 +347,10 @@ unsafe fn _step(state: *mut SystemState, context: *mut StepContext<RV32iScfiaCom
         }
     }
     else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&opcode.clone(), &(*context).scfia.new_bv_concrete(0b1111, 7), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-        let rd_zeroes: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 11, 7, None, &mut (*context).fork_sink, None);
+        let mut rd_zeroes: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 11, 7, None, &mut (*context).fork_sink, None);
         if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&rd_zeroes.clone(), &(*context).scfia.new_bv_concrete(0b0, 5), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-            let funct3: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 14, 12, None, &mut (*context).fork_sink, None);
-            let rs1_zeroes: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 19, 15, None, &mut (*context).fork_sink, None);
+            let mut funct3: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 14, 12, None, &mut (*context).fork_sink, None);
+            let mut rs1_zeroes: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 19, 15, None, &mut (*context).fork_sink, None);
             if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&rs1_zeroes.clone(), &(*context).scfia.new_bv_concrete(0b0, 5), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
                 if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b0, 3), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
                     _progress_pc_4(state, context);
@@ -368,23 +368,23 @@ unsafe fn _step(state: *mut SystemState, context: *mut StepContext<RV32iScfiaCom
         }
     }
     else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&opcode.clone(), &(*context).scfia.new_bv_concrete(0b10011, 7), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-        let funct3: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 14, 12, None, &mut (*context).fork_sink, None);
+        let mut funct3: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 14, 12, None, &mut (*context).fork_sink, None);
         if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b0, 3), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-            let rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
-            let rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
-            let offset: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 20, None, &mut (*context).fork_sink, None);
-            let offset_32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&offset.clone(), 12, 32, None, &mut (*context).fork_sink, None);
-            let result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&offset_32.clone(), &_register_read_BV32(state, rs1.clone(), context), 32, None, &mut (*context).fork_sink, None);
+            let mut rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
+            let mut rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
+            let mut offset: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 20, None, &mut (*context).fork_sink, None);
+            let mut offset_32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&offset.clone(), 12, 32, None, &mut (*context).fork_sink, None);
+            let mut result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&offset_32.clone(), &_register_read_BV32(state, rs1.clone(), context), 32, None, &mut (*context).fork_sink, None);
             _register_write_BV32(state, rd.clone(), result.clone(), context);
             _progress_pc_4(state, context);
         }
         else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b1, 3), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-            let funct7: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 25, None, &mut (*context).fork_sink, None);
+            let mut funct7: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 25, None, &mut (*context).fork_sink, None);
             if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct7.clone(), &(*context).scfia.new_bv_concrete(0b0, 7), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-                let rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
-                let rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
-                let shamt: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 24, 20, None, &mut (*context).fork_sink, None);
-                let result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sll(&_register_read_BV32(state, rs1.clone(), context), &(*context).scfia.new_bv_concat(&(*context).scfia.new_bv_concrete(0, 27), &shamt.clone(), 32, None, &mut (*context).fork_sink, None), 32, None, &mut (*context).fork_sink, None);
+                let mut rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
+                let mut rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
+                let mut shamt: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 24, 20, None, &mut (*context).fork_sink, None);
+                let mut result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sll(&_register_read_BV32(state, rs1.clone(), context), &(*context).scfia.new_bv_concat(&(*context).scfia.new_bv_concrete(0, 27), &shamt.clone(), 32, None, &mut (*context).fork_sink, None), 32, None, &mut (*context).fork_sink, None);
                 _register_write_BV32(state, rd.clone(), result.clone(), context);
                 _progress_pc_4(state, context);
             }
@@ -393,21 +393,21 @@ unsafe fn _step(state: *mut SystemState, context: *mut StepContext<RV32iScfiaCom
             }
         }
         else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b100, 3), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-            let rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
-            let rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
-            let imm: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 20, None, &mut (*context).fork_sink, None);
-            let imm_32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm.clone(), 12, 32, None, &mut (*context).fork_sink, None);
-            let result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_xor(&_register_read_BV32(state, rs1.clone(), context), &imm_32.clone(), 32, None, &mut (*context).fork_sink, None);
+            let mut rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
+            let mut rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
+            let mut imm: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 20, None, &mut (*context).fork_sink, None);
+            let mut imm_32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm.clone(), 12, 32, None, &mut (*context).fork_sink, None);
+            let mut result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_xor(&_register_read_BV32(state, rs1.clone(), context), &imm_32.clone(), 32, None, &mut (*context).fork_sink, None);
             _register_write_BV32(state, rd.clone(), result.clone(), context);
             _progress_pc_4(state, context);
         }
         else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b101, 3), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-            let funct7: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 25, None, &mut (*context).fork_sink, None);
+            let mut funct7: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 25, None, &mut (*context).fork_sink, None);
             if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct7.clone(), &(*context).scfia.new_bv_concrete(0b0, 7), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-                let rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
-                let rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
-                let shamt: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 24, 20, None, &mut (*context).fork_sink, None);
-                let result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_srl(&_register_read_BV32(state, rs1.clone(), context), &(*context).scfia.new_bv_concat(&(*context).scfia.new_bv_concrete(0, 27), &shamt.clone(), 32, None, &mut (*context).fork_sink, None), 32, None, &mut (*context).fork_sink, None);
+                let mut rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
+                let mut rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
+                let mut shamt: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 24, 20, None, &mut (*context).fork_sink, None);
+                let mut result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_srl(&_register_read_BV32(state, rs1.clone(), context), &(*context).scfia.new_bv_concat(&(*context).scfia.new_bv_concrete(0, 27), &shamt.clone(), 32, None, &mut (*context).fork_sink, None), 32, None, &mut (*context).fork_sink, None);
                 _register_write_BV32(state, rd.clone(), result.clone(), context);
                 _progress_pc_4(state, context);
             }
@@ -416,20 +416,20 @@ unsafe fn _step(state: *mut SystemState, context: *mut StepContext<RV32iScfiaCom
             }
         }
         else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b110, 3), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-            let rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
-            let rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
-            let imm: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 20, None, &mut (*context).fork_sink, None);
-            let imm_32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm.clone(), 12, 32, None, &mut (*context).fork_sink, None);
-            let result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_or(&_register_read_BV32(state, rs1.clone(), context), &imm_32.clone(), 32, None, &mut (*context).fork_sink, None);
+            let mut rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
+            let mut rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
+            let mut imm: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 20, None, &mut (*context).fork_sink, None);
+            let mut imm_32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm.clone(), 12, 32, None, &mut (*context).fork_sink, None);
+            let mut result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_or(&_register_read_BV32(state, rs1.clone(), context), &imm_32.clone(), 32, None, &mut (*context).fork_sink, None);
             _register_write_BV32(state, rd.clone(), result.clone(), context);
             _progress_pc_4(state, context);
         }
         else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b111, 3), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-            let rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
-            let rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
-            let imm: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 20, None, &mut (*context).fork_sink, None);
-            let imm_32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm.clone(), 12, 32, None, &mut (*context).fork_sink, None);
-            let result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_and(&_register_read_BV32(state, rs1.clone(), context), &imm_32.clone(), 32, None, &mut (*context).fork_sink, None);
+            let mut rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
+            let mut rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
+            let mut imm: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 20, None, &mut (*context).fork_sink, None);
+            let mut imm_32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm.clone(), 12, 32, None, &mut (*context).fork_sink, None);
+            let mut result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_and(&_register_read_BV32(state, rs1.clone(), context), &imm_32.clone(), 32, None, &mut (*context).fork_sink, None);
             _register_write_BV32(state, rd.clone(), result.clone(), context);
             _progress_pc_4(state, context);
         }
@@ -438,45 +438,45 @@ unsafe fn _step(state: *mut SystemState, context: *mut StepContext<RV32iScfiaCom
         }
     }
     else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&opcode.clone(), &(*context).scfia.new_bv_concrete(0b100011, 7), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-        let funct3: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 14, 12, None, &mut (*context).fork_sink, None);
+        let mut funct3: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 14, 12, None, &mut (*context).fork_sink, None);
         if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b0, 3), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-            let rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
-            let rs2: ActiveValue<RV32iScfiaComposition> = _extract_rs2_32(instruction_32.clone(), context);
-            let offset_11_5: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 25, None, &mut (*context).fork_sink, None);
-            let offset_4_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 11, 7, None, &mut (*context).fork_sink, None);
-            let offset: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&offset_11_5.clone(), &offset_4_0.clone(), 12, None, &mut (*context).fork_sink, None);
-            let offset_32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&offset.clone(), 12, 32, None, &mut (*context).fork_sink, None);
-            let base_address: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs1.clone(), context);
-            let address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&base_address.clone(), &offset_32.clone(), 32, None, &mut (*context).fork_sink, None);
-            let value_32: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs2.clone(), context);
-            let value: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&value_32.clone(), 7, 0, None, &mut (*context).fork_sink, None);
+            let mut rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
+            let mut rs2: ActiveValue<RV32iScfiaComposition> = _extract_rs2_32(instruction_32.clone(), context);
+            let mut offset_11_5: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 25, None, &mut (*context).fork_sink, None);
+            let mut offset_4_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 11, 7, None, &mut (*context).fork_sink, None);
+            let mut offset: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&offset_11_5.clone(), &offset_4_0.clone(), 12, None, &mut (*context).fork_sink, None);
+            let mut offset_32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&offset.clone(), 12, 32, None, &mut (*context).fork_sink, None);
+            let mut base_address: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs1.clone(), context);
+            let mut address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&base_address.clone(), &offset_32.clone(), 32, None, &mut (*context).fork_sink, None);
+            let mut value_32: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs2.clone(), context);
+            let mut value: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&value_32.clone(), 7, 0, None, &mut (*context).fork_sink, None);
             (*(*context).memory).write(&address.clone(), &value.clone(), 8, (*context).scfia.clone(), &mut (*context).hints, &mut (*context).fork_sink);
             _progress_pc_4(state, context);
         }
         else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b1, 3), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-            let rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
-            let rs2: ActiveValue<RV32iScfiaComposition> = _extract_rs2_32(instruction_32.clone(), context);
-            let offset_11_5: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 25, None, &mut (*context).fork_sink, None);
-            let offset_4_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 11, 7, None, &mut (*context).fork_sink, None);
-            let offset: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&offset_11_5.clone(), &offset_4_0.clone(), 12, None, &mut (*context).fork_sink, None);
-            let offset_32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&offset.clone(), 12, 32, None, &mut (*context).fork_sink, None);
-            let base_address: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs1.clone(), context);
-            let address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&base_address.clone(), &offset_32.clone(), 32, None, &mut (*context).fork_sink, None);
-            let value_32: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs2.clone(), context);
-            let value: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&value_32.clone(), 15, 0, None, &mut (*context).fork_sink, None);
+            let mut rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
+            let mut rs2: ActiveValue<RV32iScfiaComposition> = _extract_rs2_32(instruction_32.clone(), context);
+            let mut offset_11_5: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 25, None, &mut (*context).fork_sink, None);
+            let mut offset_4_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 11, 7, None, &mut (*context).fork_sink, None);
+            let mut offset: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&offset_11_5.clone(), &offset_4_0.clone(), 12, None, &mut (*context).fork_sink, None);
+            let mut offset_32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&offset.clone(), 12, 32, None, &mut (*context).fork_sink, None);
+            let mut base_address: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs1.clone(), context);
+            let mut address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&base_address.clone(), &offset_32.clone(), 32, None, &mut (*context).fork_sink, None);
+            let mut value_32: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs2.clone(), context);
+            let mut value: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&value_32.clone(), 15, 0, None, &mut (*context).fork_sink, None);
             (*(*context).memory).write(&address.clone(), &value.clone(), 16, (*context).scfia.clone(), &mut (*context).hints, &mut (*context).fork_sink);
             _progress_pc_4(state, context);
         }
         else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b10, 3), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-            let rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
-            let rs2: ActiveValue<RV32iScfiaComposition> = _extract_rs2_32(instruction_32.clone(), context);
-            let offset_11_5: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 25, None, &mut (*context).fork_sink, None);
-            let offset_4_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 11, 7, None, &mut (*context).fork_sink, None);
-            let offset: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&offset_11_5.clone(), &offset_4_0.clone(), 12, None, &mut (*context).fork_sink, None);
-            let offset_32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&offset.clone(), 12, 32, None, &mut (*context).fork_sink, None);
-            let base_address: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs1.clone(), context);
-            let address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&base_address.clone(), &offset_32.clone(), 32, None, &mut (*context).fork_sink, None);
-            let value: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs2.clone(), context);
+            let mut rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
+            let mut rs2: ActiveValue<RV32iScfiaComposition> = _extract_rs2_32(instruction_32.clone(), context);
+            let mut offset_11_5: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 25, None, &mut (*context).fork_sink, None);
+            let mut offset_4_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 11, 7, None, &mut (*context).fork_sink, None);
+            let mut offset: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&offset_11_5.clone(), &offset_4_0.clone(), 12, None, &mut (*context).fork_sink, None);
+            let mut offset_32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&offset.clone(), 12, 32, None, &mut (*context).fork_sink, None);
+            let mut base_address: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs1.clone(), context);
+            let mut address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&base_address.clone(), &offset_32.clone(), 32, None, &mut (*context).fork_sink, None);
+            let mut value: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs2.clone(), context);
             (*(*context).memory).write(&address.clone(), &value.clone(), 32, (*context).scfia.clone(), &mut (*context).hints, &mut (*context).fork_sink);
             _progress_pc_4(state, context);
         }
@@ -485,41 +485,41 @@ unsafe fn _step(state: *mut SystemState, context: *mut StepContext<RV32iScfiaCom
         }
     }
     else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&opcode.clone(), &(*context).scfia.new_bv_concrete(0b110111, 7), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-        let rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
-        let rs: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
-        let imm: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 12, None, &mut (*context).fork_sink, None);
-        let value: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm.clone(), &(*context).scfia.new_bv_concrete(0b0, 12), 32, None, &mut (*context).fork_sink, None);
+        let mut rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
+        let mut rs: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
+        let mut imm: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 12, None, &mut (*context).fork_sink, None);
+        let mut value: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm.clone(), &(*context).scfia.new_bv_concrete(0b0, 12), 32, None, &mut (*context).fork_sink, None);
         _register_write_BV32(state, rd.clone(), value.clone(), context);
         _progress_pc_4(state, context);
     }
     else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&opcode.clone(), &(*context).scfia.new_bv_concrete(0b10111, 7), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-        let dst: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
-        let imm: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 12, None, &mut (*context).fork_sink, None);
-        let imm32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm.clone(), &(*context).scfia.new_bv_concrete(0b0, 12), 32, None, &mut (*context).fork_sink, None);
-        let sum: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&imm32.clone(), &(*state).pc.clone(), 32, None, &mut (*context).fork_sink, None);
+        let mut dst: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
+        let mut imm: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 12, None, &mut (*context).fork_sink, None);
+        let mut imm32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm.clone(), &(*context).scfia.new_bv_concrete(0b0, 12), 32, None, &mut (*context).fork_sink, None);
+        let mut sum: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&imm32.clone(), &(*state).pc.clone(), 32, None, &mut (*context).fork_sink, None);
         _register_write_BV32(state, dst.clone(), sum.clone(), context);
         _progress_pc_4(state, context);
     }
     else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&opcode.clone(), &(*context).scfia.new_bv_concrete(0b110011, 7), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-        let funct3: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 14, 12, None, &mut (*context).fork_sink, None);
-        let funct7: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 25, None, &mut (*context).fork_sink, None);
-        let rd: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 11, 7, None, &mut (*context).fork_sink, None);
-        let rs1: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 19, 15, None, &mut (*context).fork_sink, None);
-        let rs2: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 24, 20, None, &mut (*context).fork_sink, None);
+        let mut funct3: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 14, 12, None, &mut (*context).fork_sink, None);
+        let mut funct7: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 25, None, &mut (*context).fork_sink, None);
+        let mut rd: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 11, 7, None, &mut (*context).fork_sink, None);
+        let mut rs1: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 19, 15, None, &mut (*context).fork_sink, None);
+        let mut rs2: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 24, 20, None, &mut (*context).fork_sink, None);
         if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b0, 3), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-            let s1: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs1.clone(), context);
-            let s2: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs2.clone(), context);
+            let mut s1: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs1.clone(), context);
+            let mut s2: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs2.clone(), context);
             if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct7.clone(), &(*context).scfia.new_bv_concrete(0b0, 7), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
                 _execute_add32(state, rd.clone(), rs1.clone(), rs2.clone(), context);
                 _progress_pc_4(state, context);
             }
             else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct7.clone(), &(*context).scfia.new_bv_concrete(0b1, 7), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-                let result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_multiply(&s1.clone(), &s2.clone(), 32, None, &mut (*context).fork_sink, None);
+                let mut result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_multiply(&s1.clone(), &s2.clone(), 32, None, &mut (*context).fork_sink, None);
                 _register_write_BV32(state, rd.clone(), result.clone(), context);
                 _progress_pc_4(state, context);
             }
             else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct7.clone(), &(*context).scfia.new_bv_concrete(0b100000, 7), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-                let sum: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sub(&s1.clone(), &s2.clone(), 32, None, &mut (*context).fork_sink, None);
+                let mut sum: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sub(&s1.clone(), &s2.clone(), 32, None, &mut (*context).fork_sink, None);
                 _register_write_BV32(state, rd.clone(), sum.clone(), context);
                 _progress_pc_4(state, context);
             }
@@ -529,8 +529,8 @@ unsafe fn _step(state: *mut SystemState, context: *mut StepContext<RV32iScfiaCom
         }
         else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b1, 3), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
             if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct7.clone(), &(*context).scfia.new_bv_concrete(0b0, 7), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-                let shamt: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&_register_read_BV32(state, rs2.clone(), context), 4, 0, None, &mut (*context).fork_sink, None);
-                let result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sll(&_register_read_BV32(state, rs1.clone(), context), &(*context).scfia.new_bv_concat(&(*context).scfia.new_bv_concrete(0, 27), &shamt.clone(), 32, None, &mut (*context).fork_sink, None), 32, None, &mut (*context).fork_sink, None);
+                let mut shamt: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&_register_read_BV32(state, rs2.clone(), context), 4, 0, None, &mut (*context).fork_sink, None);
+                let mut result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sll(&_register_read_BV32(state, rs1.clone(), context), &(*context).scfia.new_bv_concat(&(*context).scfia.new_bv_concrete(0, 27), &shamt.clone(), 32, None, &mut (*context).fork_sink, None), 32, None, &mut (*context).fork_sink, None);
                 _register_write_BV32(state, rd.clone(), result.clone(), context);
                 _progress_pc_4(state, context);
             }
@@ -570,8 +570,8 @@ unsafe fn _step(state: *mut SystemState, context: *mut StepContext<RV32iScfiaCom
         }
         else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b101, 3), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
             if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct7.clone(), &(*context).scfia.new_bv_concrete(0b0, 7), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-                let shamt: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&_register_read_BV32(state, rs2.clone(), context), 4, 0, None, &mut (*context).fork_sink, None);
-                let result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_srl(&_register_read_BV32(state, rs1.clone(), context), &(*context).scfia.new_bv_concat(&(*context).scfia.new_bv_concrete(0, 27), &shamt.clone(), 32, None, &mut (*context).fork_sink, None), 32, None, &mut (*context).fork_sink, None);
+                let mut shamt: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&_register_read_BV32(state, rs2.clone(), context), 4, 0, None, &mut (*context).fork_sink, None);
+                let mut result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_srl(&_register_read_BV32(state, rs1.clone(), context), &(*context).scfia.new_bv_concat(&(*context).scfia.new_bv_concrete(0, 27), &shamt.clone(), 32, None, &mut (*context).fork_sink, None), 32, None, &mut (*context).fork_sink, None);
                 _register_write_BV32(state, rd.clone(), result.clone(), context);
                 _progress_pc_4(state, context);
             }
@@ -584,10 +584,10 @@ unsafe fn _step(state: *mut SystemState, context: *mut StepContext<RV32iScfiaCom
         }
         else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b110, 3), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
             if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct7.clone(), &(*context).scfia.new_bv_concrete(0b0, 7), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-                let rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
-                let rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
-                let rs2: ActiveValue<RV32iScfiaComposition> = _extract_rs2_32(instruction_32.clone(), context);
-                let result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_or(&_register_read_BV32(state, rs1.clone(), context), &_register_read_BV32(state, rs2.clone(), context), 32, None, &mut (*context).fork_sink, None);
+                let mut rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
+                let mut rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
+                let mut rs2: ActiveValue<RV32iScfiaComposition> = _extract_rs2_32(instruction_32.clone(), context);
+                let mut result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_or(&_register_read_BV32(state, rs1.clone(), context), &_register_read_BV32(state, rs2.clone(), context), 32, None, &mut (*context).fork_sink, None);
                 _register_write_BV32(state, rd.clone(), result.clone(), context);
                 _progress_pc_4(state, context);
             }
@@ -596,16 +596,16 @@ unsafe fn _step(state: *mut SystemState, context: *mut StepContext<RV32iScfiaCom
             }
         }
         else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b111, 3), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-            let rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
-            let rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
-            let rs2: ActiveValue<RV32iScfiaComposition> = _extract_rs2_32(instruction_32.clone(), context);
+            let mut rd: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
+            let mut rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
+            let mut rs2: ActiveValue<RV32iScfiaComposition> = _extract_rs2_32(instruction_32.clone(), context);
             if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct7.clone(), &(*context).scfia.new_bv_concrete(0b0, 7), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-                let result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_and(&_register_read_BV32(state, rs1.clone(), context), &_register_read_BV32(state, rs2.clone(), context), 32, None, &mut (*context).fork_sink, None);
+                let mut result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_and(&_register_read_BV32(state, rs1.clone(), context), &_register_read_BV32(state, rs2.clone(), context), 32, None, &mut (*context).fork_sink, None);
                 _register_write_BV32(state, rd.clone(), result.clone(), context);
                 _progress_pc_4(state, context);
             }
             else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct7.clone(), &(*context).scfia.new_bv_concrete(0b1, 7), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-                let result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_unsigned_remainder(&_register_read_BV32(state, rs1.clone(), context), &_register_read_BV32(state, rs2.clone(), context), 32, None, &mut (*context).fork_sink, None);
+                let mut result: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_unsigned_remainder(&_register_read_BV32(state, rs1.clone(), context), &_register_read_BV32(state, rs2.clone(), context), 32, None, &mut (*context).fork_sink, None);
                 _register_write_BV32(state, rd.clone(), result.clone(), context);
                 _progress_pc_4(state, context);
             }
@@ -618,21 +618,21 @@ unsafe fn _step(state: *mut SystemState, context: *mut StepContext<RV32iScfiaCom
         }
     }
     else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&opcode.clone(), &(*context).scfia.new_bv_concrete(0b1100011, 7), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-        let funct3: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 14, 12, None, &mut (*context).fork_sink, None);
+        let mut funct3: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 14, 12, None, &mut (*context).fork_sink, None);
         if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b0, 3), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-            let lhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs1_32(instruction_32.clone(), context), context);
-            let rhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs2_32(instruction_32.clone(), context), context);
+            let mut lhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs1_32(instruction_32.clone(), context), context);
+            let mut rhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs2_32(instruction_32.clone(), context), context);
             if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&lhs.clone(), &rhs.clone(), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-                let imm_4_1: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 11, 8, None, &mut (*context).fork_sink, None);
-                let imm_10_5: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 30, 25, None, &mut (*context).fork_sink, None);
-                let imm11: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 7, 7, None, &mut (*context).fork_sink, None);
-                let imm12: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 31, None, &mut (*context).fork_sink, None);
-                let imm_4_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_4_1.clone(), &(*context).scfia.new_bv_concrete(0b0, 1), 5, None, &mut (*context).fork_sink, None);
-                let imm_10_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_10_5.clone(), &imm_4_0.clone(), 11, None, &mut (*context).fork_sink, None);
-                let imm_11_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm11.clone(), &imm_10_0.clone(), 12, None, &mut (*context).fork_sink, None);
-                let imm_12_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm12.clone(), &imm_11_0.clone(), 13, None, &mut (*context).fork_sink, None);
-                let offset: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm_12_0.clone(), 13, 32, None, &mut (*context).fork_sink, None);
-                let address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&(*state).pc.clone(), &offset.clone(), 32, None, &mut (*context).fork_sink, None);
+                let mut imm_4_1: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 11, 8, None, &mut (*context).fork_sink, None);
+                let mut imm_10_5: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 30, 25, None, &mut (*context).fork_sink, None);
+                let mut imm11: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 7, 7, None, &mut (*context).fork_sink, None);
+                let mut imm12: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 31, None, &mut (*context).fork_sink, None);
+                let mut imm_4_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_4_1.clone(), &(*context).scfia.new_bv_concrete(0b0, 1), 5, None, &mut (*context).fork_sink, None);
+                let mut imm_10_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_10_5.clone(), &imm_4_0.clone(), 11, None, &mut (*context).fork_sink, None);
+                let mut imm_11_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm11.clone(), &imm_10_0.clone(), 12, None, &mut (*context).fork_sink, None);
+                let mut imm_12_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm12.clone(), &imm_11_0.clone(), 13, None, &mut (*context).fork_sink, None);
+                let mut offset: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm_12_0.clone(), 13, 32, None, &mut (*context).fork_sink, None);
+                let mut address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&(*state).pc.clone(), &offset.clone(), 32, None, &mut (*context).fork_sink, None);
                 (*state).pc = address.clone();
             }
             else {
@@ -640,19 +640,19 @@ unsafe fn _step(state: *mut SystemState, context: *mut StepContext<RV32iScfiaCom
             }
         }
         else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b1, 3), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-            let lhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs1_32(instruction_32.clone(), context), context);
-            let rhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs2_32(instruction_32.clone(), context), context);
+            let mut lhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs1_32(instruction_32.clone(), context), context);
+            let mut rhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs2_32(instruction_32.clone(), context), context);
             if (*context).scfia.check_condition(&(*context).scfia.new_bool_not(&(*context).scfia.new_bool_eq(&lhs.clone(), &rhs.clone(), None, false, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-                let imm_4_1: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 11, 8, None, &mut (*context).fork_sink, None);
-                let imm_10_5: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 30, 25, None, &mut (*context).fork_sink, None);
-                let imm11: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 7, 7, None, &mut (*context).fork_sink, None);
-                let imm12: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 31, None, &mut (*context).fork_sink, None);
-                let imm_4_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_4_1.clone(), &(*context).scfia.new_bv_concrete(0b0, 1), 5, None, &mut (*context).fork_sink, None);
-                let imm_10_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_10_5.clone(), &imm_4_0.clone(), 11, None, &mut (*context).fork_sink, None);
-                let imm_11_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm11.clone(), &imm_10_0.clone(), 12, None, &mut (*context).fork_sink, None);
-                let imm_12_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm12.clone(), &imm_11_0.clone(), 13, None, &mut (*context).fork_sink, None);
-                let offset: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm_12_0.clone(), 13, 32, None, &mut (*context).fork_sink, None);
-                let address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&(*state).pc.clone(), &offset.clone(), 32, None, &mut (*context).fork_sink, None);
+                let mut imm_4_1: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 11, 8, None, &mut (*context).fork_sink, None);
+                let mut imm_10_5: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 30, 25, None, &mut (*context).fork_sink, None);
+                let mut imm11: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 7, 7, None, &mut (*context).fork_sink, None);
+                let mut imm12: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 31, None, &mut (*context).fork_sink, None);
+                let mut imm_4_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_4_1.clone(), &(*context).scfia.new_bv_concrete(0b0, 1), 5, None, &mut (*context).fork_sink, None);
+                let mut imm_10_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_10_5.clone(), &imm_4_0.clone(), 11, None, &mut (*context).fork_sink, None);
+                let mut imm_11_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm11.clone(), &imm_10_0.clone(), 12, None, &mut (*context).fork_sink, None);
+                let mut imm_12_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm12.clone(), &imm_11_0.clone(), 13, None, &mut (*context).fork_sink, None);
+                let mut offset: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm_12_0.clone(), 13, 32, None, &mut (*context).fork_sink, None);
+                let mut address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&(*state).pc.clone(), &offset.clone(), 32, None, &mut (*context).fork_sink, None);
                 (*state).pc = address.clone();
             }
             else {
@@ -660,19 +660,19 @@ unsafe fn _step(state: *mut SystemState, context: *mut StepContext<RV32iScfiaCom
             }
         }
         else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b100, 3), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-            let lhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs1_32(instruction_32.clone(), context), context);
-            let rhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs2_32(instruction_32.clone(), context), context);
+            let mut lhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs1_32(instruction_32.clone(), context), context);
+            let mut rhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs2_32(instruction_32.clone(), context), context);
             if (*context).scfia.check_condition(&(*context).scfia.new_bool_signed_less_than(&lhs.clone(), &rhs.clone(), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-                let imm_4_1: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 11, 8, None, &mut (*context).fork_sink, None);
-                let imm_10_5: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 30, 25, None, &mut (*context).fork_sink, None);
-                let imm11: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 7, 7, None, &mut (*context).fork_sink, None);
-                let imm12: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 31, None, &mut (*context).fork_sink, None);
-                let imm_4_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_4_1.clone(), &(*context).scfia.new_bv_concrete(0b0, 1), 5, None, &mut (*context).fork_sink, None);
-                let imm_10_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_10_5.clone(), &imm_4_0.clone(), 11, None, &mut (*context).fork_sink, None);
-                let imm_11_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm11.clone(), &imm_10_0.clone(), 12, None, &mut (*context).fork_sink, None);
-                let imm_12_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm12.clone(), &imm_11_0.clone(), 13, None, &mut (*context).fork_sink, None);
-                let offset: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm_12_0.clone(), 13, 32, None, &mut (*context).fork_sink, None);
-                let address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&(*state).pc.clone(), &offset.clone(), 32, None, &mut (*context).fork_sink, None);
+                let mut imm_4_1: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 11, 8, None, &mut (*context).fork_sink, None);
+                let mut imm_10_5: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 30, 25, None, &mut (*context).fork_sink, None);
+                let mut imm11: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 7, 7, None, &mut (*context).fork_sink, None);
+                let mut imm12: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 31, None, &mut (*context).fork_sink, None);
+                let mut imm_4_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_4_1.clone(), &(*context).scfia.new_bv_concrete(0b0, 1), 5, None, &mut (*context).fork_sink, None);
+                let mut imm_10_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_10_5.clone(), &imm_4_0.clone(), 11, None, &mut (*context).fork_sink, None);
+                let mut imm_11_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm11.clone(), &imm_10_0.clone(), 12, None, &mut (*context).fork_sink, None);
+                let mut imm_12_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm12.clone(), &imm_11_0.clone(), 13, None, &mut (*context).fork_sink, None);
+                let mut offset: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm_12_0.clone(), 13, 32, None, &mut (*context).fork_sink, None);
+                let mut address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&(*state).pc.clone(), &offset.clone(), 32, None, &mut (*context).fork_sink, None);
                 (*state).pc = address.clone();
             }
             else {
@@ -680,39 +680,39 @@ unsafe fn _step(state: *mut SystemState, context: *mut StepContext<RV32iScfiaCom
             }
         }
         else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b101, 3), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-            let lhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs1_32(instruction_32.clone(), context), context);
-            let rhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs2_32(instruction_32.clone(), context), context);
+            let mut lhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs1_32(instruction_32.clone(), context), context);
+            let mut rhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs2_32(instruction_32.clone(), context), context);
             if (*context).scfia.check_condition(&(*context).scfia.new_bool_signed_less_than(&lhs.clone(), &rhs.clone(), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
                 _progress_pc_4(state, context);
             }
             else {
-                let imm_4_1: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 11, 8, None, &mut (*context).fork_sink, None);
-                let imm_10_5: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 30, 25, None, &mut (*context).fork_sink, None);
-                let imm11: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 7, 7, None, &mut (*context).fork_sink, None);
-                let imm12: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 31, None, &mut (*context).fork_sink, None);
-                let imm_4_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_4_1.clone(), &(*context).scfia.new_bv_concrete(0b0, 1), 5, None, &mut (*context).fork_sink, None);
-                let imm_10_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_10_5.clone(), &imm_4_0.clone(), 11, None, &mut (*context).fork_sink, None);
-                let imm_11_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm11.clone(), &imm_10_0.clone(), 12, None, &mut (*context).fork_sink, None);
-                let imm_12_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm12.clone(), &imm_11_0.clone(), 13, None, &mut (*context).fork_sink, None);
-                let offset: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm_12_0.clone(), 13, 32, None, &mut (*context).fork_sink, None);
-                let address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&(*state).pc.clone(), &offset.clone(), 32, None, &mut (*context).fork_sink, None);
+                let mut imm_4_1: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 11, 8, None, &mut (*context).fork_sink, None);
+                let mut imm_10_5: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 30, 25, None, &mut (*context).fork_sink, None);
+                let mut imm11: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 7, 7, None, &mut (*context).fork_sink, None);
+                let mut imm12: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 31, None, &mut (*context).fork_sink, None);
+                let mut imm_4_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_4_1.clone(), &(*context).scfia.new_bv_concrete(0b0, 1), 5, None, &mut (*context).fork_sink, None);
+                let mut imm_10_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_10_5.clone(), &imm_4_0.clone(), 11, None, &mut (*context).fork_sink, None);
+                let mut imm_11_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm11.clone(), &imm_10_0.clone(), 12, None, &mut (*context).fork_sink, None);
+                let mut imm_12_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm12.clone(), &imm_11_0.clone(), 13, None, &mut (*context).fork_sink, None);
+                let mut offset: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm_12_0.clone(), 13, 32, None, &mut (*context).fork_sink, None);
+                let mut address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&(*state).pc.clone(), &offset.clone(), 32, None, &mut (*context).fork_sink, None);
                 (*state).pc = address.clone();
             }
         }
         else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b110, 3), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-            let lhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs1_32(instruction_32.clone(), context), context);
-            let rhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs2_32(instruction_32.clone(), context), context);
+            let mut lhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs1_32(instruction_32.clone(), context), context);
+            let mut rhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs2_32(instruction_32.clone(), context), context);
             if (*context).scfia.check_condition(&(*context).scfia.new_bool_unsigned_less_than(&lhs.clone(), &rhs.clone(), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-                let imm_4_1: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 11, 8, None, &mut (*context).fork_sink, None);
-                let imm_10_5: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 30, 25, None, &mut (*context).fork_sink, None);
-                let imm11: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 7, 7, None, &mut (*context).fork_sink, None);
-                let imm12: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 31, None, &mut (*context).fork_sink, None);
-                let imm_4_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_4_1.clone(), &(*context).scfia.new_bv_concrete(0b0, 1), 5, None, &mut (*context).fork_sink, None);
-                let imm_10_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_10_5.clone(), &imm_4_0.clone(), 11, None, &mut (*context).fork_sink, None);
-                let imm_11_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm11.clone(), &imm_10_0.clone(), 12, None, &mut (*context).fork_sink, None);
-                let imm_12_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm12.clone(), &imm_11_0.clone(), 13, None, &mut (*context).fork_sink, None);
-                let offset: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm_12_0.clone(), 13, 32, None, &mut (*context).fork_sink, None);
-                let address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&(*state).pc.clone(), &offset.clone(), 32, None, &mut (*context).fork_sink, None);
+                let mut imm_4_1: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 11, 8, None, &mut (*context).fork_sink, None);
+                let mut imm_10_5: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 30, 25, None, &mut (*context).fork_sink, None);
+                let mut imm11: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 7, 7, None, &mut (*context).fork_sink, None);
+                let mut imm12: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 31, None, &mut (*context).fork_sink, None);
+                let mut imm_4_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_4_1.clone(), &(*context).scfia.new_bv_concrete(0b0, 1), 5, None, &mut (*context).fork_sink, None);
+                let mut imm_10_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_10_5.clone(), &imm_4_0.clone(), 11, None, &mut (*context).fork_sink, None);
+                let mut imm_11_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm11.clone(), &imm_10_0.clone(), 12, None, &mut (*context).fork_sink, None);
+                let mut imm_12_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm12.clone(), &imm_11_0.clone(), 13, None, &mut (*context).fork_sink, None);
+                let mut offset: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm_12_0.clone(), 13, 32, None, &mut (*context).fork_sink, None);
+                let mut address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&(*state).pc.clone(), &offset.clone(), 32, None, &mut (*context).fork_sink, None);
                 (*state).pc = address.clone();
             }
             else {
@@ -720,22 +720,22 @@ unsafe fn _step(state: *mut SystemState, context: *mut StepContext<RV32iScfiaCom
             }
         }
         else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b111, 3), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-            let lhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs1_32(instruction_32.clone(), context), context);
-            let rhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs2_32(instruction_32.clone(), context), context);
+            let mut lhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs1_32(instruction_32.clone(), context), context);
+            let mut rhs: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, _extract_rs2_32(instruction_32.clone(), context), context);
             if (*context).scfia.check_condition(&(*context).scfia.new_bool_unsigned_less_than(&lhs.clone(), &rhs.clone(), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
                 _progress_pc_4(state, context);
             }
             else {
-                let imm_4_1: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 11, 8, None, &mut (*context).fork_sink, None);
-                let imm_10_5: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 30, 25, None, &mut (*context).fork_sink, None);
-                let imm11: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 7, 7, None, &mut (*context).fork_sink, None);
-                let imm12: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 31, None, &mut (*context).fork_sink, None);
-                let imm_4_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_4_1.clone(), &(*context).scfia.new_bv_concrete(0b0, 1), 5, None, &mut (*context).fork_sink, None);
-                let imm_10_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_10_5.clone(), &imm_4_0.clone(), 11, None, &mut (*context).fork_sink, None);
-                let imm_11_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm11.clone(), &imm_10_0.clone(), 12, None, &mut (*context).fork_sink, None);
-                let imm_12_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm12.clone(), &imm_11_0.clone(), 13, None, &mut (*context).fork_sink, None);
-                let offset: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm_12_0.clone(), 13, 32, None, &mut (*context).fork_sink, None);
-                let address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&(*state).pc.clone(), &offset.clone(), 32, None, &mut (*context).fork_sink, None);
+                let mut imm_4_1: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 11, 8, None, &mut (*context).fork_sink, None);
+                let mut imm_10_5: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 30, 25, None, &mut (*context).fork_sink, None);
+                let mut imm11: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 7, 7, None, &mut (*context).fork_sink, None);
+                let mut imm12: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 31, None, &mut (*context).fork_sink, None);
+                let mut imm_4_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_4_1.clone(), &(*context).scfia.new_bv_concrete(0b0, 1), 5, None, &mut (*context).fork_sink, None);
+                let mut imm_10_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_10_5.clone(), &imm_4_0.clone(), 11, None, &mut (*context).fork_sink, None);
+                let mut imm_11_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm11.clone(), &imm_10_0.clone(), 12, None, &mut (*context).fork_sink, None);
+                let mut imm_12_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm12.clone(), &imm_11_0.clone(), 13, None, &mut (*context).fork_sink, None);
+                let mut offset: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&imm_12_0.clone(), 13, 32, None, &mut (*context).fork_sink, None);
+                let mut address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&(*state).pc.clone(), &offset.clone(), 32, None, &mut (*context).fork_sink, None);
                 (*state).pc = address.clone();
             }
         }
@@ -744,15 +744,15 @@ unsafe fn _step(state: *mut SystemState, context: *mut StepContext<RV32iScfiaCom
         }
     }
     else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&opcode.clone(), &(*context).scfia.new_bv_concrete(0b1100111, 7), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-        let funct3: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 14, 12, None, &mut (*context).fork_sink, None);
+        let mut funct3: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 14, 12, None, &mut (*context).fork_sink, None);
         if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&funct3.clone(), &(*context).scfia.new_bv_concrete(0b0, 3), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-            let dst: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
-            let rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
-            let s1: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs1.clone(), context);
-            let offset: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 20, None, &mut (*context).fork_sink, None);
-            let offset_32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&offset.clone(), 12, 32, None, &mut (*context).fork_sink, None);
-            let address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&s1.clone(), &offset_32.clone(), 32, None, &mut (*context).fork_sink, None);
-            let return_address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&(*state).pc.clone(), &(*context).scfia.new_bv_concrete(0b100, 32), 32, None, &mut (*context).fork_sink, None);
+            let mut dst: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
+            let mut rs1: ActiveValue<RV32iScfiaComposition> = _extract_rs1_32(instruction_32.clone(), context);
+            let mut s1: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, rs1.clone(), context);
+            let mut offset: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 20, None, &mut (*context).fork_sink, None);
+            let mut offset_32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&offset.clone(), 12, 32, None, &mut (*context).fork_sink, None);
+            let mut address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&s1.clone(), &offset_32.clone(), 32, None, &mut (*context).fork_sink, None);
+            let mut return_address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&(*state).pc.clone(), &(*context).scfia.new_bv_concrete(0b100, 32), 32, None, &mut (*context).fork_sink, None);
             (*state).pc = address.clone();
             _register_write_BV32(state, dst.clone(), return_address.clone(), context);
         }
@@ -761,18 +761,18 @@ unsafe fn _step(state: *mut SystemState, context: *mut StepContext<RV32iScfiaCom
         }
     }
     else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&opcode.clone(), &(*context).scfia.new_bv_concrete(0b1101111, 7), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-        let imm_20: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 31, None, &mut (*context).fork_sink, None);
-        let imm_10_1: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 30, 21, None, &mut (*context).fork_sink, None);
-        let imm_11: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 20, 20, None, &mut (*context).fork_sink, None);
-        let imm_19_12: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 19, 12, None, &mut (*context).fork_sink, None);
-        let offset_10_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_10_1.clone(), &(*context).scfia.new_bv_concrete(0b0, 1), 11, None, &mut (*context).fork_sink, None);
-        let offset_11_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_11.clone(), &offset_10_0.clone(), 12, None, &mut (*context).fork_sink, None);
-        let offset_19_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_19_12.clone(), &offset_11_0.clone(), 20, None, &mut (*context).fork_sink, None);
-        let offset_20_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_20.clone(), &offset_19_0.clone(), 21, None, &mut (*context).fork_sink, None);
-        let offset_32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&offset_20_0.clone(), 21, 32, None, &mut (*context).fork_sink, None);
-        let address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&(*state).pc.clone(), &offset_32.clone(), 32, None, &mut (*context).fork_sink, None);
-        let return_address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&(*state).pc.clone(), &(*context).scfia.new_bv_concrete(0b100, 32), 32, None, &mut (*context).fork_sink, None);
-        let dst: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
+        let mut imm_20: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 31, 31, None, &mut (*context).fork_sink, None);
+        let mut imm_10_1: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 30, 21, None, &mut (*context).fork_sink, None);
+        let mut imm_11: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 20, 20, None, &mut (*context).fork_sink, None);
+        let mut imm_19_12: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_slice(&instruction_32.clone(), 19, 12, None, &mut (*context).fork_sink, None);
+        let mut offset_10_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_10_1.clone(), &(*context).scfia.new_bv_concrete(0b0, 1), 11, None, &mut (*context).fork_sink, None);
+        let mut offset_11_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_11.clone(), &offset_10_0.clone(), 12, None, &mut (*context).fork_sink, None);
+        let mut offset_19_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_19_12.clone(), &offset_11_0.clone(), 20, None, &mut (*context).fork_sink, None);
+        let mut offset_20_0: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_concat(&imm_20.clone(), &offset_19_0.clone(), 21, None, &mut (*context).fork_sink, None);
+        let mut offset_32: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_sign_extend(&offset_20_0.clone(), 21, 32, None, &mut (*context).fork_sink, None);
+        let mut address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&(*state).pc.clone(), &offset_32.clone(), 32, None, &mut (*context).fork_sink, None);
+        let mut return_address: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&(*state).pc.clone(), &(*context).scfia.new_bv_concrete(0b100, 32), 32, None, &mut (*context).fork_sink, None);
+        let mut dst: ActiveValue<RV32iScfiaComposition> = _extract_rd_32(instruction_32.clone(), context);
         _register_write_BV32(state, dst.clone(), return_address.clone(), context);
         (*state).pc = address.clone();
     }
@@ -794,8 +794,8 @@ unsafe fn _extract_rs2_32(op: ActiveValue<RV32iScfiaComposition>, context: *mut 
 }
 
 unsafe fn _progress_pc_4(state: *mut SystemState, context: *mut StepContext<RV32iScfiaComposition>) {
-    let old_pc: ActiveValue<RV32iScfiaComposition> = (*state).pc.clone();
-    let new_pc: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&old_pc.clone(), &(*context).scfia.new_bv_concrete(0b100, 32), 32, None, &mut (*context).fork_sink, None);
+    let mut old_pc: ActiveValue<RV32iScfiaComposition> = (*state).pc.clone();
+    let mut new_pc: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&old_pc.clone(), &(*context).scfia.new_bv_concrete(0b100, 32), 32, None, &mut (*context).fork_sink, None);
     (*state).pc = new_pc.clone();
 }
 
@@ -1003,8 +1003,8 @@ unsafe fn _register_read_BV32(state: *mut SystemState, register_id: ActiveValue<
 }
 
 unsafe fn _execute_add32(state: *mut SystemState, destination_id: ActiveValue<RV32iScfiaComposition>, source1_id: ActiveValue<RV32iScfiaComposition>, source2_id: ActiveValue<RV32iScfiaComposition>, context: *mut StepContext<RV32iScfiaComposition>) {
-    let s1: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, source1_id.clone(), context);
-    let s2: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, source2_id.clone(), context);
-    let sum: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&s1.clone(), &s2.clone(), 32, None, &mut (*context).fork_sink, None);
+    let mut s1: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, source1_id.clone(), context);
+    let mut s2: ActiveValue<RV32iScfiaComposition> = _register_read_BV32(state, source2_id.clone(), context);
+    let mut sum: ActiveValue<RV32iScfiaComposition> = (*context).scfia.new_bv_add(&s1.clone(), &s2.clone(), 32, None, &mut (*context).fork_sink, None);
     _register_write_BV32(state, destination_id.clone(), sum.clone(), context);
 }

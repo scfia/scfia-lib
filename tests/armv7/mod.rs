@@ -1,6 +1,6 @@
 use log::{debug, info, trace, warn, LevelFilter};
 use scfia_lib::{
-    memory::{regions::StableMemoryRegion, Memory},
+    memory::{regions::{StableMemoryRegion, VolatileMemoryRegion}, Memory},
     models::armv7::stm32::{self, STM32ScfiaComposition, STM32},
     scfia::Scfia,
     values::active_value::ActiveValueImpl,
@@ -16,6 +16,7 @@ pub struct StepContext<'a> {
 fn step_until(state: &mut STM32, address: u64, begin: &Instant) {
     while state.state.PC.to_u64() != address {
         assert!(state.state.PC.to_u64() != 0x508);
+        //_dump_regs(state);
         debug!(
             "({}ms) Executing {:#x} ({} asts)",
             begin.elapsed().as_millis(),
@@ -34,6 +35,7 @@ fn test_stm32_system_state() {
 }
 
 fn _dump_regs(state: &STM32) {
+    println!("R0  = {:x?}", state.state.R0);
     println!("R1  = {:x?}", state.state.R1);
     println!("R2  = {:x?}", state.state.R2);
     println!("R3  = {:x?}", state.state.R3);
@@ -46,42 +48,39 @@ fn _dump_regs(state: &STM32) {
     println!("R10 = {:x?}", state.state.R10);
     println!("R11 = {:x?}", state.state.R11);
     println!("R12 = {:x?}", state.state.R12);
-    println!("SP = {:#x?}", state.state.SP);
-    println!("LR = {:x?}", state.state.LR);
-    println!("PC = {:x?}", state.state.PC);
+    println!("SP  = {:x?}", state.state.SP);
+    println!("LR  = {:x?}", state.state.LR);
+    println!("PC  = {:x?}", state.state.PC);
 }
 
 fn test_system_state_inner() {
     simple_logger::SimpleLogger::new().with_level(LevelFilter::Debug).env().init().unwrap();
-    let binary_blob = fs::read("./tests/armv7/data/p2im_drone.elf").unwrap();
-    let elf = ElfFile::new(&binary_blob).unwrap();
+    let binary_blob = fs::read("./tests/armv7/data/p2im_drone.bin").unwrap();
 
     let scfia: Rc<Scfia<STM32ScfiaComposition>> = Scfia::new(None);
     let mut memory = Memory::default();
 
-    for program_header in elf.program_iter() {
-        if let Ph32(ph32) = program_header {
-            match program_header.get_type().unwrap() {
-                program::Type::Load => {
-                    trace!("{:?}", program_header);
-                    let stable_region = StableMemoryRegion::new(ph32.virtual_addr as u64, ph32.mem_size as u64);
-                    memory.stables.push(stable_region);
+    let code = StableMemoryRegion::new(0, 0x2000_0000);
+    memory.stables.push(code);
 
-                    for (i, b) in ph32.raw_data(&elf).iter().enumerate() {
-                        memory.write(
-                            &scfia.new_bv_concrete(ph32.virtual_addr as u64 + i as u64, 8),
-                            &scfia.new_bv_concrete(*b as u64, 8),
-                            8,
-                            &scfia,
-                            &mut None,
-                            &mut None,
-                        );
-                    }
-                }
-                x => warn!("Ignoring section type {:?}", x),
-            }
-        }
+    for (i, b) in binary_blob.iter().enumerate() {
+        memory.write(
+            &scfia.new_bv_concrete(0x8000000 + i as u64, 8),
+            &scfia.new_bv_concrete(*b as u64, 8),
+            8,
+            &scfia,
+            &mut None,
+            &mut None,
+        );
     }
+
+    let sram = StableMemoryRegion::new(0x2000_0000, 0x2000_0000);
+    memory.stables.push(sram);
+
+    memory.volatiles.push(VolatileMemoryRegion {
+        start_address: 0x40000000,
+        length: 0x20000000,
+    });
 
     let mut system_state: STM32 = STM32 {
         state: stm32::SystemState {
@@ -100,7 +99,7 @@ fn test_system_state_inner() {
             R12: scfia.new_bv_concrete(0b0, 32),
             SP: scfia.new_bv_concrete(0b0, 32),
             LR: scfia.new_bv_concrete(0b0, 32),
-            PC: scfia.new_bv_concrete(0x080052b4, 32),
+            PC: scfia.new_bv_concrete(0x8000000 + 0x52b4, 32),
             apsr: stm32::ApplicationProgramStatusRegister {
                 N: scfia.new_bv_concrete(0b0, 1),
                 Z: scfia.new_bv_concrete(0b0, 1),
@@ -116,5 +115,5 @@ fn test_system_state_inner() {
 
     let begin = Instant::now();
     info!("Yolo");
-    step_until(&mut system_state, 0x24, &begin);
+    step_until(&mut system_state, 69420, &begin);
 }

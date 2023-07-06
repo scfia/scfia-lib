@@ -219,7 +219,7 @@ impl<SC: ScfiaComposition> Memory<SC> {
             }
         }
 
-        panic!("{:?}", address)
+        panic!("Concrete address {:x?} not satisfied by any region", address)
     }
 
     pub(crate) fn clone_to_stdlib(

@@ -3,6 +3,7 @@ use std::cell::OnceCell;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::marker::PhantomData;
+use std::ops::Not;
 use std::rc::Rc;
 use std::rc::Weak;
 
@@ -31,6 +32,8 @@ use crate::values::bv_concrete_expression::BVConcreteExpression;
 use crate::values::bv_concrete_expression::RetiredBVConcreteExpression;
 use crate::values::bv_multiply_expression::BVMultiplyExpression;
 use crate::values::bv_multiply_expression::RetiredBVMultiplyExpression;
+use crate::values::bv_not_expression::BVNotExpression;
+use crate::values::bv_not_expression::RetiredBVNotExpression;
 use crate::values::bv_or_expression::BVOrExpression;
 use crate::values::bv_or_expression::RetiredBVOrExpression;
 use crate::values::bv_sign_extend_expression::BVSignExtendExpression;
@@ -364,6 +367,37 @@ impl<SC: ScfiaComposition> Scfia<SC> {
             ActiveExpression::BVMultiplyExpression(BVMultiplyExpression {
                 s1: s1.get_z3_value(),
                 s2: s2.get_z3_value(),
+                width,
+            }),
+            z3_ast,
+            id,
+            fork_sink,
+            comment,
+        )
+    }
+
+    pub fn new_bv_not(
+        &self,
+        s1: &ActiveValue<SC>,
+        width: u32,
+        id: Option<u64>,
+        fork_sink: &mut Option<SC::ForkSink>,
+        comment: Option<ValueComment>,
+    ) -> ActiveValue<SC> {
+        if let ActiveValue::BVConcrete(s1_value, _s1_width) = s1 {
+            let one: u64 = 1;
+            let mask = one.rotate_left(width).overflowing_sub(1).0;
+            let not = s1_value.not();
+            let value = mask & not;
+            return ActiveValue::BVConcrete(value, width);
+        };
+
+        let s1 = s1.into_z3_value(self, fork_sink);
+        let id = if let Some(id) = id { id } else { self.next_symbol_id() };
+        let z3_ast = self.z3.new_bvnot(&s1.get_z3_ast());
+        self.new_active(
+            ActiveExpression::BVNotExpression(BVNotExpression {
+                s1: s1.get_z3_value(),
                 width,
             }),
             z3_ast,
@@ -789,6 +823,14 @@ impl<SC: ScfiaComposition> Scfia<SC> {
                 s2: ParentWeakReference {
                     id: e.s2.try_borrow().unwrap().id,
                     weak: Rc::downgrade(&e.s2),
+                },
+                width: e.width,
+                phantom: PhantomData,
+            }),
+            ActiveExpression::BVNotExpression(e) => RetiredExpression::BVNotExpression(RetiredBVNotExpression {
+                s1: ParentWeakReference {
+                    id: e.s1.try_borrow().unwrap().id,
+                    weak: Rc::downgrade(&e.s1),
                 },
                 width: e.width,
                 phantom: PhantomData,

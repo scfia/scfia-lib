@@ -29,7 +29,7 @@ use super::{
     bv_sub_expression::RetiredBVSubExpression,
     bv_symbol::RetiredBVSymbol,
     bv_unsigned_remainder_expression::RetiredBVUnsignedRemainderExpression,
-    bv_xor_expression::RetiredBVXorExpression,
+    bv_xor_expression::RetiredBVXorExpression, bv_not_expression::RetiredBVNotExpression,
 };
 
 pub type RetiredValue<Model> = Rc<RefCell<RetiredValueInner<Model>>>;
@@ -59,6 +59,7 @@ pub enum RetiredExpression<SC: ScfiaComposition> {
     BVConcatExpression(RetiredBVConcatExpression<SC>),
     BVConcreteExpression(RetiredBVConcreteExpression),
     BVMultiplyExpression(RetiredBVMultiplyExpression<SC>),
+    BVNotExpression(RetiredBVNotExpression<SC>),
     BVOrExpression(RetiredBVOrExpression<SC>),
     BVSignExtendExpression(RetiredBVSignExtendExpression<SC>),
     BVSliceExpression(RetiredBVSliceExpression<SC>),
@@ -265,6 +266,22 @@ impl<SC: ScfiaComposition> RetiredValueInner<SC> {
                     self.id,
                 )
             }
+            RetiredExpression::BVNotExpression(e) => {
+                let (s1, s1_ast) = get_cloned_parent(&e.s1, cloned_scfia, cloned_actives, cloned_retired);
+                if let Some(value) = cloned_retired.get(&self.id) {
+                    return value.clone();
+                }
+                let z3_ast = cloned_scfia.z3.new_bvnot(&s1_ast);
+                cloned_scfia.new_inactive(
+                    RetiredExpression::BVNotExpression(RetiredBVNotExpression {
+                        s1,
+                        phantom: PhantomData,
+                        width: e.width,
+                    }),
+                    z3_ast,
+                    self.id,
+                )
+            }
             RetiredExpression::BVOrExpression(e) => {
                 let (s1, s1_ast) = get_cloned_parent(&e.s1, cloned_scfia, cloned_actives, cloned_retired);
                 let (s2, s2_ast) = get_cloned_parent(&e.s2, cloned_scfia, cloned_actives, cloned_retired);
@@ -454,6 +471,7 @@ impl<SC: ScfiaComposition> Debug for RetiredExpression<SC> {
             RetiredExpression::BVAndExpression(e) => e.fmt(f),
             RetiredExpression::BVConcatExpression(e) => e.fmt(f),
             RetiredExpression::BVMultiplyExpression(e) => e.fmt(f),
+            RetiredExpression::BVNotExpression(e) => e.fmt(f),
             RetiredExpression::BVOrExpression(e) => e.fmt(f),
             RetiredExpression::BVSignExtendExpression(e) => e.fmt(f),
             RetiredExpression::BVSliceExpression(e) => e.fmt(f),

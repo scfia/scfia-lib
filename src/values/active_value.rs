@@ -21,6 +21,7 @@ use super::bv_and_expression::BVAndExpression;
 use super::bv_concat_expression::BVConcatExpression;
 use super::bv_concrete_expression::BVConcreteExpression;
 use super::bv_multiply_expression::BVMultiplyExpression;
+use super::bv_not_expression::BVNotExpression;
 use super::bv_or_expression::BVOrExpression;
 use super::bv_sign_extend_expression::BVSignExtendExpression;
 use super::bv_slice_expression::BVSliceExpression;
@@ -74,6 +75,7 @@ pub enum ActiveExpression<SC: ScfiaComposition> {
     BVConcatExpression(BVConcatExpression<SC>),
     BVConcreteExpression(BVConcreteExpression<SC>),
     BVMultiplyExpression(BVMultiplyExpression<SC>),
+    BVNotExpression(BVNotExpression<SC>),
     BVOrExpression(BVOrExpression<SC>),
     BVSignExtendExpression(BVSignExtendExpression<SC>),
     BVSliceExpression(BVSliceExpression<SC>),
@@ -215,6 +217,9 @@ impl<SC: ScfiaComposition> ActiveValueZ3<SC> {
                 dest.push(e.s1.clone());
                 dest.push(e.s2.clone());
             }
+            ActiveExpression::BVNotExpression(e) => {
+                dest.push(e.s1.clone());
+            }
             ActiveExpression::BVOrExpression(e) => {
                 dest.push(e.s1.clone());
                 dest.push(e.s2.clone());
@@ -259,6 +264,7 @@ impl<SC: ScfiaComposition> ActiveValueZ3<SC> {
             ActiveExpression::BVAndExpression(e) => 1 + max(e.s1.try_borrow().unwrap().get_depth(), e.s1.try_borrow().unwrap().get_depth()),
             ActiveExpression::BVConcatExpression(e) => 1 + max(e.s1.try_borrow().unwrap().get_depth(), e.s1.try_borrow().unwrap().get_depth()),
             ActiveExpression::BVMultiplyExpression(e) => 1 + max(e.s1.try_borrow().unwrap().get_depth(), e.s1.try_borrow().unwrap().get_depth()),
+            ActiveExpression::BVNotExpression(e) => 1 + max(e.s1.try_borrow().unwrap().get_depth(), e.s1.try_borrow().unwrap().get_depth()),
             ActiveExpression::BVOrExpression(e) => 1 + max(e.s1.try_borrow().unwrap().get_depth(), e.s1.try_borrow().unwrap().get_depth()),
             ActiveExpression::BVSignExtendExpression(e) => 1 + e.s1.try_borrow().unwrap().get_depth(),
             ActiveExpression::BVSliceExpression(e) => 1 + e.s1.try_borrow().unwrap().get_depth(),
@@ -329,6 +335,10 @@ impl<SC: ScfiaComposition> ActiveValueZ3<SC> {
                 let s1 = e.s1.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_retired);
                 let s2 = e.s2.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_retired);
                 cloned_scfia.new_bv_multiply(&s1, &s2, e.width, Some(self.id), &mut None, self.comment.clone())
+            }
+            ActiveExpression::BVNotExpression(e) => {
+                let s1 = e.s1.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_retired);
+                cloned_scfia.new_bv_not(&s1, e.width, Some(self.id), &mut None, self.comment.clone())
             }
             ActiveExpression::BVOrExpression(e) => {
                 let s1 = e.s1.try_borrow().unwrap().clone_to_stdlib(cloned_scfia, cloned_actives, cloned_retired);

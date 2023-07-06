@@ -8,6 +8,7 @@ pub mod bv_and_expression;
 pub mod bv_concat_expression;
 pub mod bv_concrete_expression;
 pub mod bv_multiply_expression;
+pub mod bv_not_expression;
 pub mod bv_or_expression;
 pub mod bv_sign_extend_expression;
 pub mod bv_slice_expression;
