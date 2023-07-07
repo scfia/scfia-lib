@@ -16,7 +16,7 @@ pub struct StepContext<'a> {
 fn step_until(state: &mut STM32, address: u64, begin: &Instant) {
     while state.state.PC.to_u64() != address {
         assert!(state.state.PC.to_u64() != 0x508);
-        //_dump_regs(state);
+        // _dump_regs(state);
         debug!(
             "({}ms) Executing {:#x} ({} asts)",
             begin.elapsed().as_millis(),
@@ -77,9 +77,16 @@ fn test_system_state_inner() {
     let sram = StableMemoryRegion::new(0x2000_0000, 0x2000_0000);
     memory.stables.push(sram);
 
+    // Peripheral
     memory.volatiles.push(VolatileMemoryRegion {
         start_address: 0x40000000,
         length: 0x20000000,
+    });
+
+    // Private peripheral bus
+    memory.volatiles.push(VolatileMemoryRegion {
+        start_address: 0xe0000000,
+        length: 0xe0100000,
     });
 
     let mut system_state: STM32 = STM32 {
@@ -108,12 +115,21 @@ fn test_system_state_inner() {
                 Q: scfia.new_bv_concrete(0b0, 1),
                 GE: scfia.new_bv_concrete(0b0, 4),
             },
+            EPSR: stm32::ExecutionProgramStatusRegister {
+                ICI_IT: scfia.new_bv_concrete(0b0, 2),
+                T: scfia.new_bv_concrete(0b1, 1),
+                ICI_IT2: scfia.new_bv_concrete(0b0, 6) }
         },
         memory,
         scfia,
     };
 
     let begin = Instant::now();
-    info!("Yolo");
-    step_until(&mut system_state, 69420, &begin);
+    info!("Step until ands fork");
+    step_until(&mut system_state, 0x8005268, &begin);
+    let mut successors = system_state.step_forking(None);
+    let mut successor_1 = successors.remove(0);
+    let mut successor_2 = successors.remove(0);
+    step_until(&mut successor_1, 0x69420, &begin);
+    
 }
