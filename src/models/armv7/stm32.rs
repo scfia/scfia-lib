@@ -529,7 +529,7 @@ unsafe fn _thumb16(instruction: ActiveValue<STM32ScfiaComposition>, state: *mut 
         unimplemented!();
     }
     else if (*context).scfia.check_condition(&(*context).scfia.new_bool_unsigned_less_than(&opcode.clone(), &(*context).scfia.new_bv_concrete(0b110000, 6), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-        unimplemented!();
+        _thumb16_misc_16_bit_instruction(instruction.clone(), state, context);
     }
     else if (*context).scfia.check_condition(&(*context).scfia.new_bool_unsigned_less_than(&opcode.clone(), &(*context).scfia.new_bv_concrete(0b110010, 6), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         unimplemented!();
@@ -798,6 +798,45 @@ unsafe fn _thumb16_load_store_single_data_item(instruction: ActiveValue<STM32Scf
     else {
         unimplemented!();
     }
+}
+
+unsafe fn _thumb16_misc_16_bit_instruction(instruction: ActiveValue<STM32ScfiaComposition>, state: *mut SystemState, context: *mut StepContext<STM32ScfiaComposition>) {
+    let mut opcode: ActiveValue<STM32ScfiaComposition> = (*context).scfia.new_bv_slice(&instruction.clone(), 11, 5, None, &mut (*context).fork_sink, None);
+    if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&opcode.clone(), &(*context).scfia.new_bv_concrete(0b110011, 7), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+        unimplemented!();
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&_matches_BV7(opcode.clone(), (*context).scfia.new_bv_concrete(0b0, 7), (*context).scfia.new_bv_concrete(0b1111100, 7), context), &(*context).scfia.new_bv_concrete(0b1, 1), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+        unimplemented!();
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&_matches_BV7(opcode.clone(), (*context).scfia.new_bv_concrete(0b100, 7), (*context).scfia.new_bv_concrete(0b1111000, 7), context), &(*context).scfia.new_bv_concrete(0b1, 1), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+        unimplemented!();
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&_matches_BV7(opcode.clone(), (*context).scfia.new_bv_concrete(0b1000, 7), (*context).scfia.new_bv_concrete(0b1110000, 7), context), &(*context).scfia.new_bv_concrete(0b1, 1), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+        unimplemented!();
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&_matches_BV7(opcode.clone(), (*context).scfia.new_bv_concrete(0b10000, 7), (*context).scfia.new_bv_concrete(0b1101110, 7), context), &(*context).scfia.new_bv_concrete(0b1, 1), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+        unimplemented!();
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&_matches_BV7(opcode.clone(), (*context).scfia.new_bv_concrete(0b10010, 7), (*context).scfia.new_bv_concrete(0b1101100, 7), context), &(*context).scfia.new_bv_concrete(0b1, 1), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+        unimplemented!();
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&_matches_BV7(opcode.clone(), (*context).scfia.new_bv_concrete(0b10110, 7), (*context).scfia.new_bv_concrete(0b1101000, 7), context), &(*context).scfia.new_bv_concrete(0b1, 1), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+        unimplemented!();
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&_matches_BV7(opcode.clone(), (*context).scfia.new_bv_concrete(0b11000, 7), (*context).scfia.new_bv_concrete(0b1100000, 7), context), &(*context).scfia.new_bv_concrete(0b1, 1), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+        unimplemented!();
+    }
+    else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&_matches_BV7(opcode.clone(), (*context).scfia.new_bv_concrete(0b100000, 7), (*context).scfia.new_bv_concrete(0b1010000, 7), context), &(*context).scfia.new_bv_concrete(0b1, 1), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+        let mut register_list: ActiveValue<STM32ScfiaComposition> = (*context).scfia.new_bv_slice(&instruction.clone(), 7, 0, None, &mut (*context).fork_sink, None);
+        let mut m: ActiveValue<STM32ScfiaComposition> = (*context).scfia.new_bv_slice(&instruction.clone(), 8, 8, None, &mut (*context).fork_sink, None);
+        let mut registers_14: ActiveValue<STM32ScfiaComposition> = (*context).scfia.new_bv_concat(&(*context).scfia.new_bv_concrete(0b0, 6), &register_list.clone(), 14, None, &mut (*context).fork_sink, None);
+        let mut registers_15: ActiveValue<STM32ScfiaComposition> = (*context).scfia.new_bv_concat(&m.clone(), &registers_14.clone(), 15, None, &mut (*context).fork_sink, None);
+        let mut registers: ActiveValue<STM32ScfiaComposition> = (*context).scfia.new_bv_concat(&(*context).scfia.new_bv_concrete(0b0, 1), &registers_15.clone(), 16, None, &mut (*context).fork_sink, None);
+        unimplemented!();
+    }
+    else {
+    }
+    unimplemented!();
 }
 
 unsafe fn _thumb16_conditional_branch_and_svc(instruction: ActiveValue<STM32ScfiaComposition>, state: *mut SystemState, context: *mut StepContext<STM32ScfiaComposition>) {
