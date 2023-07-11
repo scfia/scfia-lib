@@ -68,7 +68,6 @@ impl<SC: ScfiaComposition> StableMemoryRegion<SC> {
                     self.length,
                     address + i as u64
                 );
-                panic!();
                 uninitialized = true;
                 byte_values.push_back(scfia.new_bv_symbol(
                     8,

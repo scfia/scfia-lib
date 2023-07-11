@@ -1,2 +1,2 @@
 #[rustfmt::skip]
-pub mod stm32;
+pub mod armv7m;

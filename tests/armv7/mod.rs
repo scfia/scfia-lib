@@ -1,7 +1,7 @@
 use log::{debug, info, trace, warn, LevelFilter};
 use scfia_lib::{
     memory::{regions::{StableMemoryRegion, VolatileMemoryRegion}, Memory},
-    models::armv7::stm32::{self, STM32ScfiaComposition, STM32},
+    models::armv7::armv7m::{self, ARMv7M, ARMv7MScfiaComposition},
     scfia::Scfia,
     values::active_value::ActiveValueImpl,
 };
@@ -13,7 +13,7 @@ pub struct StepContext<'a> {
     hints: &'a [(u64, &'a [u64])],
 }
 
-fn step_until(state: &mut STM32, address: u64, begin: &Instant) {
+fn step_until(state: &mut ARMv7M, address: u64, begin: &Instant) {
     while state.state.PC.to_u64() != address {
         assert!(state.state.PC.to_u64() != 0x508);
         // _dump_regs(state);
@@ -28,13 +28,13 @@ fn step_until(state: &mut STM32, address: u64, begin: &Instant) {
 }
 
 #[test]
-fn test_stm32_system_state() {
+fn test_armv7m_system_state() {
     let builder = thread::Builder::new().stack_size(4 * 1024 * 1024 * 1024);
     let handler = builder.spawn(test_system_state_inner).unwrap();
     handler.join().unwrap();
 }
 
-fn _dump_regs(state: &STM32) {
+fn _dump_regs(state: &ARMv7M) {
     println!("R0  = {:x?}", state.state.R0);
     println!("R1  = {:x?}", state.state.R1);
     println!("R2  = {:x?}", state.state.R2);
@@ -57,7 +57,7 @@ fn test_system_state_inner() {
     simple_logger::SimpleLogger::new().with_level(LevelFilter::Debug).env().init().unwrap();
     let binary_blob = fs::read("./tests/armv7/data/p2im_drone.bin").unwrap();
 
-    let scfia: Rc<Scfia<STM32ScfiaComposition>> = Scfia::new(None);
+    let scfia: Rc<Scfia<ARMv7MScfiaComposition>> = Scfia::new(None);
     let mut memory = Memory::default();
 
     let code = StableMemoryRegion::new(0, 0x2000_0000);
@@ -89,8 +89,8 @@ fn test_system_state_inner() {
         length: 0xe0100000,
     });
 
-    let mut system_state: STM32 = STM32 {
-        state: stm32::SystemState {
+    let mut system_state: ARMv7M = ARMv7M {
+        state: armv7m::SystemState {
             R0: scfia.new_bv_concrete(0b0, 32),
             R1: scfia.new_bv_concrete(0b0, 32),
             R2: scfia.new_bv_concrete(0b0, 32),
@@ -107,7 +107,7 @@ fn test_system_state_inner() {
             SP: scfia.new_bv_concrete(0b0, 32),
             LR: scfia.new_bv_concrete(0b0, 32),
             PC: scfia.new_bv_concrete(0x8000000 + 0x52b4, 32),
-            apsr: stm32::ApplicationProgramStatusRegister {
+            APSR: armv7m::ApplicationProgramStatusRegister {
                 N: scfia.new_bv_concrete(0b0, 1),
                 Z: scfia.new_bv_concrete(0b0, 1),
                 C: scfia.new_bv_concrete(0b0, 1),
@@ -115,7 +115,7 @@ fn test_system_state_inner() {
                 Q: scfia.new_bv_concrete(0b0, 1),
                 GE: scfia.new_bv_concrete(0b0, 4),
             },
-            EPSR: stm32::ExecutionProgramStatusRegister {
+            EPSR: armv7m::ExecutionProgramStatusRegister {
                 ICI_IT: scfia.new_bv_concrete(0b0, 2),
                 T: scfia.new_bv_concrete(0b1, 1),
                 ICI_IT2: scfia.new_bv_concrete(0b0, 6) }
