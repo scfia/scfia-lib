@@ -534,10 +534,16 @@ unsafe fn _thumb16_basic(mut instruction: ActiveValue<ARMv7MScfiaComposition>, m
         // LSR (immediate)
         unimplemented!();
     } else if (*context).scfia.check_condition(&(*context).scfia.new_bool_unsigned_less_than(&opcode.clone(), &(*context).scfia.new_bv_concrete(0b01100, 5), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-        // ASR (immediate)
+        // ASR (immediate) Encoding T1
+        let mut rd: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_slice(&instruction.clone(), 2, 0, None, &mut (*context).fork_sink, None);
+        let mut rm: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_slice(&instruction.clone(), 5, 3, None, &mut (*context).fork_sink, None);
+        let mut imm5: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_slice(&instruction.clone(), 10, 6, None, &mut (*context).fork_sink, None);
+        imm5 = _decode_imm_shift((*context).scfia.new_bv_concrete(0b10, 2), imm5.clone(), context);
+        //TODO setflags = !initblock
         unimplemented!();
     } else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&opcode.clone(), &(*context).scfia.new_bv_concrete(0b01100, 5), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         // ADD (register)
+        //TODO use addwithcarry instead?
         let mut rd: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_slice(&instruction.clone(), 2, 0, None, &mut (*context).fork_sink, None);
         let mut rn: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_slice(&instruction.clone(), 5, 3, None, &mut (*context).fork_sink, None);
         let mut rm: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_slice(&instruction.clone(), 8, 6, None, &mut (*context).fork_sink, None);
@@ -556,8 +562,20 @@ unsafe fn _thumb16_basic(mut instruction: ActiveValue<ARMv7MScfiaComposition>, m
             (*state).APSR.V = overflow.clone();
         }
     } else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&opcode.clone(), &(*context).scfia.new_bv_concrete(0b01101, 5), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
-        // Sub
-        unimplemented!();
+        // SUB Encoding T?
+        let mut rd: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_slice(&instruction.clone(), 2, 0, None, &mut (*context).fork_sink, None);
+        let mut rn: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_slice(&instruction.clone(), 5, 3, None, &mut (*context).fork_sink, None);
+        let mut rm: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_slice(&instruction.clone(), 8, 6, None, &mut (*context).fork_sink, None);
+        let mut setflags: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_concrete(1, 1);
+        //TODO !InITBlock
+        let (mut result, mut carry, mut overflow) = _add_with_carry_BV32(_register_read_BV32(rn.clone(), state, context), (*context).scfia.new_bv_not(&_register_read_BV32(rm.clone(), state, context), 32, None, &mut (*context).fork_sink, None), (*context).scfia.new_bv_concrete(1, 1), context);
+        _register_write_BV32(rd.clone(), result.clone(), state, context);
+        if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&setflags.clone(), &(*context).scfia.new_bv_concrete(1, 1), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+            (*state).APSR.N = (*context).scfia.new_bv_slice(&result.clone(), 31, 31, None, &mut (*context).fork_sink, None);
+            (*state).APSR.Z = _is_zero_bit_BV32(result.clone(), context);
+            (*state).APSR.C = carry.clone();
+            (*state).APSR.V = overflow.clone();
+        }
     } else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&opcode.clone(), &(*context).scfia.new_bv_concrete(0b01110, 5), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         // Add 3-bit immediate
         unimplemented!();
@@ -584,10 +602,7 @@ unsafe fn _thumb16_basic(mut instruction: ActiveValue<ARMv7MScfiaComposition>, m
         //TODO !InITBlock
         let mut imm8: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_slice(&instruction.clone(), 7, 0, None, &mut (*context).fork_sink, None);
         let mut imm32: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_concat(&(*context).scfia.new_bv_concrete(0, 24), &imm8.clone(), 32, None, &mut (*context).fork_sink, None);
-        let mut add_result: ActiveValue<ARMv7MScfiaComposition> = _add_with_carry_BV32(_register_read_BV32(rdn.clone(), state, context), imm32.clone(), (*context).scfia.new_bv_concrete(0, 1), context);
-        let mut result: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_slice(&add_result.clone(), 33, 2, None, &mut (*context).fork_sink, None);
-        let mut carry: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_slice(&add_result.clone(), 1, 1, None, &mut (*context).fork_sink, None);
-        let mut overflow: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_slice(&add_result.clone(), 0, 0, None, &mut (*context).fork_sink, None);
+        let (mut result, mut carry, mut overflow) = _add_with_carry_BV32(_register_read_BV32(rdn.clone(), state, context), imm32.clone(), (*context).scfia.new_bv_concrete(0, 1), context);
         _register_write_BV32(rdn.clone(), result.clone(), state, context);
         if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&setflags.clone(), &(*context).scfia.new_bv_concrete(1, 1), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
             (*state).APSR.N = (*context).scfia.new_bv_slice(&result.clone(), 31, 31, None, &mut (*context).fork_sink, None);
@@ -646,10 +661,7 @@ unsafe fn _thumb16_data_processing(mut instruction: ActiveValue<ARMv7MScfiaCompo
     } else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&opcode.clone(), &(*context).scfia.new_bv_concrete(0b1010, 4), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         let mut rn: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_slice(&instruction.clone(), 2, 0, None, &mut (*context).fork_sink, None);
         let mut rm: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_slice(&instruction.clone(), 5, 3, None, &mut (*context).fork_sink, None);
-        let mut add_result: ActiveValue<ARMv7MScfiaComposition> = _add_with_carry_BV32(_register_read_BV32(rn.clone(), state, context), (*context).scfia.new_bv_not(&_register_read_BV32(rm.clone(), state, context), 32, None, &mut (*context).fork_sink, None), (*context).scfia.new_bv_concrete(1, 1), context);
-        let mut result: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_slice(&add_result.clone(), 33, 2, None, &mut (*context).fork_sink, None);
-        let mut carry: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_slice(&add_result.clone(), 1, 1, None, &mut (*context).fork_sink, None);
-        let mut overflow: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_slice(&add_result.clone(), 0, 0, None, &mut (*context).fork_sink, None);
+        let (mut result, mut carry, mut overflow) = _add_with_carry_BV32(_register_read_BV32(rn.clone(), state, context), (*context).scfia.new_bv_not(&_register_read_BV32(rm.clone(), state, context), 32, None, &mut (*context).fork_sink, None), (*context).scfia.new_bv_concrete(1, 1), context);
         (*state).APSR.N = (*context).scfia.new_bv_slice(&result.clone(), 31, 31, None, &mut (*context).fork_sink, None);
         (*state).APSR.Z = _is_zero_bit_BV32(result.clone(), context);
         (*state).APSR.C = carry.clone();
@@ -817,7 +829,7 @@ unsafe fn _thumb16_misc_16_bit_instruction(mut instruction: ActiveValue<ARMv7MSc
         let mut bit_count: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_concat(&(*context).scfia.new_bv_concrete(0, 16), &_bit_count_BV16(registers.clone(), context), 32, None, &mut (*context).fork_sink, None);
         let mut address: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_sub(&SP.clone(), &(*context).scfia.new_bv_multiply(&(*context).scfia.new_bv_concrete(4, 32), &bit_count.clone(), 32, None, &mut (*context).fork_sink, None), 32, None, &mut (*context).fork_sink, None);
         for i in 0u64..14 {
-            if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&(*context).scfia.new_bv_concrete(1, 1), &(*context).scfia.new_bv_slice(&registers.clone(), i as u32, (i as u32-1+1), None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+            if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&(*context).scfia.new_bv_concrete(1, 1), &(*context).scfia.new_bv_slice(&registers.clone(), i as u32, (i as u32+1-1), None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
                 (*(*context).memory).write(&address.clone(), &(*state).R0.clone(), 32, (*context).scfia.clone(), &mut (*context).hints, &mut (*context).fork_sink);
                 address = (*context).scfia.new_bv_add(&address.clone(), &(*context).scfia.new_bv_concrete(4, 32), 32, None, &mut (*context).fork_sink, None);
             }
@@ -970,13 +982,13 @@ unsafe fn _progress_pc_4(mut state: *mut SystemState, context: *mut StepContext<
     (*state).PC = new_pc.clone();
 }
 
-unsafe fn _add_with_carry_BV32(mut x: ActiveValue<ARMv7MScfiaComposition>, mut y: ActiveValue<ARMv7MScfiaComposition>, mut carry_in: ActiveValue<ARMv7MScfiaComposition>, context: *mut StepContext<ARMv7MScfiaComposition>) -> ActiveValue<ARMv7MScfiaComposition> {
+unsafe fn _add_with_carry_BV32(mut x: ActiveValue<ARMv7MScfiaComposition>, mut y: ActiveValue<ARMv7MScfiaComposition>, mut carry_in: ActiveValue<ARMv7MScfiaComposition>, context: *mut StepContext<ARMv7MScfiaComposition>) -> (ActiveValue<ARMv7MScfiaComposition>, ActiveValue<ARMv7MScfiaComposition>, ActiveValue<ARMv7MScfiaComposition>) {
     let mut unsigned_sum: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_add(&(*context).scfia.new_bv_add(&(*context).scfia.new_bv_concat(&(*context).scfia.new_bv_concrete(0, 2), &x.clone(), 34, None, &mut (*context).fork_sink, None), &(*context).scfia.new_bv_concat(&(*context).scfia.new_bv_concrete(0, 2), &y.clone(), 34, None, &mut (*context).fork_sink, None), 34, None, &mut (*context).fork_sink, None), &(*context).scfia.new_bv_concat(&(*context).scfia.new_bv_concrete(0, 33), &carry_in.clone(), 34, None, &mut (*context).fork_sink, None), 34, None, &mut (*context).fork_sink, None);
     let mut signed_sum: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_add(&(*context).scfia.new_bv_add(&(*context).scfia.new_bv_sign_extend(&x.clone(), 32, 34, None, &mut (*context).fork_sink, None), &(*context).scfia.new_bv_sign_extend(&y.clone(), 32, 34, None, &mut (*context).fork_sink, None), 34, None, &mut (*context).fork_sink, None), &(*context).scfia.new_bv_concat(&(*context).scfia.new_bv_concrete(0, 33), &carry_in.clone(), 34, None, &mut (*context).fork_sink, None), 34, None, &mut (*context).fork_sink, None);
     let mut result: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_slice(&unsigned_sum.clone(), 31, 0, None, &mut (*context).fork_sink, None);
     let mut carry_out: ActiveValue<ARMv7MScfiaComposition> = _is_not_eq_BV34((*context).scfia.new_bv_concat(&(*context).scfia.new_bv_concrete(0, 2), &result.clone(), 34, None, &mut (*context).fork_sink, None), unsigned_sum.clone(), context);
     let mut overflow: ActiveValue<ARMv7MScfiaComposition> = _is_not_eq_BV34((*context).scfia.new_bv_sign_extend(&result.clone(), 32, 34, None, &mut (*context).fork_sink, None), unsigned_sum.clone(), context);
-    return (*context).scfia.new_bv_concat(&result.clone(), &(*context).scfia.new_bv_concat(&carry_out.clone(), &overflow.clone(), 2, None, &mut (*context).fork_sink, None), 34, None, &mut (*context).fork_sink, None);
+    return (result.clone(), carry_out.clone(), overflow.clone());
 }
 
 unsafe fn _thumb_expand_imm_c(mut imm12: ActiveValue<ARMv7MScfiaComposition>, mut carry_in: ActiveValue<ARMv7MScfiaComposition>, context: *mut StepContext<ARMv7MScfiaComposition>) -> ActiveValue<ARMv7MScfiaComposition> {
@@ -1099,6 +1111,32 @@ unsafe fn _branch_to(mut address: ActiveValue<ARMv7MScfiaComposition>, mut state
     (*state).PC = address.clone();
 }
 
+unsafe fn _decode_imm_shift(mut shift_type: ActiveValue<ARMv7MScfiaComposition>, mut imm5: ActiveValue<ARMv7MScfiaComposition>, context: *mut StepContext<ARMv7MScfiaComposition>) -> ActiveValue<ARMv7MScfiaComposition> {
+    let mut imm: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_concrete(0, 5);
+    //TODO shift type enum
+    if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&shift_type.clone(), &(*context).scfia.new_bv_concrete(0, 2), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+        imm = imm5.clone();
+    } else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&shift_type.clone(), &(*context).scfia.new_bv_concrete(0b01, 2), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+        if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&imm5.clone(), &(*context).scfia.new_bv_concrete(0b00000, 5), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+            imm = (*context).scfia.new_bv_concrete(32, 5);
+        } else {
+            imm = imm5.clone();
+        }
+
+    } else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&shift_type.clone(), &(*context).scfia.new_bv_concrete(0b10, 2), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+        if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&imm5.clone(), &(*context).scfia.new_bv_concrete(0b00000, 5), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+            imm = (*context).scfia.new_bv_concrete(32, 5);
+        } else {
+            imm = imm5.clone();
+        }
+
+    } else {
+        unimplemented!();
+    }
+
+    return imm.clone();
+}
+
 unsafe fn _matches_BV3(mut input: ActiveValue<ARMv7MScfiaComposition>, mut required_ones: ActiveValue<ARMv7MScfiaComposition>, mut required_zeroes: ActiveValue<ARMv7MScfiaComposition>, context: *mut StepContext<ARMv7MScfiaComposition>) -> ActiveValue<ARMv7MScfiaComposition> {
     if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&(*context).scfia.new_bv_and(&input.clone(), &required_ones.clone(), 3, None, &mut (*context).fork_sink, None), &required_ones.clone(), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         // all required ones are set!
@@ -1146,7 +1184,7 @@ unsafe fn _matches_BV7(mut input: ActiveValue<ARMv7MScfiaComposition>, mut requi
 unsafe fn _bit_count_BV16(mut input: ActiveValue<ARMv7MScfiaComposition>, context: *mut StepContext<ARMv7MScfiaComposition>) -> ActiveValue<ARMv7MScfiaComposition> {
     let mut count: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_concrete(0, 16);
     for i in 0u64..15 {
-        if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&(*context).scfia.new_bv_concrete(1, 1), &(*context).scfia.new_bv_slice(&input.clone(), i as u32, (i as u32-1+1), None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+        if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&(*context).scfia.new_bv_concrete(1, 1), &(*context).scfia.new_bv_slice(&input.clone(), i as u32, (i as u32+1-1), None, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
             count = (*context).scfia.new_bv_add(&count.clone(), &(*context).scfia.new_bv_concrete(1, 16), 16, None, &mut (*context).fork_sink, None);
         }
     }
