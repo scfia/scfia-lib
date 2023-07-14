@@ -1,5 +1,6 @@
 #![allow(clippy::all)]
 #![allow(non_snake_case)]
+#![allow(non_camel_case_types)]
 #![allow(unused)]
 use log::debug;
 use std::{borrow::BorrowMut, fmt::Debug, collections::BTreeMap, rc::Rc};
@@ -204,6 +205,16 @@ impl SystemState {
             EPSR: self.EPSR.clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives)
         }
     }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum SRType {
+    None,
+    LSL,
+    LSR,
+    ASR,
+    ROR,
+    RRX
 }
 
 unsafe fn _step(mut state: *mut SystemState, context: *mut StepContext<ARMv7MScfiaComposition>) {
@@ -538,9 +549,13 @@ unsafe fn _thumb16_basic(mut instruction: ActiveValue<ARMv7MScfiaComposition>, m
         let mut rd: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_slice(&instruction.clone(), 2, 0, None, &mut (*context).fork_sink, None);
         let mut rm: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_slice(&instruction.clone(), 5, 3, None, &mut (*context).fork_sink, None);
         let mut imm5: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_slice(&instruction.clone(), 10, 6, None, &mut (*context).fork_sink, None);
-        imm5 = _decode_imm_shift((*context).scfia.new_bv_concrete(0b10, 2), imm5.clone(), context);
+        let (mut sr_type, mut shift_n) = _decode_imm_shift((*context).scfia.new_bv_concrete(0b10, 2), imm5.clone(), context);
+        let mut setflags: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_concrete(1, 1);
         //TODO setflags = !initblock
-        unimplemented!();
+        let (mut result, mut carry) = _shift_c(_register_read_BV32(rm.clone(), state, context), SRType::ASR, shift_n.clone(), (*state).APSR.C.clone(), context);
+        if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&setflags.clone(), &(*context).scfia.new_bv_concrete(1, 1), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+            unimplemented!();
+        }
     } else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&opcode.clone(), &(*context).scfia.new_bv_concrete(0b01100, 5), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         // ADD (register)
         //TODO use addwithcarry instead?
@@ -1111,12 +1126,44 @@ unsafe fn _branch_to(mut address: ActiveValue<ARMv7MScfiaComposition>, mut state
     (*state).PC = address.clone();
 }
 
-unsafe fn _decode_imm_shift(mut shift_type: ActiveValue<ARMv7MScfiaComposition>, mut imm5: ActiveValue<ARMv7MScfiaComposition>, context: *mut StepContext<ARMv7MScfiaComposition>) -> ActiveValue<ARMv7MScfiaComposition> {
+unsafe fn _shift_c(mut value: ActiveValue<ARMv7MScfiaComposition>, mut srtype: SRType, mut amount: ActiveValue<ARMv7MScfiaComposition>, mut carry_in: ActiveValue<ARMv7MScfiaComposition>, context: *mut StepContext<ARMv7MScfiaComposition>) -> (ActiveValue<ARMv7MScfiaComposition>, ActiveValue<ARMv7MScfiaComposition>) {
+    //TODO assert rrx amount
+    let mut result: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_concrete(0, 32);
+    let mut carry_out: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_concrete(0, 1);
+    if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&amount.clone(), &(*context).scfia.new_bv_concrete(0, 5), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+        result = value.clone();
+        carry_out = carry_in.clone();
+    } else {
+        if (*context).scfia.check_condition(&(*context).scfia.new_bool_concrete(srtype == SRType::LSL, None, &mut (*context).fork_sink), &mut (*context).fork_sink) {
+            unimplemented!();
+        } else if (*context).scfia.check_condition(&(*context).scfia.new_bool_concrete(srtype == SRType::LSR, None, &mut (*context).fork_sink), &mut (*context).fork_sink) {
+            unimplemented!();
+        } else if (*context).scfia.check_condition(&(*context).scfia.new_bool_concrete(srtype == SRType::ASR, None, &mut (*context).fork_sink), &mut (*context).fork_sink) {
+            let (mut asr_result, mut asr_carry) = _asr_c(value.clone(), amount.clone(), context);
+            result = asr_result.clone();
+            carry_out = asr_carry.clone();
+        } else if (*context).scfia.check_condition(&(*context).scfia.new_bool_concrete(srtype == SRType::ROR, None, &mut (*context).fork_sink), &mut (*context).fork_sink) {
+            unimplemented!();
+        } else if (*context).scfia.check_condition(&(*context).scfia.new_bool_concrete(srtype == SRType::RRX, None, &mut (*context).fork_sink), &mut (*context).fork_sink) {
+            unimplemented!();
+        }
+    }
+
+    return (result.clone(), carry_out.clone());
+}
+
+unsafe fn _asr_c(mut bits: ActiveValue<ARMv7MScfiaComposition>, mut shift: ActiveValue<ARMv7MScfiaComposition>, context: *mut StepContext<ARMv7MScfiaComposition>) -> (ActiveValue<ARMv7MScfiaComposition>, ActiveValue<ARMv7MScfiaComposition>) {
+    unimplemented!();
+}
+
+unsafe fn _decode_imm_shift(mut shift_type: ActiveValue<ARMv7MScfiaComposition>, mut imm5: ActiveValue<ARMv7MScfiaComposition>, context: *mut StepContext<ARMv7MScfiaComposition>) -> (SRType, ActiveValue<ARMv7MScfiaComposition>) {
+    let mut shift_t: SRType = SRType::None;
     let mut imm: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_concrete(0, 5);
-    //TODO shift type enum
-    if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&shift_type.clone(), &(*context).scfia.new_bv_concrete(0, 2), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+    if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&shift_type.clone(), &(*context).scfia.new_bv_concrete(0b00, 2), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+        shift_t = SRType::LSL;
         imm = imm5.clone();
     } else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&shift_type.clone(), &(*context).scfia.new_bv_concrete(0b01, 2), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+        shift_t = SRType::LSR;
         if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&imm5.clone(), &(*context).scfia.new_bv_concrete(0b00000, 5), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
             imm = (*context).scfia.new_bv_concrete(32, 5);
         } else {
@@ -1124,6 +1171,7 @@ unsafe fn _decode_imm_shift(mut shift_type: ActiveValue<ARMv7MScfiaComposition>,
         }
 
     } else if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&shift_type.clone(), &(*context).scfia.new_bv_concrete(0b10, 2), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
+        shift_t = SRType::ASR;
         if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&imm5.clone(), &(*context).scfia.new_bv_concrete(0b00000, 5), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
             imm = (*context).scfia.new_bv_concrete(32, 5);
         } else {
@@ -1134,7 +1182,7 @@ unsafe fn _decode_imm_shift(mut shift_type: ActiveValue<ARMv7MScfiaComposition>,
         unimplemented!();
     }
 
-    return imm.clone();
+    return (shift_t, imm.clone());
 }
 
 unsafe fn _matches_BV3(mut input: ActiveValue<ARMv7MScfiaComposition>, mut required_ones: ActiveValue<ARMv7MScfiaComposition>, mut required_zeroes: ActiveValue<ARMv7MScfiaComposition>, context: *mut StepContext<ARMv7MScfiaComposition>) -> ActiveValue<ARMv7MScfiaComposition> {
