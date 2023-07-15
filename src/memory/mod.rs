@@ -192,7 +192,7 @@ impl<SC: ScfiaComposition> Memory<SC> {
         //debug!("*{:x}", address);
         for region in &self.volatiles {
             if address >= region.start_address && address < region.start_address + region.length {
-                trace!("Volatile region 0x{:x} yielding fresh symbol", region.start_address);
+                debug!("Volatile region 0x{:x} yielding fresh symbol at 0x{:x}", region.start_address, address);
                 return scfia.new_bv_symbol(width, None, fork_sink, None);
             }
         }

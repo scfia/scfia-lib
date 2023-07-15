@@ -18,10 +18,13 @@ fn step_until(state: &mut ARMv7M, address: u64, begin: &Instant) {
         assert!(state.state.PC.to_u64() != 0x508);
         // _dump_regs(state);
         debug!(
-            "({}ms) Executing {:#x} ({} asts)",
+            "({}ms) Executing {:x} ({} asts, SP={:x}, LR={:x}, R5={:x})",
             begin.elapsed().as_millis(),
             state.state.PC.to_u64(),
-            state.scfia.z3.ast_refs.get()
+            state.scfia.z3.ast_refs.get(),
+            state.state.SP.to_u64(),
+            state.state.LR.to_u64(),
+            state.state.R5.to_u64()
         );
         state.step(None);
     }
@@ -104,7 +107,7 @@ fn test_system_state_inner() {
             R10: scfia.new_bv_concrete(0b0, 32),
             R11: scfia.new_bv_concrete(0b0, 32),
             R12: scfia.new_bv_concrete(0b0, 32),
-            SP: scfia.new_bv_concrete(0b0, 32),
+            SP: scfia.new_bv_concrete(0x20005000, 32),
             LR: scfia.new_bv_concrete(0b0, 32),
             PC: scfia.new_bv_concrete(0x8000000 + 0x52b4, 32),
             APSR: armv7m::ApplicationProgramStatusRegister {
