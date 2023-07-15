@@ -689,6 +689,31 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         )
     }
 
+    pub fn new_bv_udiv(
+        &self,
+        s1: &ActiveValue<SC>,
+        s2: &ActiveValue<SC>,
+        width: u32,
+        id: Option<u64>,
+        fork_sink: &mut Option<SC::ForkSink>,
+        comment: Option<ValueComment>,
+    ) -> ActiveValue<SC> {
+        if let ActiveValue::BVConcrete(s1_value, _s1_width) = s1 {
+            if let ActiveValue::BVConcrete(s2_value, s2_width) = s2 {
+                let one: u64 = 1;
+                let mask = one.rotate_left(*s2_width).overflowing_sub(1).0;
+                let remainder = s1_value / s2_value;
+                let value = mask & remainder;
+                return ActiveValue::BVConcrete(value, width);
+            }
+        };
+
+        let s1 = s1.into_z3_value(self, fork_sink);
+        let s2 = s2.into_z3_value(self, fork_sink);
+        let id = if let Some(id) = id { id } else { self.next_symbol_id() };
+        todo!()
+    }
+
     pub fn new_bv_xor(
         &self,
         s1: &ActiveValue<SC>,

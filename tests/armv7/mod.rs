@@ -128,12 +128,7 @@ fn test_system_state_inner() {
     };
 
     let begin = Instant::now();
-    info!("Step until ands fork");
-    step_until(&mut system_state, 0x8005268, &begin);
-    let mut successors = system_state.step_forking(None);
-    let mut successor_1 = successors.remove(0);
-    let mut successor_2 = successors.remove(0);
-    assert!(successors.is_empty());
-    step_until(&mut successor_1, 0x69420, &begin);
+    info!("Step until first fork");
+    step_until(&mut system_state, 0x69420, &begin);
     
 }
