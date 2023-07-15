@@ -587,19 +587,28 @@ impl<SC: ScfiaComposition> Scfia<SC> {
         id: Option<u64>,
         fork_sink: &mut Option<SC::ForkSink>,
         comment: Option<ValueComment>,
-    ) -> ActiveValue<SC> {
+    ) -> (ActiveValue<SC>, ActiveValue<SC>) {
         if let ActiveValue::BVConcrete(s1_value, s1_width) = s1 {
             if let ActiveValue::BVConcrete(s2_value, _s2_width) = s2 {
-                let value = todo!();
-                return ActiveValue::BVConcrete(value, width);
+                //TODO review
+                //TODO this is extremely ugly, maybe we should push it down to SISAL, let it do two shifts
+                let mut shift_mask = 1 << (width - 1);
+                let mut carry_mask = 1;
+                for i in 1..*s2_value {
+                    shift_mask |= 1 << (width as u64 - i - 1);
+                    carry_mask <<= 1;
+                }
+                let value = (s1_value >> s2_value) | shift_mask;
+                let carry_out = (s1_value & carry_mask) >> (s2_value - 1);
+                return (ActiveValue::BVConcrete(value, width), ActiveValue::BVConcrete(carry_out, 1));
             }
         };
 
         let s1 = s1.into_z3_value(self, fork_sink);
         let s2 = s2.into_z3_value(self, fork_sink);
         let id = if let Some(id) = id { id } else { self.next_symbol_id() };
+        let z3_ast = self.z3.new_bvashr(&s1.get_z3_ast(), &s2.get_z3_ast());
         todo!();
-        // let z3_ast = self.z3.new_bvashr(&s1.get_z3_ast(), &s2.get_z3_ast());
     }
 
     pub fn new_bv_sub(
