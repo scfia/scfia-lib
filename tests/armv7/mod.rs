@@ -18,13 +18,12 @@ fn step_until(state: &mut ARMv7M, address: u64, begin: &Instant) {
         assert!(state.state.PC.to_u64() != 0x508);
         // _dump_regs(state);
         debug!(
-            "({}ms) Executing {:x} ({} asts, SP={:x}, LR={:x}, R5={:x})",
+            "({}ms) Executing {:x} ({} asts, SP={:x}, LR={:x?})",
             begin.elapsed().as_millis(),
             state.state.PC.to_u64(),
             state.scfia.z3.ast_refs.get(),
             state.state.SP.to_u64(),
-            state.state.LR.to_u64(),
-            state.state.R5.to_u64()
+            state.state.LR,
         );
         state.step(None);
     }
