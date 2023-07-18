@@ -1,7 +1,7 @@
 use log::{debug, info, trace, warn, LevelFilter};
 use scfia_lib::{
     memory::{regions::{StableMemoryRegion, VolatileMemoryRegion}, Memory},
-    models::armv7::armv7m::{self, ARMv7M, ARMv7MScfiaComposition},
+    models::armv7::armv7m::{self, ARMv7M, ARMv7MScfiaComposition, ITSTATE},
     scfia::Scfia,
     values::active_value::ActiveValueImpl,
 };
@@ -120,7 +120,10 @@ fn test_system_state_inner() {
             EPSR: armv7m::ExecutionProgramStatusRegister {
                 ICI_IT: scfia.new_bv_concrete(0b0, 2),
                 T: scfia.new_bv_concrete(0b1, 1),
-                ICI_IT2: scfia.new_bv_concrete(0b0, 6) }
+                ICI_IT2: scfia.new_bv_concrete(0b0, 6) },
+            ITSTATE: ITSTATE {
+                IT: scfia.new_bv_concrete(0b0, 8),
+            },
         },
         memory,
         scfia,

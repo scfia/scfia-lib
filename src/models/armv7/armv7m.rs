@@ -161,6 +161,19 @@ impl ExecutionProgramStatusRegister {
 }
 
 #[derive(Debug)]
+pub struct ITSTATE {
+    pub IT: ActiveValue<ARMv7MScfiaComposition>
+}
+
+impl ITSTATE {
+    fn clone_to_stdlib(&self, cloned_scfia: &Scfia<ARMv7MScfiaComposition>, cloned_actives: &mut BTreeMap<u64, ActiveValue<ARMv7MScfiaComposition>>, cloned_inactives: &mut BTreeMap<u64, RetiredValue<ARMv7MScfiaComposition>>) -> ITSTATE {
+        ITSTATE {
+            IT: self.IT.clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives)
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct SystemState {
     pub R0: ActiveValue<ARMv7MScfiaComposition>,
     pub R1: ActiveValue<ARMv7MScfiaComposition>,
@@ -179,7 +192,8 @@ pub struct SystemState {
     pub LR: ActiveValue<ARMv7MScfiaComposition>,
     pub PC: ActiveValue<ARMv7MScfiaComposition>,
     pub APSR: ApplicationProgramStatusRegister,
-    pub EPSR: ExecutionProgramStatusRegister
+    pub EPSR: ExecutionProgramStatusRegister,
+    pub ITSTATE: ITSTATE
 }
 
 impl SystemState {
@@ -202,7 +216,8 @@ impl SystemState {
             LR: self.LR.clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
             PC: self.PC.clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
             APSR: self.APSR.clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
-            EPSR: self.EPSR.clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives)
+            EPSR: self.EPSR.clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives),
+            ITSTATE: self.ITSTATE.clone_to_stdlib(cloned_scfia, cloned_actives, cloned_inactives)
         }
     }
 }
@@ -1258,6 +1273,10 @@ unsafe fn _thumb16_if_then_and_hints(mut instruction: ActiveValue<ARMv7MScfiaCom
     let mut opA: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_slice(&instruction.clone(), 7, 4, None, &mut (*context).fork_sink, None);
     if (*context).scfia.check_condition(&(*context).scfia.new_bool_not(&(*context).scfia.new_bool_eq(&opB.clone(), &(*context).scfia.new_bv_concrete(0, 4), None, false, &mut (*context).fork_sink, None), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
         // IT
+        let mut mask: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_slice(&instruction.clone(), 3, 0, None, &mut (*context).fork_sink, None);
+        let mut firstcond: ActiveValue<ARMv7MScfiaComposition> = (*context).scfia.new_bv_slice(&instruction.clone(), 7, 4, None, &mut (*context).fork_sink, None);
+        //TODO unpredictable firstcond bitcount foo
+        //TODO if initblock unpredictable
         unimplemented!();
     } else {
         if (*context).scfia.check_condition(&(*context).scfia.new_bool_eq(&opA.clone(), &(*context).scfia.new_bv_concrete(0b0000, 4), None, false, &mut (*context).fork_sink, None), &mut (*context).fork_sink) {
